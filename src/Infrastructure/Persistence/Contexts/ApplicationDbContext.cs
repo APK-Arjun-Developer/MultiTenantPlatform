@@ -1,9 +1,11 @@
 using Domain.Entities;
+using Infrastructure.Identity.Entities;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Persistence.Contexts;
 
-public class ApplicationDbContext : DbContext
+public class ApplicationDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, Guid>
 {
     public ApplicationDbContext(
         DbContextOptions<ApplicationDbContext> options)
