@@ -19,23 +19,30 @@ builder.Host.UseSerilog((context, config) =>
 
 builder.Services.AddPersistence(builder.Configuration);
 
-builder.Services.AddIdentityInfrastructure();
+builder.Services.AddIdentityInfrastructure(builder.Configuration);
 
 builder.Services.AddControllers();
 
 builder.Services.AddEndpointsApiExplorer();
 
+builder.Services.AddOpenApi();
+
+builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
 {
+    app.MapOpenApi();
+
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
 app.UseHttpsRedirection();
+
+app.UseAuthentication();
 
 app.UseAuthorization();
 
