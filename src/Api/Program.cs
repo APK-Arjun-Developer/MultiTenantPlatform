@@ -1,4 +1,7 @@
 using Serilog;
+using Infrastructure.Persistence;
+using Infrastructure.Persistence.Contexts;
+using Infrastructure.Persistence.Seed;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,6 +12,8 @@ builder.Host.UseSerilog((context, config) =>
         "logs/log-.txt",
         rollingInterval: RollingInterval.Day);
 });
+
+builder.Services.AddPersistence(builder.Configuration);
 
 builder.Services.AddControllers();
 
@@ -29,5 +34,14 @@ app.UseHttpsRedirection();
 app.UseAuthorization();
 
 app.MapControllers();
+
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext =
+        scope.ServiceProvider
+            .GetRequiredService<ApplicationDbContext>();
+
+    await DbSeeder.SeedAsync(dbContext);
+}
 
 app.Run();
