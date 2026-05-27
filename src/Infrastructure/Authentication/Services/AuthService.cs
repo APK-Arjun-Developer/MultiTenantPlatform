@@ -11,19 +11,21 @@ public class AuthService : IAuthService
 
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
 
+    private readonly IRefreshTokenService _refreshTokenService;
+
     public AuthService(
         UserManager<ApplicationUser> userManager,
-        IJwtTokenGenerator jwtTokenGenerator)
+        IJwtTokenGenerator jwtTokenGenerator,
+        IRefreshTokenService refreshTokenService)
     {
         _userManager = userManager;
         _jwtTokenGenerator = jwtTokenGenerator;
+        _refreshTokenService = refreshTokenService;
     }
 
-    public async Task<AuthResponse> LoginAsync(
-        LoginRequest request)
+    public async Task<AuthResponse> LoginAsync(LoginRequest request, string ipAddress)
     {
-        var user =
-            await _userManager.FindByEmailAsync(
+        var user = await _userManager.FindByEmailAsync(
                 request.Email);
 
         if (user == null)
@@ -50,17 +52,22 @@ public class AuthService : IAuthService
             user.TenantId,
             roles);
 
+        var refreshToken = await _refreshTokenService.CreateAsync(
+            user.Id,
+            user.TenantId,
+            ipAddress);
+
         return new AuthResponse
         {
             AccessToken = token,
+            RefreshToken = refreshToken.Token,
             ExpiresAt = DateTime.UtcNow.AddMinutes(60),
             Email = user.Email!,
             FullName = user.FullName
         };
     }
 
-    public async Task<AuthResponse> RegisterAsync(
-        RegisterRequest request)
+    public async Task<AuthResponse> RegisterAsync(RegisterRequest request, string ipAddress)
     {
         var existingUser =
             await _userManager.FindByEmailAsync(
@@ -103,12 +110,69 @@ public class AuthService : IAuthService
             user.TenantId,
             roles);
 
+        var refreshToken = await _refreshTokenService.CreateAsync(
+            user.Id,
+            user.TenantId,
+            ipAddress);
+
         return new AuthResponse
         {
             AccessToken = token,
+            RefreshToken = refreshToken.Token,
             ExpiresAt = DateTime.UtcNow.AddMinutes(60),
             Email = user.Email!,
             FullName = user.FullName
         };
+    }
+
+    public async Task<AuthResponse> RefreshTokenAsync(RefreshTokenRequest request, string ipAddress)
+    {
+        var refreshToken = await _refreshTokenService.GetByTokenAsync(request.RefreshToken);
+
+        if (refreshToken == null)
+        {
+            throw new Exception("Invalid refresh token.");
+        }
+
+        var user = await _userManager.FindByIdAsync(refreshToken.UserId.ToString());
+
+        if (user == null)
+        {
+            throw new Exception("User not found.");
+        }
+
+        await _refreshTokenService.RevokeAsync(refreshToken, ipAddress);
+
+        var newRefreshToken = await _refreshTokenService.CreateAsync(user.Id, user.TenantId, ipAddress);
+
+        var roles = await _userManager.GetRolesAsync(user);
+
+        var accessToken = await _jwtTokenGenerator.GenerateTokenAsync(
+            user.Id,
+            user.Email!,
+            user.FullName,
+            user.TenantId,
+            roles);
+
+        return new AuthResponse
+        {
+            AccessToken = accessToken,
+            RefreshToken = newRefreshToken.Token,
+            ExpiresAt = DateTime.UtcNow.AddMinutes(60),
+            Email = user.Email!,
+            FullName = user.FullName
+        };
+    }
+
+    public async Task LogoutAsync(LogoutRequest request, string ipAddress)
+    {
+        var refreshToken = await _refreshTokenService.GetByTokenAsync(request.RefreshToken);
+
+        if (refreshToken == null)
+        {
+            return;
+        }
+
+        await _refreshTokenService.RevokeAsync(refreshToken, ipAddress);
     }
 }

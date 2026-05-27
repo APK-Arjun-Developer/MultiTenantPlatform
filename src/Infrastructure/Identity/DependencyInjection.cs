@@ -36,12 +36,9 @@ public static class DependencyInjection
 
         services.AddScoped<IUserService, UserService>();
 
-        services.Configure<JwtSettings>(
-    configuration.GetSection("Jwt"));
+        services.Configure<JwtSettings>(configuration.GetSection("Jwt"));
 
-        var jwtSettings =
-            configuration.GetSection("Jwt")
-                .Get<JwtSettings>()!;
+        var jwtSettings = configuration.GetSection("Jwt").Get<JwtSettings>()!;
 
         services
             .AddAuthentication(options =>
@@ -73,13 +70,11 @@ public static class DependencyInjection
                     };
             });
 
-        services.AddScoped<
-            IJwtTokenGenerator,
-            JwtTokenGenerator>();
+        services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
 
-        services.AddScoped<
-            IAuthService,
-            AuthService>();
+        services.AddScoped<IAuthService, AuthService>();
+
+        services.AddScoped<IRefreshTokenService, RefreshTokenService>();
 
         return services;
     }

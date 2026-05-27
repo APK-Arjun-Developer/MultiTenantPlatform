@@ -17,22 +17,39 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("register")]
-    public async Task<IActionResult> Register(
-        RegisterRequest request)
+    public async Task<IActionResult> Register(RegisterRequest request)
     {
-        var response =
-            await _authService.RegisterAsync(request);
+        var response = await _authService.RegisterAsync(request, GetIpAddress());
 
         return Ok(response);
     }
 
     [HttpPost("login")]
-    public async Task<IActionResult> Login(
-        LoginRequest request)
+    public async Task<IActionResult> Login(LoginRequest request)
     {
-        var response =
-            await _authService.LoginAsync(request);
+        var response = await _authService.LoginAsync(request, GetIpAddress());
 
         return Ok(response);
+    }
+
+    [HttpPost("refresh")]
+    public async Task<IActionResult> Refresh(RefreshTokenRequest request)
+    {
+        var response = await _authService.RefreshTokenAsync(request, GetIpAddress());
+
+        return Ok(response);
+    }
+
+    [HttpPost("logout")]
+    public async Task<IActionResult> Logout(LogoutRequest request)
+    {
+        await _authService.LogoutAsync(request, GetIpAddress());
+
+        return Ok();
+    }
+
+    private string GetIpAddress()
+    {
+        return HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
     }
 }
