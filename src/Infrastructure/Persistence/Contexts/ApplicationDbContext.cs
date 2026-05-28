@@ -19,7 +19,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Applicati
         _currentTenantService = currentTenantService;
     }
 
-    public DbSet<Tenant> Tenants => Set<Tenant>();
+    public DbSet<Domain.Entities.Tenant> Tenants => Set<Domain.Entities.Tenant>();
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 

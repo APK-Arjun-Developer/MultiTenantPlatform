@@ -1,4 +1,3 @@
-using Domain.Entities;
 using Infrastructure.Persistence.Contexts;
 
 namespace Infrastructure.Persistence.Seed;
@@ -10,7 +9,7 @@ public static class DbSeeder
     {
         if (!context.Tenants.Any())
         {
-            context.Tenants.Add(new Tenant
+            context.Tenants.Add(new Domain.Entities.Tenant
             {
                 Id = Guid.NewGuid(),
                 TenantId = Guid.Empty,

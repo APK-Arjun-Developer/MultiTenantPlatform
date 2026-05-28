@@ -6,8 +6,6 @@ public interface IAuthService
 {
     Task<AuthResponse> LoginAsync(LoginRequest request, string ipAddress);
 
-    Task<AuthResponse> RegisterAsync(RegisterRequest request, string ipAddress);
-
     Task<AuthResponse> RefreshTokenAsync(RefreshTokenRequest request, string ipAddress);
 
     Task LogoutAsync(LogoutRequest request, string ipAddress);

@@ -13,6 +13,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Application.Interfaces.Tenant;
 using Infrastructure.MultiTenancy;
+using Infrastructure.Tenant;
 
 namespace Infrastructure.Identity;
 
@@ -81,6 +82,8 @@ public static class DependencyInjection
         services.AddHttpContextAccessor();
 
         services.AddScoped<ICurrentTenantService, CurrentTenantService>();
+
+        services.AddScoped<ITenantService, TenantService>();
 
         return services;
     }
