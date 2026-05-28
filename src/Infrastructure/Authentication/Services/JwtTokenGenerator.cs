@@ -19,21 +19,15 @@ public class JwtTokenGenerator : IJwtTokenGenerator
         _jwtSettings = jwtSettings.Value;
     }
 
-    public async Task<string> GenerateTokenAsync(
-    Guid userId,
-    string email,
-    string fullName,
-    Guid tenantId,
-    IList<string> roles)
+    public string GenerateTokenAsync(Guid userId, string email, string fullName, Guid tenantId, IList<string> roles)
     {
         var claims = new List<Claim>
         {
+            new(ClaimTypes.NameIdentifier, userId.ToString()),
+            new(ClaimTypes.Email, email),
             new(JwtRegisteredClaimNames.Sub, userId.ToString()),
-
             new(JwtRegisteredClaimNames.Email, email),
-
             new("tenant_id", tenantId.ToString()),
-
             new("full_name", fullName)
         };
 
@@ -42,16 +36,11 @@ public class JwtTokenGenerator : IJwtTokenGenerator
             claims.Add(new Claim(ClaimTypes.Role, role));
         }
 
-        var key = new SymmetricSecurityKey(
-            Encoding.UTF8.GetBytes(_jwtSettings.Key));
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtSettings.Key));
 
-        var credentials = new SigningCredentials(
-            key,
-            SecurityAlgorithms.HmacSha256);
+        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-        var expires =
-            DateTime.UtcNow.AddMinutes(
-                _jwtSettings.ExpiryMinutes);
+        var expires = DateTime.UtcNow.AddMinutes(_jwtSettings.ExpiryMinutes);
 
         var token = new JwtSecurityToken(
             issuer: _jwtSettings.Issuer,
@@ -60,7 +49,6 @@ public class JwtTokenGenerator : IJwtTokenGenerator
             expires: expires,
             signingCredentials: credentials);
 
-        return new JwtSecurityTokenHandler()
-            .WriteToken(token);
+        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }

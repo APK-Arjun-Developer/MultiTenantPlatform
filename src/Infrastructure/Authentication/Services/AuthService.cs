@@ -45,7 +45,7 @@ public class AuthService : IAuthService
 
         var roles = await _userManager.GetRolesAsync(user);
 
-        var token = await _jwtTokenGenerator.GenerateTokenAsync(
+        var token = _jwtTokenGenerator.GenerateTokenAsync(
             user.Id,
             user.Email!,
             user.FullName,
@@ -103,7 +103,7 @@ public class AuthService : IAuthService
 
         var roles = await _userManager.GetRolesAsync(user);
 
-        var token = await _jwtTokenGenerator.GenerateTokenAsync(
+        var token = _jwtTokenGenerator.GenerateTokenAsync(
             user.Id,
             user.Email!,
             user.FullName,
@@ -147,7 +147,7 @@ public class AuthService : IAuthService
 
         var roles = await _userManager.GetRolesAsync(user);
 
-        var accessToken = await _jwtTokenGenerator.GenerateTokenAsync(
+        var accessToken = _jwtTokenGenerator.GenerateTokenAsync(
             user.Id,
             user.Email!,
             user.FullName,

@@ -7,6 +7,7 @@ using Infrastructure.Identity.Seed;
 using Microsoft.AspNetCore.Identity;
 using Infrastructure.Identity.Entities;
 using Microsoft.OpenApi;
+using Api.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -69,6 +70,8 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 app.UseAuthentication();
+
+app.UseMiddleware<TenantMiddleware>();
 
 app.UseAuthorization();
 

@@ -11,6 +11,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using Application.Interfaces.Tenant;
+using Infrastructure.MultiTenancy;
 
 namespace Infrastructure.Identity;
 
@@ -75,6 +77,10 @@ public static class DependencyInjection
         services.AddScoped<IAuthService, AuthService>();
 
         services.AddScoped<IRefreshTokenService, RefreshTokenService>();
+
+        services.AddHttpContextAccessor();
+
+        services.AddScoped<ICurrentTenantService, CurrentTenantService>();
 
         return services;
     }
