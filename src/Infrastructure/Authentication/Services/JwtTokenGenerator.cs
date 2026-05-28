@@ -19,17 +19,29 @@ public class JwtTokenGenerator : IJwtTokenGenerator
         _jwtSettings = jwtSettings.Value;
     }
 
-    public string GenerateTokenAsync(Guid userId, string email, string fullName, Guid tenantId, IList<string> roles)
+    public string GenerateTokenAsync(
+        Guid userId,
+        string email,
+        string fullName,
+        Guid tenantId,
+        Guid? roleId,
+        IList<string> roles)
     {
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, userId.ToString()),
+            new("user_id", userId.ToString()),
             new(ClaimTypes.Email, email),
             new(JwtRegisteredClaimNames.Sub, userId.ToString()),
             new(JwtRegisteredClaimNames.Email, email),
             new("tenant_id", tenantId.ToString()),
             new("full_name", fullName)
         };
+
+        if (roleId.HasValue)
+        {
+            claims.Add(new Claim("role_id", roleId.Value.ToString()));
+        }
 
         foreach (var role in roles)
         {

@@ -1,3 +1,5 @@
+using Api.Attributes;
+using Application.Common;
 using Application.DTOs.Tenant;
 using Application.Interfaces.Tenant;
 using Microsoft.AspNetCore.Authorization;
@@ -7,27 +9,18 @@ namespace Api.Controllers;
 
 [ApiController]
 [Route("api/v1/tenants")]
-[Authorize(Roles = "SuperAdmin")]
+[Authorize]
 public class TenantController : ControllerBase
 {
     private readonly ITenantService _tenantService;
 
-    public TenantController(
-        ITenantService tenantService)
+    public TenantController(ITenantService tenantService)
     {
         _tenantService = tenantService;
     }
 
-    [HttpPost]
-    public async Task<IActionResult> Create(CreateTenantRequest request)
-    {
-        var response = await _tenantService.CreateAsync(
-                request);
-
-        return Ok(response);
-    }
-
     [HttpGet]
+    [HasPermission(PermissionNames.TenantsView)]
     public async Task<IActionResult> GetAll()
     {
         var response = await _tenantService.GetAllAsync();
@@ -35,16 +28,39 @@ public class TenantController : ControllerBase
         return Ok(response);
     }
 
-    [HttpPost("{tenantId}/admin")]
-    public async Task<IActionResult> CreateAdmin(
-        Guid tenantId,
-        CreateTenantAdminRequest request)
+    [HttpGet("current")]
+    [HasPermission(PermissionNames.TenantsView)]
+    public async Task<IActionResult> GetCurrent()
     {
-        await _tenantService.CreateTenantAdminAsync(tenantId, request);
+        var response = await _tenantService.GetCurrentAsync();
 
-        return Ok(new
-        {
-            Message = "Tenant admin created successfully."
-        });
+        return Ok(response);
+    }
+
+    [HttpPost]
+    [HasPermission(PermissionNames.TenantsCreate)]
+    public async Task<IActionResult> Onboard(OnboardTenantRequest request)
+    {
+        var response = await _tenantService.OnboardTenantAsync(request);
+
+        return Ok(response);
+    }
+
+    [HttpPut]
+    [HasPermission(PermissionNames.TenantsEdit)]
+    public async Task<IActionResult> Update(UpdateTenantRequest request)
+    {
+        var response = await _tenantService.UpdateAsync(request);
+
+        return Ok(response);
+    }
+
+    [HttpDelete]
+    [HasPermission(PermissionNames.TenantsDelete)]
+    public async Task<IActionResult> Delete(DeleteTenantRequest request)
+    {
+        await _tenantService.DeleteAsync(request);
+
+        return NoContent();
     }
 }

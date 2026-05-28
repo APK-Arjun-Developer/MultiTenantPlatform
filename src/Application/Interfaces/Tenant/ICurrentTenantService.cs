@@ -6,5 +6,7 @@ public interface ICurrentTenantService
 
     Guid? UserId { get; }
 
+    Guid? RoleId { get; }
+
     string? Email { get; }
 }

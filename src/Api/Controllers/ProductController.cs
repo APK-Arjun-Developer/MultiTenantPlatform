@@ -1,8 +1,9 @@
-using Domain.Entities;
-using Infrastructure.Persistence.Contexts;
+using Api.Attributes;
+using Application.Common;
+using Application.DTOs.Products;
+using Application.Interfaces.Products;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace Api.Controllers;
 
@@ -11,32 +12,55 @@ namespace Api.Controllers;
 [Authorize]
 public class ProductController : ControllerBase
 {
-    private readonly ApplicationDbContext _context;
+    private readonly IProductService _productService;
 
-    public ProductController(ApplicationDbContext context)
+    public ProductController(IProductService productService)
     {
-        _context = context;
-    }
-
-    [HttpPost]
-    public async Task<IActionResult> Create(Product request)
-    {
-        request.Id = Guid.NewGuid();
-
-        request.CreatedAt = DateTime.UtcNow;
-
-        _context.Products.Add(request);
-
-        await _context.SaveChangesAsync();
-
-        return Ok(request);
+        _productService = productService;
     }
 
     [HttpGet]
+    [HasPermission(PermissionNames.ProductsView)]
     public async Task<IActionResult> GetAll()
     {
-        var products = await _context.Products.ToListAsync();
+        var response = await _productService.GetAllAsync();
 
-        return Ok(products);
+        return Ok(response);
+    }
+
+    [HttpGet("by-name")]
+    [HasPermission(PermissionNames.ProductsView)]
+    public async Task<IActionResult> GetByName([FromQuery] string name)
+    {
+        var response = await _productService.GetByNameAsync(name);
+
+        return Ok(response);
+    }
+
+    [HttpPost]
+    [HasPermission(PermissionNames.ProductsCreate)]
+    public async Task<IActionResult> Create(CreateProductRequest request)
+    {
+        var response = await _productService.CreateAsync(request);
+
+        return Ok(response);
+    }
+
+    [HttpPut]
+    [HasPermission(PermissionNames.ProductsEdit)]
+    public async Task<IActionResult> Update(UpdateProductRequest request)
+    {
+        var response = await _productService.UpdateAsync(request);
+
+        return Ok(response);
+    }
+
+    [HttpDelete]
+    [HasPermission(PermissionNames.ProductsDelete)]
+    public async Task<IActionResult> Delete(DeleteProductRequest request)
+    {
+        await _productService.DeleteAsync(request);
+
+        return NoContent();
     }
 }

@@ -11,9 +11,18 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using Application.Interfaces.Authorization;
+using Application.Interfaces.Products;
+using Application.Interfaces.Roles;
 using Application.Interfaces.Tenant;
+using Application.Interfaces.Users;
+using Infrastructure.Products;
+using Infrastructure.Authorization;
 using Infrastructure.MultiTenancy;
+using Infrastructure.Roles;
 using Infrastructure.Tenant;
+using Infrastructure.Users;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Infrastructure.Identity;
 
@@ -42,6 +51,8 @@ public static class DependencyInjection
         services.Configure<JwtSettings>(configuration.GetSection("Jwt"));
 
         var jwtSettings = configuration.GetSection("Jwt").Get<JwtSettings>()!;
+
+        services.AddAuthorization();
 
         services
             .AddAuthentication(options =>
@@ -84,6 +95,18 @@ public static class DependencyInjection
         services.AddScoped<ICurrentTenantService, CurrentTenantService>();
 
         services.AddScoped<ITenantService, TenantService>();
+
+        services.AddScoped<IUserManagementService, UserManagementService>();
+
+        services.AddScoped<IRoleService, RoleService>();
+
+        services.AddScoped<IProductService, ProductService>();
+
+        services.AddScoped<ICurrentUserPermissionService, CurrentUserPermissionService>();
+
+        services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
+
+        services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
 
         return services;
     }

@@ -1,6 +1,6 @@
 using Application.DTOs.Tenant;
 using Application.Interfaces.Tenant;
-using Domain.Entities;
+using Infrastructure.Identity;
 using Infrastructure.Identity.Entities;
 using Infrastructure.Persistence.Contexts;
 using Microsoft.AspNetCore.Identity;
@@ -14,161 +14,299 @@ public class TenantService : ITenantService
 
     private readonly UserManager<ApplicationUser> _userManager;
 
-    private readonly RoleManager<ApplicationRole> _roleManager;
+    private readonly ICurrentTenantService _currentTenantService;
 
     public TenantService(
         ApplicationDbContext context,
         UserManager<ApplicationUser> userManager,
-        RoleManager<ApplicationRole> roleManager)
+        ICurrentTenantService currentTenantService)
     {
         _context = context;
-
         _userManager = userManager;
-
-        _roleManager = roleManager;
-    }
-
-    public async Task<TenantResponse> CreateAsync(
-        CreateTenantRequest request)
-    {
-        var existingTenant =
-            await _context.Tenants
-                .IgnoreQueryFilters()
-                .FirstOrDefaultAsync(x =>
-                    x.Slug == request.Slug);
-
-        if (existingTenant != null)
-        {
-            throw new Exception(
-                "Tenant slug already exists.");
-        }
-
-        var tenant = new Domain.Entities.Tenant
-        {
-            Id = Guid.NewGuid(),
-
-            TenantId = Guid.Empty,
-
-            Name = request.Name,
-
-            Slug = request.Slug,
-
-            IsActive = true,
-
-            CreatedAt = DateTime.UtcNow
-        };
-
-        _context.Tenants.Add(tenant);
-
-        await _context.SaveChangesAsync();
-
-        return new TenantResponse
-        {
-            Id = tenant.Id,
-
-            Name = tenant.Name,
-
-            Slug = tenant.Slug,
-
-            IsActive = tenant.IsActive
-        };
+        _currentTenantService = currentTenantService;
     }
 
     public async Task<List<TenantResponse>> GetAllAsync()
     {
+        if (IsSystemAdmin())
+        {
+            return await _context.Tenants
+                .IgnoreQueryFilters()
+                .OrderBy(t => t.Name)
+                .Select(x => new TenantResponse
+                {
+                    Id = x.Id,
+                    Name = x.Name,
+                    Slug = x.Slug,
+                    IsActive = x.IsActive
+                })
+                .ToListAsync();
+        }
+
+        var tenantId = RequireTenantId();
+
         return await _context.Tenants
             .IgnoreQueryFilters()
+            .Where(t => t.Id == tenantId)
             .Select(x => new TenantResponse
             {
                 Id = x.Id,
-
                 Name = x.Name,
-
                 Slug = x.Slug,
-
                 IsActive = x.IsActive
             })
             .ToListAsync();
     }
 
-    public async Task CreateTenantAdminAsync(
-        Guid tenantId,
-        CreateTenantAdminRequest request)
+    public async Task<TenantResponse> GetCurrentAsync()
     {
-        var tenant =
-            await _context.Tenants
-                .IgnoreQueryFilters()
-                .FirstOrDefaultAsync(x =>
-                    x.Id == tenantId);
+        if (IsSystemAdmin())
+        {
+            throw new InvalidOperationException(
+                "Use GET /api/v1/tenants for system admin tenant listing.");
+        }
+
+        var tenantId = RequireTenantId();
+
+        var tenant = await _context.Tenants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == tenantId);
 
         if (tenant == null)
         {
-            throw new Exception("Tenant not found.");
+            throw new InvalidOperationException("Tenant not found.");
         }
 
-        const string roleName = "TenantAdmin";
+        return MapToResponse(tenant);
+    }
 
-        if (!await _roleManager.RoleExistsAsync(roleName))
+    public async Task<TenantResponse> UpdateAsync(UpdateTenantRequest request)
+    {
+        Domain.Entities.Tenant tenant;
+
+        if (IsSystemAdmin())
         {
-            await _roleManager.CreateAsync(
-                new ApplicationRole
+            if (string.IsNullOrWhiteSpace(request.Slug))
+            {
+                throw new InvalidOperationException(
+                    "Slug is required when updating a tenant as system admin.");
+            }
+
+            tenant = await _context.Tenants
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(t => t.Slug == request.Slug)
+                ?? throw new InvalidOperationException("Tenant not found.");
+        }
+        else
+        {
+            var tenantId = RequireTenantId();
+
+            tenant = await _context.Tenants
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(t => t.Id == tenantId)
+                ?? throw new InvalidOperationException("Tenant not found.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.NewSlug) &&
+            request.NewSlug != tenant.Slug)
+        {
+            var slugTaken = await _context.Tenants
+                .IgnoreQueryFilters()
+                .AnyAsync(t => t.Slug == request.NewSlug && t.Id != tenant.Id);
+
+            if (slugTaken)
+            {
+                throw new InvalidOperationException("Tenant slug already exists.");
+            }
+
+            tenant.Slug = request.NewSlug;
+        }
+
+        tenant.Name = request.Name;
+        tenant.IsActive = request.IsActive;
+        tenant.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+
+        return MapToResponse(tenant);
+    }
+
+    public async Task DeleteAsync(DeleteTenantRequest request)
+    {
+        if (!IsSystemAdmin())
+        {
+            throw new InvalidOperationException(
+                "Only system admin can delete tenants.");
+        }
+
+        var tenant = await _context.Tenants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Slug == request.Slug);
+
+        if (tenant == null)
+        {
+            throw new InvalidOperationException("Tenant not found.");
+        }
+
+        var hasUsers = await _userManager.Users
+            .AnyAsync(u => u.TenantId == tenant.Id);
+
+        if (hasUsers)
+        {
+            throw new InvalidOperationException(
+                "Cannot delete a tenant that still has users.");
+        }
+
+        _context.Tenants.Remove(tenant);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task<OnboardTenantResponse> OnboardTenantAsync(
+        OnboardTenantRequest request)
+    {
+        var slugExists = await _context.Tenants
+            .IgnoreQueryFilters()
+            .AnyAsync(t => t.Slug == request.Tenant.Slug);
+
+        if (slugExists)
+        {
+            throw new InvalidOperationException("Tenant slug already exists.");
+        }
+
+        if (request.Roles.Count == 0)
+        {
+            throw new InvalidOperationException("At least one role is required.");
+        }
+
+        await using var transaction =
+            await _context.Database.BeginTransactionAsync();
+
+        try
+        {
+            var tenant = new Domain.Entities.Tenant
+            {
+                Id = Guid.NewGuid(),
+                TenantId = Guid.Empty,
+                Name = request.Tenant.Name,
+                Slug = request.Tenant.Slug,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _context.Tenants.Add(tenant);
+            await _context.SaveChangesAsync();
+
+            var createdRoles = new List<CreatedRoleSummary>();
+
+            foreach (var roleDetails in request.Roles)
+            {
+                if (roleDetails.Name == Application.Common.RoleNames.SuperAdmin)
                 {
-                    Id = Guid.NewGuid(),
+                    throw new InvalidOperationException(
+                        "Cannot create the SuperAdmin role for a tenant.");
+                }
 
-                    Name = roleName,
+                var exists = await IdentityRoleHelper.RoleExistsAsync(
+                    _context,
+                    tenant.Id,
+                    roleDetails.Name);
 
-                    NormalizedName =
-                        roleName.ToUpper(),
+                if (exists)
+                {
+                    throw new InvalidOperationException(
+                        $"Role '{roleDetails.Name}' already exists for this tenant.");
+                }
 
-                    TenantId = tenantId,
+                var role = await IdentityRoleHelper.CreateRoleAsync(
+                    _context,
+                    tenant.Id,
+                    roleDetails.Name,
+                    roleDetails.Description);
 
-                    Description =
-                        "Tenant Administrator"
+                await IdentityRoleHelper.AssignPermissionsToRoleByIdsAsync(
+                    _context,
+                    role.Id,
+                    roleDetails.Permissions);
+
+                createdRoles.Add(new CreatedRoleSummary
+                {
+                    Id = role.Id,
+                    Name = role.Name!
                 });
+            }
+
+            await _context.SaveChangesAsync();
+
+            var adminUser = new ApplicationUser
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenant.Id,
+                FullName = request.User.FullName,
+                Email = request.User.Email,
+                UserName = request.User.Email,
+                NormalizedEmail = request.User.Email.ToUpperInvariant(),
+                NormalizedUserName = request.User.Email.ToUpperInvariant(),
+                EmailConfirmed = true,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            var createResult = await _userManager.CreateAsync(
+                adminUser,
+                request.User.Password);
+
+            if (!createResult.Succeeded)
+            {
+                throw new InvalidOperationException(
+                    string.Join(", ",
+                        createResult.Errors.Select(e => e.Description)));
+            }
+
+            await IdentityRoleHelper.AddUserToRoleAsync(
+                _context,
+                adminUser.Id,
+                createdRoles[0].Id);
+
+            await transaction.CommitAsync();
+
+            return new OnboardTenantResponse
+            {
+                TenantId = tenant.Id,
+                Name = tenant.Name,
+                Slug = tenant.Slug,
+                AdminUserId = adminUser.Id,
+                AdminEmail = adminUser.Email!,
+                Roles = createdRoles
+            };
         }
-
-        var existingUser =
-            await _userManager.FindByEmailAsync(
-                request.Email);
-
-        if (existingUser != null)
+        catch
         {
-            throw new Exception(
-                "User already exists.");
+            await transaction.RollbackAsync();
+            throw;
         }
+    }
 
-        var user = new ApplicationUser
+    private static TenantResponse MapToResponse(Domain.Entities.Tenant tenant) =>
+        new()
         {
-            Id = Guid.NewGuid(),
-
-            TenantId = tenantId,
-
-            FullName = request.FullName,
-
-            Email = request.Email,
-
-            UserName = request.Email,
-
-            EmailConfirmed = true,
-
-            CreatedAt = DateTime.UtcNow
+            Id = tenant.Id,
+            Name = tenant.Name,
+            Slug = tenant.Slug,
+            IsActive = tenant.IsActive
         };
 
-        var result =
-            await _userManager.CreateAsync(
-                user,
-                request.Password);
+    private bool IsSystemAdmin() =>
+        (_currentTenantService.TenantId ?? Guid.Empty) == Guid.Empty;
 
-        if (!result.Succeeded)
+    private Guid RequireTenantId()
+    {
+        var tenantId = _currentTenantService.TenantId ?? Guid.Empty;
+
+        if (tenantId == Guid.Empty)
         {
-            throw new Exception(
-                string.Join(", ",
-                    result.Errors
-                        .Select(x => x.Description)));
+            throw new InvalidOperationException(
+                "Tenant context is required. Ensure tenant_id is present in the JWT.");
         }
 
-        await _userManager.AddToRoleAsync(
-            user,
-            roleName);
+        return tenantId;
     }
 }

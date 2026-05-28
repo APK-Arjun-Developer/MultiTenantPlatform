@@ -10,6 +10,8 @@ public class CurrentTenantService : ICurrentTenantService
 
     public Guid? UserId { get; }
 
+    public Guid? RoleId { get; }
+
     public string? Email { get; }
 
     public CurrentTenantService(IHttpContextAccessor httpContextAccessor)
@@ -28,11 +30,20 @@ public class CurrentTenantService : ICurrentTenantService
             TenantId = tenantId;
         }
 
-        var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var userIdClaim =
+            user.FindFirst("user_id")?.Value ??
+            user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
         if (Guid.TryParse(userIdClaim, out var userId))
         {
             UserId = userId;
+        }
+
+        var roleIdClaim = user.FindFirst("role_id")?.Value;
+
+        if (Guid.TryParse(roleIdClaim, out var roleId))
+        {
+            RoleId = roleId;
         }
 
         Email = user.FindFirst(ClaimTypes.Email)?.Value;

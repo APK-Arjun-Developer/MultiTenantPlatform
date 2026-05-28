@@ -29,9 +29,19 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Applicati
 
     public DbSet<Product> Products => Set<Product>();
 
+    public DbSet<Permission> Permissions => Set<Permission>();
+
+    public DbSet<RolePermission> RolePermissions => Set<RolePermission>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        builder.Entity<ApplicationRole>()
+            .HasIndex(r => r.NormalizedName)
+            .HasDatabaseName("RoleNameIndex")
+            .IsUnique(false);
+
         ApplyTenantQueryFilters(builder);
 
         builder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);

@@ -1,5 +1,9 @@
+using Application.Common;
+using Domain.Entities;
 using Infrastructure.Identity.Entities;
+using Infrastructure.Persistence.Contexts;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Identity.Seed;
 
@@ -7,38 +11,51 @@ public static class IdentitySeeder
 {
     public static async Task SeedAsync(
         RoleManager<ApplicationRole> roleManager,
-        UserManager<ApplicationUser> userManager)
+        UserManager<ApplicationUser> userManager,
+        ApplicationDbContext context)
     {
-        const string adminRole = "SuperAdmin";
+        const string adminRole = RoleNames.SuperAdmin;
+        var platformTenantId = Guid.Empty;
 
-        if (!await roleManager.RoleExistsAsync(adminRole))
+        var superAdminRole = await IdentityRoleHelper.FindRoleByNameAsync(
+            roleManager,
+            platformTenantId,
+            adminRole);
+
+        if (superAdminRole == null)
         {
-            await roleManager.CreateAsync(new ApplicationRole
-            {
-                Id = Guid.NewGuid(),
-                Name = adminRole,
-                NormalizedName = adminRole.ToUpper(),
-                Description = "System Super Administrator",
-                TenantId = Guid.Empty
-            });
+            superAdminRole = await IdentityRoleHelper.CreateRoleAsync(
+                context,
+                platformTenantId,
+                adminRole,
+                "System Super Administrator");
         }
+
+        await IdentityRoleHelper.AssignPermissionsToRoleAsync(
+            context,
+            superAdminRole.Id,
+            PermissionNames.All);
+
+        await context.SaveChangesAsync();
 
         const string adminEmail = "admin@system.com";
 
-        var existingUser =
-            await userManager.FindByEmailAsync(adminEmail);
+        var existingUser = await userManager.Users
+            .FirstOrDefaultAsync(u =>
+                u.NormalizedEmail == adminEmail.ToUpperInvariant() &&
+                u.TenantId == platformTenantId);
 
         if (existingUser == null)
         {
             var user = new ApplicationUser
             {
                 Id = Guid.NewGuid(),
-                TenantId = Guid.Empty,
+                TenantId = platformTenantId,
                 FullName = "System Administrator",
                 UserName = adminEmail,
                 Email = adminEmail,
-                NormalizedEmail = adminEmail.ToUpper(),
-                NormalizedUserName = adminEmail.ToUpper(),
+                NormalizedEmail = adminEmail.ToUpperInvariant(),
+                NormalizedUserName = adminEmail.ToUpperInvariant(),
                 EmailConfirmed = true,
                 CreatedAt = DateTime.UtcNow
             };
@@ -49,9 +66,10 @@ public static class IdentitySeeder
 
             if (result.Succeeded)
             {
-                await userManager.AddToRoleAsync(
-                    user,
-                    adminRole);
+                await IdentityRoleHelper.AddUserToRoleAsync(
+                    context,
+                    user.Id,
+                    superAdminRole.Id);
             }
         }
     }

@@ -8,6 +8,8 @@ using Microsoft.AspNetCore.Identity;
 using Infrastructure.Identity.Entities;
 using Microsoft.OpenApi;
 using Api.Middleware;
+using FluentValidation;
+using FluentValidation.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,6 +26,10 @@ builder.Services.AddPersistence(builder.Configuration);
 builder.Services.AddIdentityInfrastructure(builder.Configuration);
 
 builder.Services.AddControllers();
+
+builder.Services.AddFluentValidationAutoValidation();
+
+builder.Services.AddValidatorsFromAssemblyContaining<Application.Validators.OnboardTenantRequestValidator>();
 
 builder.Services.AddEndpointsApiExplorer();
 
@@ -85,11 +91,13 @@ using (var scope = app.Services.CreateScope())
 
     await DbSeeder.SeedAsync(dbContext);
 
+    await PermissionSeeder.SeedAsync(dbContext);
+
     var roleManager = services.GetRequiredService<RoleManager<ApplicationRole>>();
 
     var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
 
-    await IdentitySeeder.SeedAsync(roleManager, userManager);
+    await IdentitySeeder.SeedAsync(roleManager, userManager, dbContext);
 }
 
 app.Run();
