@@ -10,7 +10,7 @@ namespace Api.Controllers;
 [ApiController]
 [Route("api/v1/tenants")]
 [Authorize]
-public class TenantController : ControllerBase
+public class TenantController : ApiControllerBase
 {
     private readonly ITenantService _tenantService;
 
@@ -25,7 +25,7 @@ public class TenantController : ControllerBase
     {
         var response = await _tenantService.GetAllAsync();
 
-        return Ok(response);
+        return OkEnvelope(response, "Tenants retrieved.");
     }
 
     [HttpGet("current")]
@@ -34,7 +34,7 @@ public class TenantController : ControllerBase
     {
         var response = await _tenantService.GetCurrentAsync();
 
-        return Ok(response);
+        return OkEnvelope(response, "Current tenant retrieved.");
     }
 
     [HttpPost]
@@ -43,7 +43,7 @@ public class TenantController : ControllerBase
     {
         var response = await _tenantService.OnboardTenantAsync(request);
 
-        return Ok(response);
+        return OkEnvelope(response, "Tenant onboarded.");
     }
 
     [HttpPut]
@@ -52,7 +52,7 @@ public class TenantController : ControllerBase
     {
         var response = await _tenantService.UpdateAsync(request);
 
-        return Ok(response);
+        return OkEnvelope(response, "Tenant updated.");
     }
 
     [HttpDelete]
@@ -61,6 +61,6 @@ public class TenantController : ControllerBase
     {
         await _tenantService.DeleteAsync(request);
 
-        return NoContent();
+        return OkEnvelope("Tenant deleted.");
     }
 }

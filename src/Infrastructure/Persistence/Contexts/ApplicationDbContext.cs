@@ -42,56 +42,132 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Applicati
             .HasDatabaseName("RoleNameIndex")
             .IsUnique(false);
 
-        ApplyTenantQueryFilters(builder);
+        ApplyGlobalQueryFilters(builder);
 
         builder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
     }
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        var entries = ChangeTracker.Entries<ITenantEntity>();
-
-        foreach (var entry in entries)
-        {
-            if (entry.State == EntityState.Added)
-            {
-                if (_currentTenantService.TenantId.HasValue)
-                {
-                    entry.Entity.TenantId = _currentTenantService.TenantId.Value;
-                }
-            }
-        }
+        ApplyTenantStamps();
+        ApplyAuditStamps();
 
         return await base.SaveChangesAsync(cancellationToken);
     }
-    private void ApplyTenantQueryFilters(ModelBuilder builder)
+
+    private void ApplyTenantStamps()
     {
-        foreach (var entityType in builder.Model.GetEntityTypes())
+        foreach (var entry in ChangeTracker.Entries<ITenantEntity>())
         {
-            if (typeof(ITenantEntity)
-                .IsAssignableFrom(entityType.ClrType))
+            if (entry.State == EntityState.Added
+                && _currentTenantService.TenantId.HasValue)
             {
-                var method = typeof(ApplicationDbContext)
-                    .GetMethod(
-                        nameof(GetTenantFilter),
-                        BindingFlags.NonPublic |
-                        BindingFlags.Instance)!
-                    .MakeGenericMethod(entityType.ClrType);
-
-                var filter = method.Invoke(this, Array.Empty<object>());
-
-                builder.Entity(entityType.ClrType)
-                    .HasQueryFilter((LambdaExpression)filter!);
+                entry.Entity.TenantId = _currentTenantService.TenantId.Value;
             }
         }
     }
 
-    private LambdaExpression GetTenantFilter<TEntity>() where TEntity : class, ITenantEntity
+    private void ApplyAuditStamps()
     {
-        return (Expression<Func<TEntity, bool>>)
-            (e =>
-                !_currentTenantService.TenantId.HasValue ||
-                e.TenantId ==
-                _currentTenantService.TenantId);
+        var userId = _currentTenantService.UserId;
+        var utcNow = DateTime.UtcNow;
+
+        foreach (var entry in ChangeTracker.Entries<IAuditableEntity>())
+        {
+            switch (entry.State)
+            {
+                case EntityState.Added:
+                    if (entry.Entity.CreatedAt == default)
+                    {
+                        entry.Entity.CreatedAt = utcNow;
+                    }
+
+                    if (userId.HasValue)
+                    {
+                        entry.Entity.CreatedBy = userId;
+                    }
+
+                    break;
+
+                case EntityState.Modified:
+                    if (entry.Entity.DeletedAt.HasValue)
+                    {
+                        if (!entry.Entity.DeletedBy.HasValue && userId.HasValue)
+                        {
+                            entry.Entity.DeletedBy = userId;
+                        }
+                    }
+                    else
+                    {
+                        entry.Entity.UpdatedAt = utcNow;
+
+                        if (userId.HasValue)
+                        {
+                            entry.Entity.UpdatedBy = userId;
+                        }
+                    }
+
+                    break;
+            }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<ApplicationUser>())
+        {
+            switch (entry.State)
+            {
+                case EntityState.Added:
+                    if (entry.Entity.CreatedAt == default)
+                    {
+                        entry.Entity.CreatedAt = utcNow;
+                    }
+
+                    break;
+
+                case EntityState.Modified:
+                    if (!entry.Entity.DeletedAt.HasValue)
+                    {
+                        entry.Entity.UpdatedAt = utcNow;
+                    }
+
+                    break;
+            }
+        }
+    }
+    private void ApplyGlobalQueryFilters(ModelBuilder builder)
+    {
+        foreach (var entityType in builder.Model.GetEntityTypes())
+        {
+            var clrType = entityType.ClrType;
+
+            if (typeof(ITenantEntity).IsAssignableFrom(clrType)
+                && typeof(IAuditableEntity).IsAssignableFrom(clrType))
+            {
+                var method = typeof(ApplicationDbContext)
+                    .GetMethod(
+                        nameof(GetTenantAndSoftDeleteFilter),
+                        BindingFlags.NonPublic | BindingFlags.Instance)!
+                    .MakeGenericMethod(clrType);
+
+                var filter = method.Invoke(this, Array.Empty<object>());
+
+                builder.Entity(clrType)
+                    .HasQueryFilter((LambdaExpression)filter!);
+            }
+        }
+
+        builder.Entity<ApplicationUser>()
+            .HasQueryFilter(u => u.DeletedAt == null);
+
+        builder.Entity<ApplicationRole>()
+            .HasQueryFilter(r => r.DeletedAt == null);
+    }
+
+    private LambdaExpression GetTenantAndSoftDeleteFilter<TEntity>()
+        where TEntity : class, ITenantEntity, IAuditableEntity
+    {
+        return (Expression<Func<TEntity, bool>>)(e =>
+            (!_currentTenantService.TenantId.HasValue
+             || e.TenantId == _currentTenantService.TenantId)
+            && e.DeletedAt == null);
     }
 }

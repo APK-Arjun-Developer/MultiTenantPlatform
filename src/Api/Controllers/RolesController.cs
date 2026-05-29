@@ -10,7 +10,7 @@ namespace Api.Controllers;
 [ApiController]
 [Route("api/v1/roles")]
 [Authorize]
-public class RolesController : ControllerBase
+public class RolesController : ApiControllerBase
 {
     private readonly IRoleService _roleService;
 
@@ -25,7 +25,7 @@ public class RolesController : ControllerBase
     {
         var response = await _roleService.GetRolesAsync();
 
-        return Ok(response);
+        return OkEnvelope(response, "Roles retrieved.");
     }
 
     [HttpGet("current")]
@@ -34,7 +34,7 @@ public class RolesController : ControllerBase
     {
         var response = await _roleService.GetCurrentRoleAsync();
 
-        return Ok(response);
+        return OkEnvelope(response, "Current role retrieved.");
     }
 
     [HttpPost]
@@ -43,7 +43,7 @@ public class RolesController : ControllerBase
     {
         var response = await _roleService.CreateRoleAsync(request);
 
-        return Ok(response);
+        return OkEnvelope(response, "Role created.");
     }
 
     [HttpPut]
@@ -52,7 +52,7 @@ public class RolesController : ControllerBase
     {
         var response = await _roleService.UpdateRoleAsync(request);
 
-        return Ok(response);
+        return OkEnvelope(response, "Role updated.");
     }
 
     [HttpDelete]
@@ -61,6 +61,6 @@ public class RolesController : ControllerBase
     {
         await _roleService.DeleteRoleAsync(request);
 
-        return NoContent();
+        return OkEnvelope("Role deleted.");
     }
 }

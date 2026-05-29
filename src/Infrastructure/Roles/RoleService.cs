@@ -147,13 +147,14 @@ public class RoleService : IRoleService
                 "Cannot delete a role that is assigned to users.");
         }
 
-        var rolePermissions = await _context.RolePermissions
-            .Where(rp => rp.RoleId == role.Id)
-            .ToListAsync();
+        role.DeletedAt = DateTime.UtcNow;
+        var result = await _roleManager.UpdateAsync(role);
 
-        _context.RolePermissions.RemoveRange(rolePermissions);
-        _context.Roles.Remove(role);
-        await _context.SaveChangesAsync();
+        if (!result.Succeeded)
+        {
+            throw new InvalidOperationException(
+                string.Join(", ", result.Errors.Select(e => e.Description)));
+        }
     }
 
     private Guid RequireTenantId()

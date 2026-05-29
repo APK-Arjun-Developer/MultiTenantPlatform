@@ -7,9 +7,11 @@ using Infrastructure.Identity.Seed;
 using Microsoft.AspNetCore.Identity;
 using Infrastructure.Identity.Entities;
 using Microsoft.OpenApi;
+using Api.Contracts;
 using Api.Middleware;
 using FluentValidation;
 using FluentValidation.AspNetCore;
+using Microsoft.AspNetCore.Mvc;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,7 +27,18 @@ builder.Services.AddPersistence(builder.Configuration);
 
 builder.Services.AddIdentityInfrastructure(builder.Configuration);
 
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .ConfigureApiBehaviorOptions(options =>
+    {
+        options.InvalidModelStateResponseFactory = context =>
+        {
+            var envelope = ApiEnvelopeFactory.ValidationError(
+                ApiEnvelopeFactory.FromModelState(context.ModelState),
+                context.HttpContext.TraceIdentifier);
+
+            return new BadRequestObjectResult(envelope);
+        };
+    });
 
 builder.Services.AddFluentValidationAutoValidation();
 
@@ -74,6 +87,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 app.UseAuthentication();
 

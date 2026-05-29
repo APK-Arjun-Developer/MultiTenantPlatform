@@ -17,11 +17,7 @@ public class TenantMiddleware
 
             if (string.IsNullOrWhiteSpace(tenantId))
             {
-                context.Response.StatusCode = 401;
-
-                await context.Response.WriteAsync("Tenant claim missing.");
-
-                return;
+                throw new UnauthorizedAccessException("Tenant claim missing.");
             }
         }
 

@@ -132,7 +132,7 @@ public class UserManagementService : IUserManagementService
 
             tenantsById = await _context.Tenants
                 .IgnoreQueryFilters()
-                .Where(t => tenantIds.Contains(t.Id))
+                .Where(t => tenantIds.Contains(t.Id) && t.DeletedAt == null)
                 .ToDictionaryAsync(t => t.Id);
         }
 
@@ -172,7 +172,7 @@ public class UserManagementService : IUserManagementService
         {
             var tenant = await _context.Tenants
                 .IgnoreQueryFilters()
-                .FirstOrDefaultAsync(t => t.Id == user.TenantId);
+                .FirstOrDefaultAsync(t => t.Id == user.TenantId && t.DeletedAt == null);
 
             if (tenant != null)
             {
@@ -189,7 +189,7 @@ public class UserManagementService : IUserManagementService
         {
             var tenant = await _context.Tenants
                 .IgnoreQueryFilters()
-                .FirstOrDefaultAsync(t => t.Id == user.TenantId);
+                .FirstOrDefaultAsync(t => t.Id == user.TenantId && t.DeletedAt == null);
 
             if (tenant != null)
             {
@@ -291,7 +291,9 @@ public class UserManagementService : IUserManagementService
             throw new InvalidOperationException("You cannot delete your own account.");
         }
 
-        var result = await _userManager.DeleteAsync(user);
+        user.DeletedAt = DateTime.UtcNow;
+
+        var result = await _userManager.UpdateAsync(user);
 
         if (!result.Succeeded)
         {

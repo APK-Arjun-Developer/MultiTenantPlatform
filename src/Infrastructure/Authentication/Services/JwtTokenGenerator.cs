@@ -52,7 +52,7 @@ public class JwtTokenGenerator : IJwtTokenGenerator
 
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-        var expires = DateTime.UtcNow.AddMinutes(_jwtSettings.ExpiryMinutes);
+        var expires = ComputeAccessTokenExpiryUtc();
 
         var token = new JwtSecurityToken(
             issuer: _jwtSettings.Issuer,
@@ -63,4 +63,7 @@ public class JwtTokenGenerator : IJwtTokenGenerator
 
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
+
+    public DateTime ComputeAccessTokenExpiryUtc() =>
+        DateTime.UtcNow.AddMinutes(_jwtSettings.ExpiryMinutes);
 }

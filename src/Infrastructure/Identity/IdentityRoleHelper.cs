@@ -42,12 +42,19 @@ public static class IdentityRoleHelper
         string? description = null)
     {
         var existing = await context.Roles
+            .IgnoreQueryFilters()
             .FirstOrDefaultAsync(r =>
                 r.TenantId == tenantId &&
                 r.Name == roleName);
 
         if (existing != null)
         {
+            if (existing.DeletedAt != null)
+            {
+                existing.DeletedAt = null;
+                existing.Description = description;
+            }
+
             return existing;
         }
 

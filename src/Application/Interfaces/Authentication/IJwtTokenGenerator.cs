@@ -9,4 +9,6 @@ public interface IJwtTokenGenerator
         Guid tenantId,
         Guid? roleId,
         IList<string> roles);
+
+    DateTime ComputeAccessTokenExpiryUtc();
 }

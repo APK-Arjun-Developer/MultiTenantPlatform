@@ -10,7 +10,7 @@ namespace Api.Controllers;
 [ApiController]
 [Route("api/v1/users")]
 [Authorize]
-public class UsersController : ControllerBase
+public class UsersController : ApiControllerBase
 {
     private readonly IUserManagementService _userManagementService;
 
@@ -25,7 +25,7 @@ public class UsersController : ControllerBase
     {
         var response = await _userManagementService.GetUsersAsync();
 
-        return Ok(response);
+        return OkEnvelope(response, "Users retrieved.");
     }
 
     [HttpGet("current")]
@@ -34,7 +34,7 @@ public class UsersController : ControllerBase
     {
         var response = await _userManagementService.GetCurrentUserAsync();
 
-        return Ok(response);
+        return OkEnvelope(response, "Current user retrieved.");
     }
 
     [HttpPost]
@@ -43,7 +43,7 @@ public class UsersController : ControllerBase
     {
         var response = await _userManagementService.CreateUserAsync(request);
 
-        return Ok(response);
+        return OkEnvelope(response, "User created.");
     }
 
     [HttpPut]
@@ -52,7 +52,7 @@ public class UsersController : ControllerBase
     {
         var response = await _userManagementService.UpdateUserAsync(request);
 
-        return Ok(response);
+        return OkEnvelope(response, "User updated.");
     }
 
     [HttpDelete]
@@ -61,6 +61,6 @@ public class UsersController : ControllerBase
     {
         await _userManagementService.DeleteUserAsync(request);
 
-        return NoContent();
+        return OkEnvelope("User deleted.");
     }
 }

@@ -6,7 +6,7 @@ namespace Api.Controllers;
 
 [ApiController]
 [Route("api/v1/auth")]
-public class AuthController : ControllerBase
+public class AuthController : ApiControllerBase
 {
     private readonly IAuthService _authService;
 
@@ -21,7 +21,7 @@ public class AuthController : ControllerBase
     {
         var response = await _authService.LoginAsync(request, GetIpAddress());
 
-        return Ok(response);
+        return OkEnvelope(response, "Login successful.");
     }
 
     [HttpPost("refresh")]
@@ -29,7 +29,7 @@ public class AuthController : ControllerBase
     {
         var response = await _authService.RefreshTokenAsync(request, GetIpAddress());
 
-        return Ok(response);
+        return OkEnvelope(response, "Token refreshed.");
     }
 
     [HttpPost("logout")]
@@ -37,7 +37,7 @@ public class AuthController : ControllerBase
     {
         await _authService.LogoutAsync(request, GetIpAddress());
 
-        return Ok();
+        return OkEnvelope("Logged out.");
     }
 
     private string GetIpAddress()

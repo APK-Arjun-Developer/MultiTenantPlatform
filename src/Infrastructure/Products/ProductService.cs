@@ -2,6 +2,7 @@ using Application.DTOs.Products;
 using Application.Interfaces.Products;
 using Application.Interfaces.Tenant;
 using Domain.Entities;
+using Infrastructure.Persistence;
 using Infrastructure.Persistence.Contexts;
 using Microsoft.EntityFrameworkCore;
 
@@ -110,7 +111,7 @@ public class ProductService : IProductService
             throw new InvalidOperationException("Product not found.");
         }
 
-        _context.Products.Remove(product);
+        product.MarkDeleted();
         await _context.SaveChangesAsync();
     }
 

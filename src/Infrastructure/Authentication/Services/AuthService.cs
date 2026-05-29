@@ -68,7 +68,7 @@ public class AuthService : IAuthService
         {
             AccessToken = token,
             RefreshToken = refreshToken.Token,
-            ExpiresAt = DateTime.UtcNow.AddMinutes(60),
+            ExpiresAt = _jwtTokenGenerator.ComputeAccessTokenExpiryUtc(),
             Email = user.Email!,
             FullName = user.FullName
         };
@@ -109,7 +109,7 @@ public class AuthService : IAuthService
         {
             AccessToken = accessToken,
             RefreshToken = newRefreshToken.Token,
-            ExpiresAt = DateTime.UtcNow.AddMinutes(60),
+            ExpiresAt = _jwtTokenGenerator.ComputeAccessTokenExpiryUtc(),
             Email = user.Email!,
             FullName = user.FullName
         };
@@ -141,7 +141,10 @@ public class AuthService : IAuthService
 
         var tenant = await _context.Tenants
             .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(t => t.Slug == request.TenantSlug);
+            .FirstOrDefaultAsync(t =>
+                t.Slug == request.TenantSlug
+                && t.DeletedAt == null
+                && t.IsActive);
 
         if (tenant == null)
         {

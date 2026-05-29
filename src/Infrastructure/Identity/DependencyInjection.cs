@@ -12,10 +12,12 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Application.Interfaces.Authorization;
+using Application.Interfaces.Permissions;
 using Application.Interfaces.Products;
 using Application.Interfaces.Roles;
 using Application.Interfaces.Tenant;
 using Application.Interfaces.Users;
+using Infrastructure.Permissions;
 using Infrastructure.Products;
 using Infrastructure.Authorization;
 using Infrastructure.MultiTenancy;
@@ -99,6 +101,8 @@ public static class DependencyInjection
         services.AddScoped<IUserManagementService, UserManagementService>();
 
         services.AddScoped<IRoleService, RoleService>();
+
+        services.AddScoped<IPermissionService, PermissionService>();
 
         services.AddScoped<IProductService, ProductService>();
 

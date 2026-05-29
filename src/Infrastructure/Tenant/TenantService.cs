@@ -2,6 +2,7 @@ using Application.DTOs.Tenant;
 using Application.Interfaces.Tenant;
 using Infrastructure.Identity;
 using Infrastructure.Identity.Entities;
+using Infrastructure.Persistence;
 using Infrastructure.Persistence.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -32,6 +33,7 @@ public class TenantService : ITenantService
         {
             return await _context.Tenants
                 .IgnoreQueryFilters()
+                .Where(t => t.DeletedAt == null)
                 .OrderBy(t => t.Name)
                 .Select(x => new TenantResponse
                 {
@@ -47,7 +49,7 @@ public class TenantService : ITenantService
 
         return await _context.Tenants
             .IgnoreQueryFilters()
-            .Where(t => t.Id == tenantId)
+            .Where(t => t.Id == tenantId && t.DeletedAt == null)
             .Select(x => new TenantResponse
             {
                 Id = x.Id,
@@ -70,7 +72,7 @@ public class TenantService : ITenantService
 
         var tenant = await _context.Tenants
             .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(t => t.Id == tenantId);
+            .FirstOrDefaultAsync(t => t.Id == tenantId && t.DeletedAt == null);
 
         if (tenant == null)
         {
@@ -94,7 +96,7 @@ public class TenantService : ITenantService
 
             tenant = await _context.Tenants
                 .IgnoreQueryFilters()
-                .FirstOrDefaultAsync(t => t.Slug == request.Slug)
+                .FirstOrDefaultAsync(t => t.Slug == request.Slug && t.DeletedAt == null)
                 ?? throw new InvalidOperationException("Tenant not found.");
         }
         else
@@ -103,7 +105,7 @@ public class TenantService : ITenantService
 
             tenant = await _context.Tenants
                 .IgnoreQueryFilters()
-                .FirstOrDefaultAsync(t => t.Id == tenantId)
+                .FirstOrDefaultAsync(t => t.Id == tenantId && t.DeletedAt == null)
                 ?? throw new InvalidOperationException("Tenant not found.");
         }
 
@@ -112,7 +114,10 @@ public class TenantService : ITenantService
         {
             var slugTaken = await _context.Tenants
                 .IgnoreQueryFilters()
-                .AnyAsync(t => t.Slug == request.NewSlug && t.Id != tenant.Id);
+                .AnyAsync(t =>
+                    t.Slug == request.NewSlug
+                    && t.Id != tenant.Id
+                    && t.DeletedAt == null);
 
             if (slugTaken)
             {
@@ -141,7 +146,7 @@ public class TenantService : ITenantService
 
         var tenant = await _context.Tenants
             .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(t => t.Slug == request.Slug);
+            .FirstOrDefaultAsync(t => t.Slug == request.Slug && t.DeletedAt == null);
 
         if (tenant == null)
         {
@@ -157,7 +162,7 @@ public class TenantService : ITenantService
                 "Cannot delete a tenant that still has users.");
         }
 
-        _context.Tenants.Remove(tenant);
+        tenant.MarkDeleted();
         await _context.SaveChangesAsync();
     }
 
@@ -166,7 +171,7 @@ public class TenantService : ITenantService
     {
         var slugExists = await _context.Tenants
             .IgnoreQueryFilters()
-            .AnyAsync(t => t.Slug == request.Tenant.Slug);
+            .AnyAsync(t => t.Slug == request.Tenant.Slug && t.DeletedAt == null);
 
         if (slugExists)
         {

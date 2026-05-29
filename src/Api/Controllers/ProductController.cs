@@ -10,7 +10,7 @@ namespace Api.Controllers;
 [ApiController]
 [Route("api/v1/products")]
 [Authorize]
-public class ProductController : ControllerBase
+public class ProductController : ApiControllerBase
 {
     private readonly IProductService _productService;
 
@@ -25,7 +25,7 @@ public class ProductController : ControllerBase
     {
         var response = await _productService.GetAllAsync();
 
-        return Ok(response);
+        return OkEnvelope(response, "Products retrieved.");
     }
 
     [HttpGet("by-name")]
@@ -34,7 +34,7 @@ public class ProductController : ControllerBase
     {
         var response = await _productService.GetByNameAsync(name);
 
-        return Ok(response);
+        return OkEnvelope(response, "Products retrieved.");
     }
 
     [HttpPost]
@@ -43,7 +43,7 @@ public class ProductController : ControllerBase
     {
         var response = await _productService.CreateAsync(request);
 
-        return Ok(response);
+        return OkEnvelope(response, "Product created.");
     }
 
     [HttpPut]
@@ -52,7 +52,7 @@ public class ProductController : ControllerBase
     {
         var response = await _productService.UpdateAsync(request);
 
-        return Ok(response);
+        return OkEnvelope(response, "Product updated.");
     }
 
     [HttpDelete]
@@ -61,6 +61,6 @@ public class ProductController : ControllerBase
     {
         await _productService.DeleteAsync(request);
 
-        return NoContent();
+        return OkEnvelope("Product deleted.");
     }
 }
