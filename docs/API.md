@@ -1,5 +1,7 @@
 # Multi-Tenant Platform API (v1)
 
+See also [PROJECT.md](./PROJECT.md) for architecture, auth model, and permission conventions.
+
 Base URL: `/api/v1`
 
 All JSON responses use the same envelope:

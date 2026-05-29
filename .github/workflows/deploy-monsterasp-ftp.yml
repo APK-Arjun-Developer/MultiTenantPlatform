@@ -1,0 +1,108 @@
+# Build, publish, and deploy the API to MonsterASP.NET (free plan) via FTP.
+# Secrets: see docs/DEPLOYMENT.md
+
+name: Deploy to MonsterASP (FTP)
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-monsterasp-production
+  cancel-in-progress: true
+
+jobs:
+  build_and_deploy:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore src/Api/Api.csproj
+
+      - name: Publish for MonsterASP (win-x86)
+        run: >
+          dotnet publish src/Api/Api.csproj
+          --configuration Release
+          --output ./publish
+          --runtime win-x86
+          --no-restore
+
+      - name: Write production appsettings from GitHub secrets
+        shell: pwsh
+        env:
+          CONNECTION_STRING: ${{ secrets.PRODUCTION_CONNECTION_STRING }}
+          JWT_KEY: ${{ secrets.JWT_KEY }}
+          JWT_ISSUER: ${{ secrets.JWT_ISSUER }}
+          JWT_AUDIENCE: ${{ secrets.JWT_AUDIENCE }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:CONNECTION_STRING)) {
+            throw "PRODUCTION_CONNECTION_STRING secret is required."
+          }
+          if ([string]::IsNullOrWhiteSpace($env:JWT_KEY) -or $env:JWT_KEY.Length -lt 32) {
+            throw "JWT_KEY secret is required (minimum 32 characters)."
+          }
+
+          $issuer = if ([string]::IsNullOrWhiteSpace($env:JWT_ISSUER)) { "MultiTenantPlatform" } else { $env:JWT_ISSUER }
+          $audience = if ([string]::IsNullOrWhiteSpace($env:JWT_AUDIENCE)) { "MultiTenantPlatformUsers" } else { $env:JWT_AUDIENCE }
+
+          $settings = @{
+            SeedOnStartup = $false
+            ConnectionStrings = @{
+              DefaultConnection = $env:CONNECTION_STRING
+            }
+            Jwt = @{
+              Issuer = $issuer
+              Audience = $audience
+              Key = $env:JWT_KEY
+              ExpiryMinutes = 60
+            }
+            FileStorage = @{
+              BasePath = "storage"
+              MaxFileSizeBytes = 10485760
+            }
+            Caching = @{
+              PermissionCatalogMinutes = 10
+              RolePermissionsMinutes = 5
+              TenantCatalogMinutes = 5
+              TenantDetailMinutes = 5
+              ProductListMinutes = 3
+              ReportSummaryMinutes = 2
+            }
+            Serilog = @{
+              MinimumLevel = @{
+                Default = "Warning"
+                "Microsoft.AspNetCore" = "Warning"
+              }
+            }
+            Logging = @{
+              LogLevel = @{
+                Default = "Warning"
+                "Microsoft.AspNetCore" = "Warning"
+              }
+            }
+            AllowedHosts = "*"
+          }
+
+          $json = $settings | ConvertTo-Json -Depth 6
+          Set-Content -Path "./publish/appsettings.Production.json" -Value $json -Encoding utf8
+
+      - name: Deploy to MonsterASP FTP (wwwroot)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.6
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftp
+          local-dir: ./publish/
+          server-dir: ${{ secrets.FTP_SERVER_DIR || '/wwwroot/' }}
+          dangerous-clean-slate: false
+          log-level: standard
