@@ -9,6 +9,7 @@ using Infrastructure.Identity.Entities;
 using Microsoft.OpenApi;
 using Api.Contracts;
 using Api.Middleware;
+using Application.Interfaces.Caching;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Mvc;
@@ -114,6 +115,8 @@ using (var scope = app.Services.CreateScope())
     await DbSeeder.SeedAsync(dbContext);
 
     await PermissionSeeder.SeedAsync(dbContext);
+
+    services.GetRequiredService<IAppCache>().InvalidatePermissionCatalogs();
 
     var roleManager = services.GetRequiredService<RoleManager<ApplicationRole>>();
 

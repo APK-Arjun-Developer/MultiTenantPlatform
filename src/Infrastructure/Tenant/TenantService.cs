@@ -2,13 +2,16 @@ using Application.Common;
 using Application.DTOs.ActivityLogs;
 using Application.DTOs.Tenant;
 using Application.Interfaces.ActivityLogs;
+using Application.Interfaces.Caching;
 using Application.Interfaces.Tenant;
+using Infrastructure.Caching;
 using Infrastructure.Identity;
 using Infrastructure.Identity.Entities;
 using Infrastructure.Persistence;
 using Infrastructure.Persistence.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Tenant;
 
@@ -22,49 +25,52 @@ public class TenantService : ITenantService
 
     private readonly IActivityLogService _activityLogService;
 
+    private readonly IAppCache _cache;
+
+    private readonly CacheOptions _cacheOptions;
+
     public TenantService(
         ApplicationDbContext context,
         UserManager<ApplicationUser> userManager,
         ICurrentTenantService currentTenantService,
-        IActivityLogService activityLogService)
+        IActivityLogService activityLogService,
+        IAppCache cache,
+        IOptions<CacheOptions> cacheOptions)
     {
         _context = context;
         _userManager = userManager;
         _currentTenantService = currentTenantService;
         _activityLogService = activityLogService;
+        _cache = cache;
+        _cacheOptions = cacheOptions.Value;
     }
 
     public async Task<List<TenantResponse>> GetAllAsync()
     {
         if (IsSystemAdmin())
         {
-            return await _context.Tenants
-                .IgnoreQueryFilters()
-                .Where(t => t.DeletedAt == null)
-                .OrderBy(t => t.Name)
-                .Select(x => new TenantResponse
-                {
-                    Id = x.Id,
-                    Name = x.Name,
-                    Slug = x.Slug,
-                    IsActive = x.IsActive
-                })
-                .ToListAsync();
+            return await _cache.GetOrCreateAsync(
+                CacheKeys.TenantCatalogAll,
+                async _ => await _context.Tenants
+                    .IgnoreQueryFilters()
+                    .Where(t => t.DeletedAt == null)
+                    .OrderBy(t => t.Name)
+                    .Select(x => new TenantResponse
+                    {
+                        Id = x.Id,
+                        Name = x.Name,
+                        Slug = x.Slug,
+                        IsActive = x.IsActive,
+                    })
+                    .ToListAsync(),
+                TimeSpan.FromMinutes(_cacheOptions.TenantCatalogMinutes));
         }
 
         var tenantId = RequireTenantId();
 
-        return await _context.Tenants
-            .IgnoreQueryFilters()
-            .Where(t => t.Id == tenantId && t.DeletedAt == null)
-            .Select(x => new TenantResponse
-            {
-                Id = x.Id,
-                Name = x.Name,
-                Slug = x.Slug,
-                IsActive = x.IsActive
-            })
-            .ToListAsync();
+        var current = await GetTenantByIdCachedAsync(tenantId);
+
+        return [current];
     }
 
     public async Task<TenantResponse> GetCurrentAsync()
@@ -77,16 +83,27 @@ public class TenantService : ITenantService
 
         var tenantId = RequireTenantId();
 
-        var tenant = await _context.Tenants
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(t => t.Id == tenantId && t.DeletedAt == null);
+        return await GetTenantByIdCachedAsync(tenantId);
+    }
 
-        if (tenant == null)
-        {
-            throw new InvalidOperationException("Tenant not found.");
-        }
+    private async Task<TenantResponse> GetTenantByIdCachedAsync(Guid tenantId)
+    {
+        return await _cache.GetOrCreateAsync(
+            CacheKeys.TenantDetail(tenantId),
+            async _ =>
+            {
+                var tenant = await _context.Tenants
+                    .IgnoreQueryFilters()
+                    .FirstOrDefaultAsync(t => t.Id == tenantId && t.DeletedAt == null);
 
-        return MapToResponse(tenant);
+                if (tenant == null)
+                {
+                    throw new InvalidOperationException("Tenant not found.");
+                }
+
+                return MapToResponse(tenant);
+            },
+            TimeSpan.FromMinutes(_cacheOptions.TenantDetailMinutes));
     }
 
     public async Task<TenantResponse> UpdateAsync(UpdateTenantRequest request)
@@ -140,6 +157,9 @@ public class TenantService : ITenantService
 
         await _context.SaveChangesAsync();
 
+        _cache.InvalidateTenantCatalog();
+        _cache.InvalidateTenant(tenant.Id);
+
         await LogCurrentUserActivityAsync(
             ActivityActions.Tenants.Updated,
             $"Updated tenant '{tenant.Slug}'.");
@@ -176,6 +196,9 @@ public class TenantService : ITenantService
         tenant.MarkDeleted();
 
         await _context.SaveChangesAsync();
+
+        _cache.InvalidateTenantCatalog();
+        _cache.InvalidateTenant(tenant.Id);
 
         await LogCurrentUserActivityAsync(
             ActivityActions.Tenants.Deleted,
@@ -288,6 +311,9 @@ public class TenantService : ITenantService
                 createdRoles[0].Id);
 
             await transaction.CommitAsync();
+
+            _cache.InvalidateTenantCatalog();
+            _cache.InvalidateTenant(tenant.Id);
 
             await LogCurrentUserActivityAsync(
                 ActivityActions.Tenants.Onboarded,

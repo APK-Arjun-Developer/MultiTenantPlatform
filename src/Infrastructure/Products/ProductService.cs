@@ -2,12 +2,15 @@ using Application.Common;
 using Application.DTOs.ActivityLogs;
 using Application.DTOs.Products;
 using Application.Interfaces.ActivityLogs;
+using Application.Interfaces.Caching;
 using Application.Interfaces.Products;
 using Application.Interfaces.Tenant;
+using Infrastructure.Caching;
 using Domain.Entities;
 using Infrastructure.Persistence;
 using Infrastructure.Persistence.Contexts;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Products;
 
@@ -19,23 +22,40 @@ public class ProductService : IProductService
 
     private readonly IActivityLogService _activityLogService;
 
+    private readonly IAppCache _cache;
+
+    private readonly CacheOptions _cacheOptions;
+
     public ProductService(
         ApplicationDbContext context,
         ICurrentTenantService currentTenantService,
-        IActivityLogService activityLogService)
+        IActivityLogService activityLogService,
+        IAppCache cache,
+        IOptions<CacheOptions> cacheOptions)
     {
         _context = context;
         _currentTenantService = currentTenantService;
         _activityLogService = activityLogService;
+        _cache = cache;
+        _cacheOptions = cacheOptions.Value;
     }
 
     public async Task<IReadOnlyList<ProductResponse>> GetAllAsync()
     {
-        var products = await _context.Products
-            .OrderBy(p => p.Name)
-            .ToListAsync();
+        var tenantId = RequireTenantId();
 
-        return products.Select(MapToResponse).ToList();
+        return await _cache.GetOrCreateAsync(
+            CacheKeys.Products(tenantId),
+            async _ =>
+            {
+                var products = await _context.Products
+                    .AsNoTracking()
+                    .OrderBy(p => p.Name)
+                    .ToListAsync();
+
+                return products.Select(MapToResponse).ToList();
+            },
+            TimeSpan.FromMinutes(_cacheOptions.ProductListMinutes));
     }
 
     public async Task<ProductResponse> GetByNameAsync(string name)
@@ -52,7 +72,7 @@ public class ProductService : IProductService
 
     public async Task<ProductResponse> CreateAsync(CreateProductRequest request)
     {
-        RequireTenantId();
+        var tenantId = RequireTenantId();
 
         var exists = await _context.Products
             .AnyAsync(p => p.Name == request.Name);
@@ -73,6 +93,8 @@ public class ProductService : IProductService
 
         _context.Products.Add(product);
         await _context.SaveChangesAsync();
+
+        InvalidateProductCaches(tenantId);
 
         await LogCurrentUserActivityAsync(
             ActivityActions.Products.Created,
@@ -110,6 +132,8 @@ public class ProductService : IProductService
 
         await _context.SaveChangesAsync();
 
+        InvalidateProductCaches(product.TenantId);
+
         await LogCurrentUserActivityAsync(
             ActivityActions.Products.Updated,
             $"Updated product '{product.Name}'.");
@@ -129,10 +153,15 @@ public class ProductService : IProductService
         product.MarkDeleted();
         await _context.SaveChangesAsync();
 
+        InvalidateProductCaches(product.TenantId);
+
         await LogCurrentUserActivityAsync(
             ActivityActions.Products.Deleted,
             $"Deleted product '{product.Name}'.");
     }
+
+    private void InvalidateProductCaches(Guid tenantId) =>
+        _cache.InvalidateTenantDashboard(tenantId);
 
     private async Task LogCurrentUserActivityAsync(string action, string description)
     {

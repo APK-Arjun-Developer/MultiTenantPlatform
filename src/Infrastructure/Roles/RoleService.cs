@@ -2,7 +2,9 @@ using Application.Common;
 using Application.DTOs.ActivityLogs;
 using Application.DTOs.Roles;
 using Application.Interfaces.ActivityLogs;
+using Application.Interfaces.Caching;
 using Application.Interfaces.Roles;
+using Infrastructure.Caching;
 using Application.Interfaces.Tenant;
 using Infrastructure.Identity;
 using Infrastructure.Identity.Entities;
@@ -22,16 +24,24 @@ public class RoleService : IRoleService
 
     private readonly IActivityLogService _activityLogService;
 
+    private readonly IRolePermissionLookup _rolePermissionLookup;
+
+    private readonly IAppCache _cache;
+
     public RoleService(
         ApplicationDbContext context,
         RoleManager<ApplicationRole> roleManager,
         ICurrentTenantService currentTenantService,
-        IActivityLogService activityLogService)
+        IActivityLogService activityLogService,
+        IRolePermissionLookup rolePermissionLookup,
+        IAppCache cache)
     {
         _context = context;
         _roleManager = roleManager;
         _currentTenantService = currentTenantService;
         _activityLogService = activityLogService;
+        _rolePermissionLookup = rolePermissionLookup;
+        _cache = cache;
     }
 
     public async Task<IReadOnlyList<RoleResponse>> GetRolesAsync()
@@ -91,6 +101,8 @@ public class RoleService : IRoleService
 
         await _context.SaveChangesAsync();
 
+        InvalidateRoleCaches(role);
+
         await LogCurrentUserActivityAsync(
             ActivityActions.Roles.Created,
             $"Created role '{role.Name}'.");
@@ -125,6 +137,8 @@ public class RoleService : IRoleService
             request.Permissions);
 
         await _context.SaveChangesAsync();
+
+        InvalidateRoleCaches(role);
 
         await LogCurrentUserActivityAsync(
             ActivityActions.Roles.Updated,
@@ -170,9 +184,17 @@ public class RoleService : IRoleService
                 string.Join(", ", result.Errors.Select(e => e.Description)));
         }
 
+        InvalidateRoleCaches(role);
+
         await LogCurrentUserActivityAsync(
             ActivityActions.Roles.Deleted,
             $"Deleted role '{role.Name}'.");
+    }
+
+    private void InvalidateRoleCaches(ApplicationRole role)
+    {
+        _rolePermissionLookup.Invalidate(role.Id);
+        _cache.InvalidateTenantDashboard(role.TenantId);
     }
 
     private async Task LogCurrentUserActivityAsync(string action, string description)
@@ -229,15 +251,7 @@ public class RoleService : IRoleService
 
     private async Task<RoleResponse> MapRoleAsync(ApplicationRole role)
     {
-        var permissionRows = await _context.RolePermissions
-            .Where(rp => rp.RoleId == role.Id)
-            .Join(
-                _context.Permissions,
-                rp => rp.PermissionId,
-                p => p.Id,
-                (_, p) => new { p.Id, p.Name })
-            .OrderBy(p => p.Name)
-            .ToListAsync();
+        var permissions = await _rolePermissionLookup.GetAsync(role.Id);
 
         return new RoleResponse
         {
@@ -245,8 +259,8 @@ public class RoleService : IRoleService
             Name = role.Name!,
             Description = role.Description,
             TenantId = role.TenantId,
-            PermissionIds = permissionRows.Select(p => p.Id).ToList(),
-            PermissionNames = permissionRows.Select(p => p.Name).ToList()
+            PermissionIds = permissions.PermissionIds.ToList(),
+            PermissionNames = permissions.PermissionNames.ToList(),
         };
     }
 }

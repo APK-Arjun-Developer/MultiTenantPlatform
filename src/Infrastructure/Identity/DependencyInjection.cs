@@ -13,6 +13,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Authorization;
+using Application.Interfaces.Caching;
 using Application.Interfaces.Files;
 using Application.Interfaces.Permissions;
 using Application.Interfaces.Reports;
@@ -21,6 +22,7 @@ using Application.Interfaces.Roles;
 using Application.Interfaces.Tenant;
 using Application.Interfaces.Users;
 using Infrastructure.ActivityLogs;
+using Infrastructure.Caching;
 using Infrastructure.Files;
 using Infrastructure.Permissions;
 using Infrastructure.Reports;
@@ -99,6 +101,14 @@ public static class DependencyInjection
         services.AddScoped<IRefreshTokenService, RefreshTokenService>();
 
         services.AddHttpContextAccessor();
+
+        services.AddMemoryCache();
+
+        services.Configure<CacheOptions>(configuration.GetSection(CacheOptions.SectionName));
+
+        services.AddSingleton<IAppCache, AppCache>();
+
+        services.AddScoped<IRolePermissionLookup, RolePermissionLookup>();
 
         services.AddScoped<ICurrentTenantService, CurrentTenantService>();
 

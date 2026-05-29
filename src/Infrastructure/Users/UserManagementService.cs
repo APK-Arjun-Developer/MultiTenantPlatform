@@ -2,6 +2,7 @@ using Application.Common;
 using Application.DTOs.ActivityLogs;
 using Application.DTOs.Users;
 using Application.Interfaces.ActivityLogs;
+using Application.Interfaces.Caching;
 using Application.Interfaces.Tenant;
 using Application.Interfaces.Users;
 using Infrastructure.Identity;
@@ -24,18 +25,22 @@ public class UserManagementService : IUserManagementService
 
     private readonly IActivityLogService _activityLogService;
 
+    private readonly IAppCache _cache;
+
     public UserManagementService(
         ApplicationDbContext context,
         UserManager<ApplicationUser> userManager,
         RoleManager<ApplicationRole> roleManager,
         ICurrentTenantService currentTenantService,
-        IActivityLogService activityLogService)
+        IActivityLogService activityLogService,
+        IAppCache cache)
     {
         _context = context;
         _userManager = userManager;
         _roleManager = roleManager;
         _currentTenantService = currentTenantService;
         _activityLogService = activityLogService;
+        _cache = cache;
     }
 
     public async Task<UserResponse> CreateUserAsync(CreateUserRequest request)
@@ -105,6 +110,8 @@ public class UserManagementService : IUserManagementService
         await LogCurrentUserActivityAsync(
             ActivityActions.Users.Created,
             $"Created user '{user.Email}' with role '{request.RoleName}'.");
+
+        _cache.InvalidateTenantDashboard(tenantId);
 
         return await MapToUserResponseAsync(user, includeTenantDetails: false);
     }
@@ -285,6 +292,8 @@ public class UserManagementService : IUserManagementService
             ActivityActions.Users.Updated,
             $"Updated user '{user.Email}'.");
 
+        _cache.InvalidateTenantDashboard(user.TenantId);
+
         return await MapToUserResponseAsync(user, includeTenantDetails: IsSystemAdmin());
     }
 
@@ -318,6 +327,8 @@ public class UserManagementService : IUserManagementService
         await LogCurrentUserActivityAsync(
             ActivityActions.Users.Deleted,
             $"Deleted user '{user.Email}'.");
+
+        _cache.InvalidateTenantDashboard(user.TenantId);
     }
 
     private async Task LogCurrentUserActivityAsync(string action, string description)

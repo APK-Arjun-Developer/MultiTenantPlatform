@@ -1,11 +1,14 @@
 using Application.Common;
 using Application.Interfaces.Authorization;
+using Application.Interfaces.Caching;
 using Application.Interfaces.Tenant;
+using Infrastructure.Caching;
 using Infrastructure.Identity.Entities;
 using Infrastructure.Persistence.Contexts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Authorization;
 
@@ -14,23 +17,29 @@ public class CurrentUserPermissionService : ICurrentUserPermissionService
     private const string PermissionsCacheKey = "__UserPermissions";
 
     private readonly ApplicationDbContext _context;
-
     private readonly ICurrentTenantService _currentTenantService;
-
     private readonly UserManager<ApplicationUser> _userManager;
-
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IAppCache _cache;
+    private readonly IRolePermissionLookup _rolePermissionLookup;
+    private readonly CacheOptions _cacheOptions;
 
     public CurrentUserPermissionService(
         ApplicationDbContext context,
         ICurrentTenantService currentTenantService,
         UserManager<ApplicationUser> userManager,
-        IHttpContextAccessor httpContextAccessor)
+        IHttpContextAccessor httpContextAccessor,
+        IAppCache cache,
+        IRolePermissionLookup rolePermissionLookup,
+        IOptions<CacheOptions> cacheOptions)
     {
         _context = context;
         _currentTenantService = currentTenantService;
         _userManager = userManager;
         _httpContextAccessor = httpContextAccessor;
+        _cache = cache;
+        _rolePermissionLookup = rolePermissionLookup;
+        _cacheOptions = cacheOptions.Value;
     }
 
     public async Task<bool> HasPermissionAsync(string permission)
@@ -59,9 +68,13 @@ public class CurrentUserPermissionService : ICurrentUserPermissionService
 
         if (httpContext?.User.IsInRole(RoleNames.SuperAdmin) == true)
         {
-            var allPermissions = await _context.Permissions
-                .Select(p => p.Name)
-                .ToListAsync();
+            var allPermissions = await _cache.GetOrCreateAsync(
+                CacheKeys.PermissionCatalogSystem,
+                async _ => await _context.Permissions
+                    .AsNoTracking()
+                    .Select(p => p.Name)
+                    .ToListAsync(),
+                TimeSpan.FromMinutes(_cacheOptions.PermissionCatalogMinutes));
 
             CachePermissions(httpContext, allPermissions);
 
@@ -71,9 +84,10 @@ public class CurrentUserPermissionService : ICurrentUserPermissionService
         var tenantId = _currentTenantService.TenantId ?? Guid.Empty;
 
         var roleIds = await _context.Set<IdentityUserRole<Guid>>()
+            .AsNoTracking()
             .Where(ur => ur.UserId == userId)
             .Join(
-                _context.Roles.Where(r => r.TenantId == tenantId),
+                _context.Roles.AsNoTracking().Where(r => r.TenantId == tenantId),
                 ur => ur.RoleId,
                 r => r.Id,
                 (_, r) => r.Id)
@@ -86,15 +100,19 @@ public class CurrentUserPermissionService : ICurrentUserPermissionService
             return [];
         }
 
-        var permissions = await _context.RolePermissions
-            .Where(rp => roleIds.Contains(rp.RoleId))
-            .Join(
-                _context.Permissions,
-                rp => rp.PermissionId,
-                p => p.Id,
-                (_, p) => p.Name)
-            .Distinct()
-            .ToListAsync();
+        var permissionSet = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var roleId in roleIds)
+        {
+            var snapshot = await _rolePermissionLookup.GetAsync(roleId);
+
+            foreach (var name in snapshot.PermissionNames)
+            {
+                permissionSet.Add(name);
+            }
+        }
+
+        var permissions = permissionSet.OrderBy(p => p).ToList();
 
         CachePermissions(httpContext, permissions);
 
