@@ -20,6 +20,10 @@ public static class PermissionNames
     public const string ReportsView = "Reports.View";
     public const string ReportsExport = "Reports.Export";
 
+    public const string FilesView = "Files.View";
+    public const string FilesUpload = "Files.Upload";
+    public const string FilesDelete = "Files.Delete";
+
     public const string TenantsCreate = "Tenants.Create";
     public const string TenantsView = "Tenants.View";
     public const string TenantsEdit = "Tenants.Edit";
@@ -41,6 +45,9 @@ public static class PermissionNames
         ProductsDelete,
         ReportsView,
         ReportsExport,
+        FilesView,
+        FilesUpload,
+        FilesDelete,
         TenantsCreate,
         TenantsView,
         TenantsEdit,

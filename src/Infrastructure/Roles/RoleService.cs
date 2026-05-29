@@ -1,5 +1,7 @@
 using Application.Common;
+using Application.DTOs.ActivityLogs;
 using Application.DTOs.Roles;
+using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Roles;
 using Application.Interfaces.Tenant;
 using Infrastructure.Identity;
@@ -18,14 +20,18 @@ public class RoleService : IRoleService
 
     private readonly ICurrentTenantService _currentTenantService;
 
+    private readonly IActivityLogService _activityLogService;
+
     public RoleService(
         ApplicationDbContext context,
         RoleManager<ApplicationRole> roleManager,
-        ICurrentTenantService currentTenantService)
+        ICurrentTenantService currentTenantService,
+        IActivityLogService activityLogService)
     {
         _context = context;
         _roleManager = roleManager;
         _currentTenantService = currentTenantService;
+        _activityLogService = activityLogService;
     }
 
     public async Task<IReadOnlyList<RoleResponse>> GetRolesAsync()
@@ -85,6 +91,10 @@ public class RoleService : IRoleService
 
         await _context.SaveChangesAsync();
 
+        await LogCurrentUserActivityAsync(
+            ActivityActions.Roles.Created,
+            $"Created role '{role.Name}'.");
+
         return await MapRoleAsync(role);
     }
 
@@ -115,6 +125,10 @@ public class RoleService : IRoleService
             request.Permissions);
 
         await _context.SaveChangesAsync();
+
+        await LogCurrentUserActivityAsync(
+            ActivityActions.Roles.Updated,
+            $"Updated role '{role.Name}'.");
 
         return await MapRoleAsync(role);
     }
@@ -155,6 +169,24 @@ public class RoleService : IRoleService
             throw new InvalidOperationException(
                 string.Join(", ", result.Errors.Select(e => e.Description)));
         }
+
+        await LogCurrentUserActivityAsync(
+            ActivityActions.Roles.Deleted,
+            $"Deleted role '{role.Name}'.");
+    }
+
+    private async Task LogCurrentUserActivityAsync(string action, string description)
+    {
+        var userId = _currentTenantService.UserId
+            ?? throw new InvalidOperationException("User context is required.");
+
+        await _activityLogService.LogAsync(new LogActivityRequest
+        {
+            UserId = userId,
+            Action = action,
+            Module = ActivityModules.Roles,
+            Description = description,
+        });
     }
 
     private Guid RequireTenantId()

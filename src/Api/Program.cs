@@ -17,10 +17,15 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseSerilog((context, config) =>
 {
-    config.WriteTo.Console();
+    config.Enrich.FromLogContext();
+    config.WriteTo.Console(
+        outputTemplate:
+        "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} tenant={tenant_id} user={user_id}{NewLine}{Exception}");
     config.WriteTo.File(
         "logs/log-.txt",
-        rollingInterval: RollingInterval.Day);
+        rollingInterval: RollingInterval.Day,
+        outputTemplate:
+        "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] tenant={tenant_id} user={user_id} {Message:lj}{NewLine}{Exception}");
 });
 
 builder.Services.AddPersistence(builder.Configuration);
@@ -95,6 +100,8 @@ app.UseAuthentication();
 app.UseMiddleware<TenantMiddleware>();
 
 app.UseAuthorization();
+
+app.UseMiddleware<RequestLoggingMiddleware>();
 
 app.MapControllers();
 

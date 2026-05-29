@@ -1,5 +1,7 @@
 using Application.Common;
+using Application.DTOs.ActivityLogs;
 using Application.DTOs.Users;
+using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Tenant;
 using Application.Interfaces.Users;
 using Infrastructure.Identity;
@@ -20,16 +22,20 @@ public class UserManagementService : IUserManagementService
 
     private readonly ICurrentTenantService _currentTenantService;
 
+    private readonly IActivityLogService _activityLogService;
+
     public UserManagementService(
         ApplicationDbContext context,
         UserManager<ApplicationUser> userManager,
         RoleManager<ApplicationRole> roleManager,
-        ICurrentTenantService currentTenantService)
+        ICurrentTenantService currentTenantService,
+        IActivityLogService activityLogService)
     {
         _context = context;
         _userManager = userManager;
         _roleManager = roleManager;
         _currentTenantService = currentTenantService;
+        _activityLogService = activityLogService;
     }
 
     public async Task<UserResponse> CreateUserAsync(CreateUserRequest request)
@@ -95,6 +101,10 @@ public class UserManagementService : IUserManagementService
             _context,
             user.Id,
             role.Id);
+
+        await LogCurrentUserActivityAsync(
+            ActivityActions.Users.Created,
+            $"Created user '{user.Email}' with role '{request.RoleName}'.");
 
         return await MapToUserResponseAsync(user, includeTenantDetails: false);
     }
@@ -271,6 +281,10 @@ public class UserManagementService : IUserManagementService
 
         await _userManager.UpdateAsync(user);
 
+        await LogCurrentUserActivityAsync(
+            ActivityActions.Users.Updated,
+            $"Updated user '{user.Email}'.");
+
         return await MapToUserResponseAsync(user, includeTenantDetails: IsSystemAdmin());
     }
 
@@ -300,6 +314,24 @@ public class UserManagementService : IUserManagementService
             throw new InvalidOperationException(
                 string.Join(", ", result.Errors.Select(e => e.Description)));
         }
+
+        await LogCurrentUserActivityAsync(
+            ActivityActions.Users.Deleted,
+            $"Deleted user '{user.Email}'.");
+    }
+
+    private async Task LogCurrentUserActivityAsync(string action, string description)
+    {
+        var userId = _currentTenantService.UserId
+            ?? throw new InvalidOperationException("User context is required.");
+
+        await _activityLogService.LogAsync(new LogActivityRequest
+        {
+            UserId = userId,
+            Action = action,
+            Module = ActivityModules.Users,
+            Description = description,
+        });
     }
 
     private async Task<ApplicationUser> GetCurrentUserEntityAsync()

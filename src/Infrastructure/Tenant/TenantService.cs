@@ -1,4 +1,7 @@
+using Application.Common;
+using Application.DTOs.ActivityLogs;
 using Application.DTOs.Tenant;
+using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Tenant;
 using Infrastructure.Identity;
 using Infrastructure.Identity.Entities;
@@ -17,14 +20,18 @@ public class TenantService : ITenantService
 
     private readonly ICurrentTenantService _currentTenantService;
 
+    private readonly IActivityLogService _activityLogService;
+
     public TenantService(
         ApplicationDbContext context,
         UserManager<ApplicationUser> userManager,
-        ICurrentTenantService currentTenantService)
+        ICurrentTenantService currentTenantService,
+        IActivityLogService activityLogService)
     {
         _context = context;
         _userManager = userManager;
         _currentTenantService = currentTenantService;
+        _activityLogService = activityLogService;
     }
 
     public async Task<List<TenantResponse>> GetAllAsync()
@@ -133,6 +140,10 @@ public class TenantService : ITenantService
 
         await _context.SaveChangesAsync();
 
+        await LogCurrentUserActivityAsync(
+            ActivityActions.Tenants.Updated,
+            $"Updated tenant '{tenant.Slug}'.");
+
         return MapToResponse(tenant);
     }
 
@@ -163,7 +174,12 @@ public class TenantService : ITenantService
         }
 
         tenant.MarkDeleted();
+
         await _context.SaveChangesAsync();
+
+        await LogCurrentUserActivityAsync(
+            ActivityActions.Tenants.Deleted,
+            $"Deleted tenant '{tenant.Slug}'.");
     }
 
     public async Task<OnboardTenantResponse> OnboardTenantAsync(
@@ -273,6 +289,11 @@ public class TenantService : ITenantService
 
             await transaction.CommitAsync();
 
+            await LogCurrentUserActivityAsync(
+                ActivityActions.Tenants.Onboarded,
+                $"Onboarded tenant '{tenant.Slug}' with admin '{adminUser.Email}'.",
+                tenantId: tenant.Id);
+
             return new OnboardTenantResponse
             {
                 TenantId = tenant.Id,
@@ -301,6 +322,24 @@ public class TenantService : ITenantService
 
     private bool IsSystemAdmin() =>
         (_currentTenantService.TenantId ?? Guid.Empty) == Guid.Empty;
+
+    private async Task LogCurrentUserActivityAsync(
+        string action,
+        string description,
+        Guid? tenantId = null)
+    {
+        var userId = _currentTenantService.UserId
+            ?? throw new InvalidOperationException("User context is required.");
+
+        await _activityLogService.LogAsync(new LogActivityRequest
+        {
+            UserId = userId,
+            TenantId = tenantId,
+            Action = action,
+            Module = ActivityModules.Tenants,
+            Description = description,
+        });
+    }
 
     private Guid RequireTenantId()
     {

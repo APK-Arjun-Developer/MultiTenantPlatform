@@ -11,13 +11,19 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Authorization;
+using Application.Interfaces.Files;
 using Application.Interfaces.Permissions;
+using Application.Interfaces.Reports;
 using Application.Interfaces.Products;
 using Application.Interfaces.Roles;
 using Application.Interfaces.Tenant;
 using Application.Interfaces.Users;
+using Infrastructure.ActivityLogs;
+using Infrastructure.Files;
 using Infrastructure.Permissions;
+using Infrastructure.Reports;
 using Infrastructure.Products;
 using Infrastructure.Authorization;
 using Infrastructure.MultiTenancy;
@@ -103,6 +109,17 @@ public static class DependencyInjection
         services.AddScoped<IRoleService, RoleService>();
 
         services.AddScoped<IPermissionService, PermissionService>();
+
+        services.AddScoped<IActivityLogService, ActivityLogService>();
+
+        services.Configure<FileStorageSettings>(
+            configuration.GetSection(FileStorageSettings.SectionName));
+
+        services.AddScoped<IFileStorageService, LocalFileStorageService>();
+
+        services.AddScoped<IFileService, FileService>();
+
+        services.AddScoped<IReportService, ReportService>();
 
         services.AddScoped<IProductService, ProductService>();
 

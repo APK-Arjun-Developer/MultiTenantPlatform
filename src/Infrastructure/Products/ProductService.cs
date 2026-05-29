@@ -1,4 +1,7 @@
+using Application.Common;
+using Application.DTOs.ActivityLogs;
 using Application.DTOs.Products;
+using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Products;
 using Application.Interfaces.Tenant;
 using Domain.Entities;
@@ -14,12 +17,16 @@ public class ProductService : IProductService
 
     private readonly ICurrentTenantService _currentTenantService;
 
+    private readonly IActivityLogService _activityLogService;
+
     public ProductService(
         ApplicationDbContext context,
-        ICurrentTenantService currentTenantService)
+        ICurrentTenantService currentTenantService,
+        IActivityLogService activityLogService)
     {
         _context = context;
         _currentTenantService = currentTenantService;
+        _activityLogService = activityLogService;
     }
 
     public async Task<IReadOnlyList<ProductResponse>> GetAllAsync()
@@ -67,6 +74,10 @@ public class ProductService : IProductService
         _context.Products.Add(product);
         await _context.SaveChangesAsync();
 
+        await LogCurrentUserActivityAsync(
+            ActivityActions.Products.Created,
+            $"Created product '{product.Name}'.");
+
         return MapToResponse(product);
     }
 
@@ -99,6 +110,10 @@ public class ProductService : IProductService
 
         await _context.SaveChangesAsync();
 
+        await LogCurrentUserActivityAsync(
+            ActivityActions.Products.Updated,
+            $"Updated product '{product.Name}'.");
+
         return MapToResponse(product);
     }
 
@@ -113,6 +128,24 @@ public class ProductService : IProductService
 
         product.MarkDeleted();
         await _context.SaveChangesAsync();
+
+        await LogCurrentUserActivityAsync(
+            ActivityActions.Products.Deleted,
+            $"Deleted product '{product.Name}'.");
+    }
+
+    private async Task LogCurrentUserActivityAsync(string action, string description)
+    {
+        var userId = _currentTenantService.UserId
+            ?? throw new InvalidOperationException("User context is required.");
+
+        await _activityLogService.LogAsync(new LogActivityRequest
+        {
+            UserId = userId,
+            Action = action,
+            Module = ActivityModules.Products,
+            Description = description,
+        });
     }
 
     private async Task<Product?> FindProductByNameAsync(string name)

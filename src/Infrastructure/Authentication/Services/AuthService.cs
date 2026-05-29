@@ -1,4 +1,7 @@
+using Application.Common;
+using Application.DTOs.ActivityLogs;
 using Application.DTOs.Auth;
+using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Authentication;
 using Infrastructure.Identity.Entities;
 using Infrastructure.Persistence.Contexts;
@@ -17,16 +20,20 @@ public class AuthService : IAuthService
 
     private readonly IRefreshTokenService _refreshTokenService;
 
+    private readonly IActivityLogService _activityLogService;
+
     public AuthService(
         UserManager<ApplicationUser> userManager,
         ApplicationDbContext context,
         IJwtTokenGenerator jwtTokenGenerator,
-        IRefreshTokenService refreshTokenService)
+        IRefreshTokenService refreshTokenService,
+        IActivityLogService activityLogService)
     {
         _userManager = userManager;
         _context = context;
         _jwtTokenGenerator = jwtTokenGenerator;
         _refreshTokenService = refreshTokenService;
+        _activityLogService = activityLogService;
     }
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, string ipAddress)
@@ -63,6 +70,16 @@ public class AuthService : IAuthService
             user.Id,
             user.TenantId,
             ipAddress);
+
+        await _activityLogService.LogAsync(new LogActivityRequest
+        {
+            UserId = user.Id,
+            TenantId = user.TenantId,
+            Action = ActivityActions.Auth.Login,
+            Module = ActivityModules.Auth,
+            Description = $"User '{user.Email}' logged in.",
+            IpAddress = ipAddress,
+        });
 
         return new AuthResponse
         {
@@ -105,6 +122,16 @@ public class AuthService : IAuthService
             roleId,
             roles);
 
+        await _activityLogService.LogAsync(new LogActivityRequest
+        {
+            UserId = user.Id,
+            TenantId = user.TenantId,
+            Action = ActivityActions.Auth.Refresh,
+            Module = ActivityModules.Auth,
+            Description = $"User '{user.Email}' refreshed token.",
+            IpAddress = ipAddress,
+        });
+
         return new AuthResponse
         {
             AccessToken = accessToken,
@@ -125,6 +152,16 @@ public class AuthService : IAuthService
         }
 
         await _refreshTokenService.RevokeAsync(refreshToken, ipAddress);
+
+        await _activityLogService.LogAsync(new LogActivityRequest
+        {
+            UserId = refreshToken.UserId,
+            TenantId = refreshToken.TenantId,
+            Action = ActivityActions.Auth.Logout,
+            Module = ActivityModules.Auth,
+            Description = "User logged out.",
+            IpAddress = ipAddress,
+        });
     }
 
     private async Task<ApplicationUser?> FindUserForLoginAsync(LoginRequest request)
