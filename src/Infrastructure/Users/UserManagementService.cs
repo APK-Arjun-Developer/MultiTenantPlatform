@@ -1,5 +1,6 @@
 using Application.Common;
 using Application.DTOs.ActivityLogs;
+using Application.DTOs.Common;
 using Application.DTOs.Users;
 using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Caching;
@@ -116,11 +117,13 @@ public class UserManagementService : IUserManagementService
         return await MapToUserResponseAsync(user, includeTenantDetails: false);
     }
 
-    public async Task<IReadOnlyList<UserResponse>> GetUsersAsync()
+    public async Task<PagedResponse<UserResponse>> GetUsersAsync(int page, int pageSize)
     {
         var currentUserId = _currentTenantService.UserId
             ?? throw new InvalidOperationException(
                 "User context is required. Ensure user_id is present in the JWT.");
+
+        (page, pageSize) = Pagination.Normalize(page, pageSize);
 
         var isSystemAdmin = IsSystemAdmin();
 
@@ -137,8 +140,12 @@ public class UserManagementService : IUserManagementService
             query = query.Where(u => u.TenantId == tenantId);
         }
 
+        var totalCount = await query.CountAsync();
+
         var users = await query
             .OrderBy(u => u.Email)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync();
 
         Dictionary<Guid, Domain.Entities.Tenant> tenantsById = [];
@@ -176,7 +183,13 @@ public class UserManagementService : IUserManagementService
                 tenantDetails));
         }
 
-        return responses;
+        return new PagedResponse<UserResponse>
+        {
+            Items = responses,
+            Page = page,
+            PageSize = pageSize,
+            TotalCount = totalCount,
+        };
     }
 
     public async Task<UserResponse> GetCurrentUserAsync()
@@ -295,6 +308,38 @@ public class UserManagementService : IUserManagementService
         _cache.InvalidateTenantDashboard(user.TenantId);
 
         return await MapToUserResponseAsync(user, includeTenantDetails: IsSystemAdmin());
+    }
+
+    public async Task<UserResponse> UpdateCurrentUserAsync(UpdateCurrentUserRequest request)
+    {
+        var user = await GetCurrentUserEntityAsync();
+
+        user.FullName = request.FullName;
+        user.UpdatedAt = DateTime.UtcNow;
+
+        if (!string.IsNullOrWhiteSpace(request.Password))
+        {
+            var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+            var passwordResult = await _userManager.ResetPasswordAsync(
+                user,
+                token,
+                request.Password);
+
+            if (!passwordResult.Succeeded)
+            {
+                throw new InvalidOperationException(
+                    string.Join(", ",
+                        passwordResult.Errors.Select(e => e.Description)));
+            }
+        }
+
+        await _userManager.UpdateAsync(user);
+
+        await LogCurrentUserActivityAsync(
+            ActivityActions.Users.Updated,
+            "Updated own profile.");
+
+        return await GetCurrentUserAsync();
     }
 
     public async Task DeleteUserAsync(DeleteUserRequest request)

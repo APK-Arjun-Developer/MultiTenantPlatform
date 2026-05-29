@@ -1,10 +1,11 @@
+using Application.DTOs.Common;
 using Application.DTOs.Tenant;
 
 namespace Application.Interfaces.Tenant;
 
 public interface ITenantService
 {
-    Task<List<TenantResponse>> GetAllAsync();
+    Task<PagedResponse<TenantResponse>> GetTenantsAsync(int page, int pageSize);
 
     Task<TenantResponse> GetCurrentAsync();
 

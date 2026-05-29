@@ -21,9 +21,11 @@ public class UsersController : ApiControllerBase
 
     [HttpGet]
     [HasPermission(PermissionNames.UsersView)]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
     {
-        var response = await _userManagementService.GetUsersAsync();
+        var response = await _userManagementService.GetUsersAsync(page, pageSize);
 
         return OkEnvelope(response, "Users retrieved.");
     }
@@ -44,6 +46,15 @@ public class UsersController : ApiControllerBase
         var response = await _userManagementService.CreateUserAsync(request);
 
         return OkEnvelope(response, "User created.");
+    }
+
+    [HttpPut("current")]
+    [HasPermission(PermissionNames.UsersEdit)]
+    public async Task<IActionResult> UpdateCurrent(UpdateCurrentUserRequest request)
+    {
+        var response = await _userManagementService.UpdateCurrentUserAsync(request);
+
+        return OkEnvelope(response, "Profile updated.");
     }
 
     [HttpPut]

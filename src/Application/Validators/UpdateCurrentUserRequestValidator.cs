@@ -1,0 +1,18 @@
+using Application.DTOs.Users;
+using FluentValidation;
+
+namespace Application.Validators;
+
+public class UpdateCurrentUserRequestValidator : AbstractValidator<UpdateCurrentUserRequest>
+{
+    public UpdateCurrentUserRequestValidator()
+    {
+        RuleFor(x => x.FullName)
+            .NotEmpty()
+            .MaximumLength(200);
+
+        RuleFor(x => x.Password)
+            .MinimumLength(8)
+            .When(x => !string.IsNullOrWhiteSpace(x.Password));
+    }
+}

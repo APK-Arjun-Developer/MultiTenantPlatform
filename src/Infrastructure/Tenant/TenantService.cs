@@ -1,5 +1,6 @@
 using Application.Common;
 using Application.DTOs.ActivityLogs;
+using Application.DTOs.Common;
 using Application.DTOs.Tenant;
 using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Caching;
@@ -45,32 +46,50 @@ public class TenantService : ITenantService
         _cacheOptions = cacheOptions.Value;
     }
 
-    public async Task<List<TenantResponse>> GetAllAsync()
+    public async Task<PagedResponse<TenantResponse>> GetTenantsAsync(int page, int pageSize)
     {
+        (page, pageSize) = Pagination.Normalize(page, pageSize);
+
         if (IsSystemAdmin())
         {
-            return await _cache.GetOrCreateAsync(
-                CacheKeys.TenantCatalogAll,
-                async _ => await _context.Tenants
-                    .IgnoreQueryFilters()
-                    .Where(t => t.DeletedAt == null)
-                    .OrderBy(t => t.Name)
-                    .Select(x => new TenantResponse
-                    {
-                        Id = x.Id,
-                        Name = x.Name,
-                        Slug = x.Slug,
-                        IsActive = x.IsActive,
-                    })
-                    .ToListAsync(),
-                TimeSpan.FromMinutes(_cacheOptions.TenantCatalogMinutes));
+            var query = _context.Tenants
+                .IgnoreQueryFilters()
+                .Where(t => t.DeletedAt == null);
+
+            var totalCount = await query.CountAsync();
+
+            var items = await query
+                .OrderBy(t => t.Name)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(x => new TenantResponse
+                {
+                    Id = x.Id,
+                    Name = x.Name,
+                    Slug = x.Slug,
+                    IsActive = x.IsActive,
+                })
+                .ToListAsync();
+
+            return new PagedResponse<TenantResponse>
+            {
+                Items = items,
+                Page = page,
+                PageSize = pageSize,
+                TotalCount = totalCount,
+            };
         }
 
         var tenantId = RequireTenantId();
-
         var current = await GetTenantByIdCachedAsync(tenantId);
 
-        return [current];
+        return new PagedResponse<TenantResponse>
+        {
+            Items = [current],
+            Page = 1,
+            PageSize = pageSize,
+            TotalCount = 1,
+        };
     }
 
     public async Task<TenantResponse> GetCurrentAsync()

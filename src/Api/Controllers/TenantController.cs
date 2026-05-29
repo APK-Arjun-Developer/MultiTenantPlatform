@@ -21,9 +21,11 @@ public class TenantController : ApiControllerBase
 
     [HttpGet]
     [HasPermission(PermissionNames.TenantsView)]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20)
     {
-        var response = await _tenantService.GetAllAsync();
+        var response = await _tenantService.GetTenantsAsync(page, pageSize);
 
         return OkEnvelope(response, "Tenants retrieved.");
     }

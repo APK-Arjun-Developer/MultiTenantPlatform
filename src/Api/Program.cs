@@ -57,6 +57,14 @@ builder.Services.AddOpenApi();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Multi-Tenant Platform API",
+        Version = "v1",
+        Description =
+            "JWT multi-tenant API. See docs/API.md for login rules, onboarding, list scoping, and pagination.",
+    });
+
     const string bearerScheme = "Bearer";
 
     options.AddSecurityDefinition(bearerScheme, new OpenApiSecurityScheme
