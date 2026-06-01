@@ -58,18 +58,13 @@ public class TenantService : ITenantService
 
             var totalCount = await query.CountAsync();
 
-            var items = await query
+            var tenants = await query
                 .OrderBy(t => t.Name)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
-                .Select(x => new TenantResponse
-                {
-                    Id = x.Id,
-                    Name = x.Name,
-                    Slug = x.Slug,
-                    IsActive = x.IsActive,
-                })
                 .ToListAsync();
+
+            var items = tenants.Select(MapToResponse).ToList();
 
             return new PagedResponse<TenantResponse>
             {
@@ -173,6 +168,11 @@ public class TenantService : ITenantService
         tenant.Name = request.Name;
         tenant.IsActive = request.IsActive;
         tenant.UpdatedAt = DateTime.UtcNow;
+
+        await ApplyProfileFileUpdateAsync(
+            tenant,
+            request.ProfileFileId,
+            request.ClearProfileImage);
 
         await _context.SaveChangesAsync();
 
@@ -356,13 +356,51 @@ public class TenantService : ITenantService
         }
     }
 
+    private async Task ApplyProfileFileUpdateAsync(
+        Domain.Entities.Tenant tenant,
+        Guid? profileFileId,
+        bool clearProfileImage)
+    {
+        if (clearProfileImage)
+        {
+            tenant.ProfileFileId = null;
+            return;
+        }
+
+        if (!profileFileId.HasValue)
+        {
+            return;
+        }
+
+        var fileExists = await _context.Files
+            .AsNoTracking()
+            .AnyAsync(f =>
+                f.Id == profileFileId.Value &&
+                f.TenantId == tenant.Id);
+
+        if (!fileExists)
+        {
+            throw new InvalidOperationException(
+                "Profile file not found or does not belong to the tenant.");
+        }
+
+        tenant.ProfileFileId = profileFileId.Value;
+    }
+
+    private static string? BuildProfileUrl(Guid? profileFileId) =>
+        profileFileId.HasValue
+            ? $"/api/v1/files/{profileFileId.Value}/download"
+            : null;
+
     private static TenantResponse MapToResponse(Domain.Entities.Tenant tenant) =>
         new()
         {
             Id = tenant.Id,
             Name = tenant.Name,
             Slug = tenant.Slug,
-            IsActive = tenant.IsActive
+            IsActive = tenant.IsActive,
+            ProfileFileId = tenant.ProfileFileId,
+            ProfileUrl = BuildProfileUrl(tenant.ProfileFileId),
         };
 
     private bool IsSystemAdmin() =>

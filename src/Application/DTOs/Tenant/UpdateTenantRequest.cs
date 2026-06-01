@@ -9,4 +9,8 @@ public class UpdateTenantRequest
     public string? NewSlug { get; set; }
 
     public bool IsActive { get; set; } = true;
+
+    public Guid? ProfileFileId { get; set; }
+
+    public bool ClearProfileImage { get; set; }
 }

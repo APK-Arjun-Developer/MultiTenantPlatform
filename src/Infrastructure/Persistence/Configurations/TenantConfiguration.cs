@@ -21,5 +21,10 @@ public class TenantConfiguration : IEntityTypeConfiguration<Domain.Entities.Tena
 
         builder.HasIndex(x => x.Slug)
             .IsUnique();
+
+        builder.HasOne(x => x.ProfileFile)
+            .WithMany()
+            .HasForeignKey(x => x.ProfileFileId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

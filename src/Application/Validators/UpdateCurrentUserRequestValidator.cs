@@ -14,5 +14,9 @@ public class UpdateCurrentUserRequestValidator : AbstractValidator<UpdateCurrent
         RuleFor(x => x.Password)
             .MinimumLength(8)
             .When(x => !string.IsNullOrWhiteSpace(x.Password));
+
+        RuleFor(x => x.ProfileFileId)
+            .NotEqual(Guid.Empty)
+            .When(x => x.ProfileFileId.HasValue);
     }
 }

@@ -16,5 +16,9 @@ public class UpdateTenantRequestValidator : AbstractValidator<UpdateTenantReques
             .Matches("^[a-z0-9]+(?:-[a-z0-9]+)*$")
             .When(x => !string.IsNullOrWhiteSpace(x.NewSlug))
             .WithMessage("Slug must be lowercase alphanumeric with optional hyphens.");
+
+        RuleFor(x => x.ProfileFileId)
+            .NotEqual(Guid.Empty)
+            .When(x => x.ProfileFileId.HasValue);
     }
 }

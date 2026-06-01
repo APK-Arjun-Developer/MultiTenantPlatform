@@ -9,4 +9,8 @@ public class TenantResponse
     public string Slug { get; set; } = default!;
 
     public bool IsActive { get; set; }
+
+    public Guid? ProfileFileId { get; set; }
+
+    public string? ProfileUrl { get; set; }
 }

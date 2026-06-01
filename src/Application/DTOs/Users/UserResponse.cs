@@ -12,6 +12,10 @@ public class UserResponse
 
     public IReadOnlyList<string> Roles { get; set; } = [];
 
+    public Guid? ProfileFileId { get; set; }
+
+    public string? ProfileUrl { get; set; }
+
     public UserTenantDetails? Tenant { get; set; }
 }
 
@@ -24,4 +28,8 @@ public class UserTenantDetails
     public string Slug { get; set; } = default!;
 
     public bool IsActive { get; set; }
+
+    public Guid? ProfileFileId { get; set; }
+
+    public string? ProfileUrl { get; set; }
 }

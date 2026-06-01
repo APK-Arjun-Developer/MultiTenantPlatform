@@ -168,13 +168,7 @@ public class UserManagementService : IUserManagementService
 
             if (isSystemAdmin && tenantsById.TryGetValue(user.TenantId, out var tenant))
             {
-                tenantDetails = new UserTenantDetails
-                {
-                    Id = tenant.Id,
-                    Name = tenant.Name,
-                    Slug = tenant.Slug,
-                    IsActive = tenant.IsActive
-                };
+                tenantDetails = MapTenantDetails(tenant);
             }
 
             responses.Add(await MapToUserResponseAsync(
@@ -206,13 +200,7 @@ public class UserManagementService : IUserManagementService
 
             if (tenant != null)
             {
-                tenantDetails = new UserTenantDetails
-                {
-                    Id = tenant.Id,
-                    Name = tenant.Name,
-                    Slug = tenant.Slug,
-                    IsActive = tenant.IsActive
-                };
+                tenantDetails = MapTenantDetails(tenant);
             }
         }
         else if (!IsSystemAdmin())
@@ -223,13 +211,7 @@ public class UserManagementService : IUserManagementService
 
             if (tenant != null)
             {
-                tenantDetails = new UserTenantDetails
-                {
-                    Id = tenant.Id,
-                    Name = tenant.Name,
-                    Slug = tenant.Slug,
-                    IsActive = tenant.IsActive
-                };
+                tenantDetails = MapTenantDetails(tenant);
             }
         }
 
@@ -250,6 +232,8 @@ public class UserManagementService : IUserManagementService
 
         user.FullName = request.FullName;
         user.UpdatedAt = DateTime.UtcNow;
+
+        await ApplyProfileFileUpdateAsync(user, request.ProfileFileId, request.ClearProfileImage);
 
         if (!string.IsNullOrWhiteSpace(request.Password))
         {
@@ -316,6 +300,8 @@ public class UserManagementService : IUserManagementService
 
         user.FullName = request.FullName;
         user.UpdatedAt = DateTime.UtcNow;
+
+        await ApplyProfileFileUpdateAsync(user, request.ProfileFileId, request.ClearProfileImage);
 
         if (!string.IsNullOrWhiteSpace(request.Password))
         {
@@ -420,6 +406,53 @@ public class UserManagementService : IUserManagementService
                 u.TenantId == tenantId);
     }
 
+    private async Task ApplyProfileFileUpdateAsync(
+        ApplicationUser user,
+        Guid? profileFileId,
+        bool clearProfileImage)
+    {
+        if (clearProfileImage)
+        {
+            user.ProfileFileId = null;
+            return;
+        }
+
+        if (!profileFileId.HasValue)
+        {
+            return;
+        }
+
+        var fileExists = await _context.Files
+            .AsNoTracking()
+            .AnyAsync(f =>
+                f.Id == profileFileId.Value &&
+                f.TenantId == user.TenantId);
+
+        if (!fileExists)
+        {
+            throw new InvalidOperationException(
+                "Profile file not found or does not belong to the user's tenant.");
+        }
+
+        user.ProfileFileId = profileFileId.Value;
+    }
+
+    private static string? BuildProfileUrl(Guid? profileFileId) =>
+        profileFileId.HasValue
+            ? $"/api/v1/files/{profileFileId.Value}/download"
+            : null;
+
+    private static UserTenantDetails MapTenantDetails(Domain.Entities.Tenant tenant) =>
+        new()
+        {
+            Id = tenant.Id,
+            Name = tenant.Name,
+            Slug = tenant.Slug,
+            IsActive = tenant.IsActive,
+            ProfileFileId = tenant.ProfileFileId,
+            ProfileUrl = BuildProfileUrl(tenant.ProfileFileId),
+        };
+
     private async Task<UserResponse> MapToUserResponseAsync(
         ApplicationUser user,
         bool includeTenantDetails,
@@ -434,6 +467,8 @@ public class UserManagementService : IUserManagementService
             Email = user.Email!,
             TenantId = user.TenantId,
             Roles = roles.ToList(),
+            ProfileFileId = user.ProfileFileId,
+            ProfileUrl = BuildProfileUrl(user.ProfileFileId),
             Tenant = includeTenantDetails ? tenantDetails : null
         };
     }

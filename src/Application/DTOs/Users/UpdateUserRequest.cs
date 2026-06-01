@@ -9,4 +9,8 @@ public class UpdateUserRequest
     public string? RoleName { get; set; }
 
     public string? Password { get; set; }
+
+    public Guid? ProfileFileId { get; set; }
+
+    public bool ClearProfileImage { get; set; }
 }
