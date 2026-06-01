@@ -6,6 +6,7 @@ using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Caching;
 using Application.Interfaces.Tenant;
 using Application.Interfaces.Users;
+using Domain.Entities;
 using Infrastructure.Identity;
 using Infrastructure.Identity.Entities;
 using Infrastructure.Persistence.Contexts;
@@ -251,6 +252,8 @@ public class UserManagementService : IUserManagementService
         user.FullName = request.FullName;
         user.UpdatedAt = DateTime.UtcNow;
 
+        await ApplyProfileFileUpdateAsync(user, request.ProfileFileId, request.ClearProfileImage);
+
         if (!string.IsNullOrWhiteSpace(request.Password))
         {
             var token = await _userManager.GeneratePasswordResetTokenAsync(user);
@@ -316,6 +319,8 @@ public class UserManagementService : IUserManagementService
 
         user.FullName = request.FullName;
         user.UpdatedAt = DateTime.UtcNow;
+
+        await ApplyProfileFileUpdateAsync(user, request.ProfileFileId, request.ClearProfileImage);
 
         if (!string.IsNullOrWhiteSpace(request.Password))
         {
@@ -420,6 +425,42 @@ public class UserManagementService : IUserManagementService
                 u.TenantId == tenantId);
     }
 
+    private async Task ApplyProfileFileUpdateAsync(
+        ApplicationUser user,
+        Guid? profileFileId,
+        bool clearProfileImage)
+    {
+        if (clearProfileImage)
+        {
+            user.ProfileFileId = null;
+            return;
+        }
+
+        if (!profileFileId.HasValue)
+        {
+            return;
+        }
+
+        var fileExists = await _context.Files
+            .AsNoTracking()
+            .AnyAsync(f =>
+                f.Id == profileFileId.Value &&
+                f.TenantId == user.TenantId);
+
+        if (!fileExists)
+        {
+            throw new InvalidOperationException(
+                "Profile file not found or does not belong to the user's tenant.");
+        }
+
+        user.ProfileFileId = profileFileId.Value;
+    }
+
+    private static string? BuildProfileUrl(Guid? profileFileId) =>
+        profileFileId.HasValue
+            ? $"/api/v1/files/{profileFileId.Value}/download"
+            : null;
+
     private async Task<UserResponse> MapToUserResponseAsync(
         ApplicationUser user,
         bool includeTenantDetails,
@@ -434,6 +475,8 @@ public class UserManagementService : IUserManagementService
             Email = user.Email!,
             TenantId = user.TenantId,
             Roles = roles.ToList(),
+            ProfileFileId = user.ProfileFileId,
+            ProfileUrl = BuildProfileUrl(user.ProfileFileId),
             Tenant = includeTenantDetails ? tenantDetails : null
         };
     }
