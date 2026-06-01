@@ -88,18 +88,15 @@ var app = builder.Build();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
+app.MapOpenApi();
 
-    app.UseSwagger();
-    app.UseSwaggerUI(options =>
-    {
-        options.EnableTryItOutByDefault();
-        options.EnablePersistAuthorization();
-        options.InjectJavascript("/swagger-ui/swagger-auto-auth.js");
-    });
-}
+app.UseSwagger();
+app.UseSwaggerUI(options =>
+{
+    options.EnableTryItOutByDefault();
+    options.EnablePersistAuthorization();
+    options.InjectJavascript("/swagger-ui/swagger-auto-auth.js");
+});
 
 app.UseHttpsRedirection();
 
