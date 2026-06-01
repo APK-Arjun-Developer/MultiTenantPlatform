@@ -3,170 +3,114 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Multi-Tenant Platform API</title>
+  <title>Multi-Tenant Platform</title>
   <style>
     :root {
       --bg: #0f1419;
-      --surface: #1a2332;
-      --border: #2d3a4f;
       --text: #e7ecf3;
       --muted: #8b9cb3;
       --accent: #3b82f6;
-      --ok: #22c55e;
-      --warn: #eab308;
+      --border: #2d3a4f;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       font-family: "Segoe UI", system-ui, sans-serif;
       background: var(--bg);
       color: var(--text);
-      line-height: 1.5;
+      line-height: 1.6;
+      padding: 2rem 1.25rem;
     }
-    .wrap {
-      max-width: 720px;
-      margin: 0 auto;
-      padding: 2.5rem 1.25rem 3rem;
+    main {
+      max-width: 32rem;
+      text-align: center;
     }
-    header { margin-bottom: 2rem; }
     h1 {
       font-size: 1.75rem;
       font-weight: 600;
-      margin: 0 0 0.5rem;
+      margin: 0 0 0.75rem;
+      letter-spacing: -0.02em;
     }
-    .tagline { color: var(--muted); margin: 0; }
-    .status {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin-top: 1rem;
-      padding: 0.35rem 0.75rem;
-      border-radius: 999px;
-      font-size: 0.875rem;
-      background: var(--surface);
-      border: 1px solid var(--border);
+    .description {
+      color: var(--muted);
+      margin: 0 0 2rem;
+      font-size: 1.05rem;
     }
-    .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--muted);
-    }
-    .status.ok .dot { background: var(--ok); }
-    .status.warn .dot { background: var(--warn); }
-    section {
-      background: var(--surface);
+    dl {
+      margin: 0;
+      display: grid;
+      gap: 0.75rem;
+      text-align: left;
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 1.25rem 1.5rem;
-      margin-bottom: 1rem;
     }
-    h2 {
-      font-size: 0.75rem;
+    .row {
+      display: grid;
+      grid-template-columns: 7rem 1fr;
+      gap: 0.5rem 1rem;
+      align-items: baseline;
+    }
+    dt {
+      margin: 0;
+      font-size: 0.8rem;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.05em;
       color: var(--muted);
-      margin: 0 0 0.75rem;
     }
-    code, .endpoint {
-      font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
-      font-size: 0.9rem;
+    dd {
+      margin: 0;
+      font-size: 0.95rem;
     }
-    .base {
+    .status {
       color: var(--accent);
-      word-break: break-all;
     }
-    ul {
-      margin: 0;
-      padding: 0;
-      list-style: none;
-    }
-    li {
-      padding: 0.35rem 0;
-      border-bottom: 1px solid var(--border);
-    }
-    li:last-child { border-bottom: none; }
-    .method {
-      display: inline-block;
-      min-width: 3.25rem;
-      font-weight: 600;
-      font-size: 0.75rem;
-      color: var(--muted);
-    }
-    .note {
-      font-size: 0.875rem;
-      color: var(--muted);
-      margin: 0;
-    }
-    a { color: var(--accent); }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <header>
-      <h1>Multi-Tenant Platform API</h1>
-      <p class="tagline">JWT multi-tenant REST API · version 1</p>
-      <div id="status" class="status warn" aria-live="polite">
-        <span class="dot"></span>
-        <span id="status-text">Checking API…</span>
+  <main>
+    <h1>Multi-Tenant Platform</h1>
+    <p class="description">
+      A multi-tenant SaaS API with JWT authentication, role-based permissions,
+      and tenant isolation for users, roles, products, reports, and file storage.
+    </p>
+    <dl>
+      <div class="row">
+        <dt>Version</dt>
+        <dd>1.0.0 (API v1)</dd>
       </div>
-    </header>
-
-    <section>
-      <h2>Base URL</h2>
-      <p class="base"><code id="api-base"></code></p>
-      <p class="note">All endpoints return JSON in a standard envelope: <code>data</code>, <code>message</code>, <code>traceId</code>.</p>
-    </section>
-
-    <section>
-      <h2>Getting started</h2>
-      <ul>
-        <li><span class="method">POST</span> <code class="endpoint">/api/v1/auth/login</code> — obtain access token</li>
-        <li><span class="method">POST</span> <code class="endpoint">/api/v1/auth/refresh</code> — refresh tokens</li>
-        <li><span class="method">GET</span> <code class="endpoint">/api/v1/users/current</code> — profile (Bearer token)</li>
-      </ul>
-      <p class="note" style="margin-top: 0.75rem;">Tenant users must include <code>tenantSlug</code> on login. SuperAdmin omits it.</p>
-    </section>
-
-    <section>
-      <h2>API areas</h2>
-      <ul>
-        <li><span class="method">GET</span> <code>/api/v1/health</code> — service status</li>
-        <li><span class="method">*</span> <code>/api/v1/auth/*</code> — authentication</li>
-        <li><span class="method">*</span> <code>/api/v1/users</code> · <code>/api/v1/roles</code></li>
-        <li><span class="method">*</span> <code>/api/v1/tenants</code> · <code>/api/v1/products</code></li>
-        <li><span class="method">*</span> <code>/api/v1/permissions</code> · <code>/api/v1/reports</code> · <code>/api/v1/files</code></li>
-      </ul>
-    </section>
-
-    <section>
-      <h2>Documentation</h2>
-      <p class="note">Interactive Swagger UI is available in <strong>Development</strong> only. Use an HTTP client (Postman, curl, etc.) against this server with a Bearer token for production testing.</p>
-    </section>
-  </div>
+      <div class="row">
+        <dt>Runtime</dt>
+        <dd>.NET 10</dd>
+      </div>
+      <div class="row">
+        <dt>API base</dt>
+        <dd><span id="api-base">/api/v1</span></dd>
+      </div>
+      <div class="row">
+        <dt>Status</dt>
+        <dd class="status" id="status">Checking…</dd>
+      </div>
+    </dl>
+  </main>
   <script>
-    (function () {
-      var origin = window.location.origin;
-      document.getElementById("api-base").textContent = origin + "/api/v1";
-      var statusEl = document.getElementById("status");
-      var textEl = document.getElementById("status-text");
-      fetch(origin + "/api/v1/health")
-        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
-        .then(function (res) {
-          if (res.ok && res.j && res.j.data) {
-            statusEl.className = "status ok";
-            textEl.textContent = "API online · " + (res.j.data.environment || "production");
-          } else {
-            statusEl.className = "status warn";
-            textEl.textContent = "API reachable but health check returned unexpected data";
-          }
-        })
-        .catch(function () {
-          statusEl.className = "status warn";
-          textEl.textContent = "Could not reach /api/v1/health";
-        });
-    })();
+    document.getElementById("api-base").textContent =
+      window.location.origin + "/api/v1";
+    fetch(window.location.origin + "/api/v1/health")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        document.getElementById("status").textContent =
+          j && j.data && j.data.status === "healthy"
+            ? "Online"
+            : "Unavailable";
+      })
+      .catch(function () {
+        document.getElementById("status").textContent = "Unavailable";
+      });
   </script>
 </body>
 </html>
