@@ -93,10 +93,19 @@ Monitor the workflow log. On success, browse `https://<your-site>.monsterasp.net
 
 ## 5. FTP file locks (troubleshooting)
 
-If deploy fails with **“file in use”** / **550 Cannot delete file**:
+Error **`550 Could not access file: driver error: calling GetHandle`** usually means **IIS has locked `Api.dll`** while the site is running.
+
+The workflow handles this automatically:
+
+1. Upload `app_offline.htm` to `wwwroot` (stops the site)
+2. Wait 20 seconds
+3. Deploy all files
+4. Delete `app_offline.htm` (site comes back online)
+
+If deploy still fails:
 
 1. **Control panel** → Websites → your site → **Restart**, then re-run the workflow, or  
-2. Upload [`deploy/app_offline.htm`](../deploy/app_offline.htm) to `wwwroot` before deploy (stops IIS), then remove it after a successful deploy.
+2. Manually upload [`deploy/app_offline.htm`](../deploy/app_offline.htm) via FileZilla, deploy, then delete it.
 
 See [MonsterASP FTP deploy docs](https://help.monsterasp.net/books/deploy/page/how-to-deploy-website-content-via-ftpsftp).
 
