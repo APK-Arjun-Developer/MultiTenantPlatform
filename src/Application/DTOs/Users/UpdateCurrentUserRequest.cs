@@ -1,11 +1,18 @@
+using Application.DTOs.Common;
+
 namespace Application.DTOs.Users;
 
-/// <summary>
-/// Profile update for the authenticated user (JWT). Email and role cannot be changed here.
-/// </summary>
 public class UpdateCurrentUserRequest
 {
     public string FullName { get; set; } = default!;
 
     public string? Password { get; set; }
+
+    public Guid? ProfileFileId { get; set; }
+
+    public bool ClearProfileImage { get; set; }
+
+    public AddressRequest? Address { get; set; }
+
+    public bool ClearAddress { get; set; }
 }

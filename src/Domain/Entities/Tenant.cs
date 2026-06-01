@@ -9,4 +9,10 @@ public class Tenant : BaseEntity
     public string Slug { get; set; } = default!;
 
     public bool IsActive { get; set; } = true;
+
+    public Guid? ProfileFileId { get; set; }
+
+    public FileEntity? ProfileFile { get; set; }
+
+    public Address? Address { get; set; }
 }

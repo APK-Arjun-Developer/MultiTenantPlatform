@@ -8,6 +8,8 @@ using Application.Interfaces.Tenant;
 using Application.Interfaces.Users;
 using Infrastructure.Identity;
 using Infrastructure.Identity.Entities;
+using Domain.Entities;
+using Infrastructure.Persistence;
 using Infrastructure.Persistence.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -150,6 +152,8 @@ public class UserManagementService : IUserManagementService
 
         Dictionary<Guid, Domain.Entities.Tenant> tenantsById = [];
 
+        Dictionary<Guid, Address> tenantAddressesById = [];
+
         if (isSystemAdmin && users.Count > 0)
         {
             var tenantIds = users.Select(u => u.TenantId).Distinct().ToList();
@@ -158,7 +162,18 @@ public class UserManagementService : IUserManagementService
                 .IgnoreQueryFilters()
                 .Where(t => tenantIds.Contains(t.Id) && t.DeletedAt == null)
                 .ToDictionaryAsync(t => t.Id);
+
+            tenantAddressesById = await AddressHelper.GetTenantAddressesAsync(
+                _context,
+                tenantIds);
         }
+
+        var userIds = users.Select(u => u.Id).ToList();
+
+        var userAddresses = await AddressHelper.GetUserAddressesAsync(
+            _context,
+            userIds,
+            isSystemAdmin);
 
         var responses = new List<UserResponse>();
 
@@ -168,19 +183,18 @@ public class UserManagementService : IUserManagementService
 
             if (isSystemAdmin && tenantsById.TryGetValue(user.TenantId, out var tenant))
             {
-                tenantDetails = new UserTenantDetails
-                {
-                    Id = tenant.Id,
-                    Name = tenant.Name,
-                    Slug = tenant.Slug,
-                    IsActive = tenant.IsActive
-                };
+                tenantAddressesById.TryGetValue(tenant.Id, out var tenantAddress);
+
+                tenantDetails = MapTenantDetails(tenant, tenantAddress);
             }
+
+            userAddresses.TryGetValue(user.Id, out var userAddress);
 
             responses.Add(await MapToUserResponseAsync(
                 user,
                 includeTenantDetails: isSystemAdmin,
-                tenantDetails));
+                tenantDetails,
+                userAddress));
         }
 
         return new PagedResponse<UserResponse>
@@ -206,13 +220,11 @@ public class UserManagementService : IUserManagementService
 
             if (tenant != null)
             {
-                tenantDetails = new UserTenantDetails
-                {
-                    Id = tenant.Id,
-                    Name = tenant.Name,
-                    Slug = tenant.Slug,
-                    IsActive = tenant.IsActive
-                };
+                var tenantAddress = await AddressHelper.GetTenantAddressAsync(
+                    _context,
+                    tenant.Id);
+
+                tenantDetails = MapTenantDetails(tenant, tenantAddress);
             }
         }
         else if (!IsSystemAdmin())
@@ -223,20 +235,24 @@ public class UserManagementService : IUserManagementService
 
             if (tenant != null)
             {
-                tenantDetails = new UserTenantDetails
-                {
-                    Id = tenant.Id,
-                    Name = tenant.Name,
-                    Slug = tenant.Slug,
-                    IsActive = tenant.IsActive
-                };
+                var tenantAddress = await AddressHelper.GetTenantAddressAsync(
+                    _context,
+                    tenant.Id);
+
+                tenantDetails = MapTenantDetails(tenant, tenantAddress);
             }
         }
+
+        var address = await AddressHelper.GetUserAddressAsync(
+            _context,
+            user.Id,
+            IsSystemAdmin());
 
         return await MapToUserResponseAsync(
             user,
             includeTenantDetails: tenantDetails != null,
-            tenantDetails);
+            tenantDetails,
+            address);
     }
 
     public async Task<UserResponse> UpdateUserAsync(UpdateUserRequest request)
@@ -250,6 +266,14 @@ public class UserManagementService : IUserManagementService
 
         user.FullName = request.FullName;
         user.UpdatedAt = DateTime.UtcNow;
+
+        await ApplyProfileFileUpdateAsync(user, request.ProfileFileId, request.ClearProfileImage);
+
+        await AddressHelper.ApplyUserAddressUpdateAsync(
+            _context,
+            user,
+            request.Address,
+            request.ClearAddress);
 
         if (!string.IsNullOrWhiteSpace(request.Password))
         {
@@ -300,6 +324,7 @@ public class UserManagementService : IUserManagementService
         }
 
         await _userManager.UpdateAsync(user);
+        await _context.SaveChangesAsync();
 
         await LogCurrentUserActivityAsync(
             ActivityActions.Users.Updated,
@@ -307,7 +332,15 @@ public class UserManagementService : IUserManagementService
 
         _cache.InvalidateTenantDashboard(user.TenantId);
 
-        return await MapToUserResponseAsync(user, includeTenantDetails: IsSystemAdmin());
+        var address = await AddressHelper.GetUserAddressAsync(
+            _context,
+            user.Id,
+            IsSystemAdmin());
+
+        return await MapToUserResponseAsync(
+            user,
+            includeTenantDetails: IsSystemAdmin(),
+            address: address);
     }
 
     public async Task<UserResponse> UpdateCurrentUserAsync(UpdateCurrentUserRequest request)
@@ -316,6 +349,14 @@ public class UserManagementService : IUserManagementService
 
         user.FullName = request.FullName;
         user.UpdatedAt = DateTime.UtcNow;
+
+        await ApplyProfileFileUpdateAsync(user, request.ProfileFileId, request.ClearProfileImage);
+
+        await AddressHelper.ApplyUserAddressUpdateAsync(
+            _context,
+            user,
+            request.Address,
+            request.ClearAddress);
 
         if (!string.IsNullOrWhiteSpace(request.Password))
         {
@@ -334,6 +375,7 @@ public class UserManagementService : IUserManagementService
         }
 
         await _userManager.UpdateAsync(user);
+        await _context.SaveChangesAsync();
 
         await LogCurrentUserActivityAsync(
             ActivityActions.Users.Updated,
@@ -420,10 +462,61 @@ public class UserManagementService : IUserManagementService
                 u.TenantId == tenantId);
     }
 
+    private async Task ApplyProfileFileUpdateAsync(
+        ApplicationUser user,
+        Guid? profileFileId,
+        bool clearProfileImage)
+    {
+        if (clearProfileImage)
+        {
+            user.ProfileFileId = null;
+            return;
+        }
+
+        if (!profileFileId.HasValue)
+        {
+            return;
+        }
+
+        var fileExists = await _context.Files
+            .AsNoTracking()
+            .AnyAsync(f =>
+                f.Id == profileFileId.Value &&
+                f.TenantId == user.TenantId);
+
+        if (!fileExists)
+        {
+            throw new InvalidOperationException(
+                "Profile file not found or does not belong to the user's tenant.");
+        }
+
+        user.ProfileFileId = profileFileId.Value;
+    }
+
+    private static string? BuildProfileUrl(Guid? profileFileId) =>
+        profileFileId.HasValue
+            ? $"/api/v1/files/{profileFileId.Value}/download"
+            : null;
+
+    private static UserTenantDetails MapTenantDetails(
+        Domain.Entities.Tenant tenant,
+        Address? address = null) =>
+        new()
+        {
+            Id = tenant.Id,
+            Name = tenant.Name,
+            Slug = tenant.Slug,
+            IsActive = tenant.IsActive,
+            ProfileFileId = tenant.ProfileFileId,
+            ProfileUrl = BuildProfileUrl(tenant.ProfileFileId),
+            Address = AddressFormatter.ToResponse(address),
+        };
+
     private async Task<UserResponse> MapToUserResponseAsync(
         ApplicationUser user,
         bool includeTenantDetails,
-        UserTenantDetails? tenantDetails = null)
+        UserTenantDetails? tenantDetails = null,
+        Address? address = null)
     {
         var roles = await _userManager.GetRolesAsync(user);
 
@@ -434,6 +527,9 @@ public class UserManagementService : IUserManagementService
             Email = user.Email!,
             TenantId = user.TenantId,
             Roles = roles.ToList(),
+            ProfileFileId = user.ProfileFileId,
+            ProfileUrl = BuildProfileUrl(user.ProfileFileId),
+            Address = AddressFormatter.ToResponse(address),
             Tenant = includeTenantDetails ? tenantDetails : null
         };
     }

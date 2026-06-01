@@ -1,3 +1,5 @@
+using Application.DTOs.Common;
+
 namespace Application.DTOs.Tenant;
 
 public class TenantResponse
@@ -9,4 +11,10 @@ public class TenantResponse
     public string Slug { get; set; } = default!;
 
     public bool IsActive { get; set; }
+
+    public Guid? ProfileFileId { get; set; }
+
+    public string? ProfileUrl { get; set; }
+
+    public AddressResponse? Address { get; set; }
 }

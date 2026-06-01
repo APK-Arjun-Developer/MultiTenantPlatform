@@ -7,6 +7,9 @@ public class UpdateCurrentUserRequestValidator : AbstractValidator<UpdateCurrent
 {
     public UpdateCurrentUserRequestValidator()
     {
+        RuleFor(x => x.Address)
+            .SetValidator(new AddressRequestValidator()!)
+            .When(x => x.Address != null);
         RuleFor(x => x.FullName)
             .NotEmpty()
             .MaximumLength(200);
@@ -14,5 +17,9 @@ public class UpdateCurrentUserRequestValidator : AbstractValidator<UpdateCurrent
         RuleFor(x => x.Password)
             .MinimumLength(8)
             .When(x => !string.IsNullOrWhiteSpace(x.Password));
+
+        RuleFor(x => x.ProfileFileId)
+            .NotEqual(Guid.Empty)
+            .When(x => x.ProfileFileId.HasValue);
     }
 }

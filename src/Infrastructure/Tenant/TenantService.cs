@@ -2,6 +2,7 @@ using Application.Common;
 using Application.DTOs.ActivityLogs;
 using Application.DTOs.Common;
 using Application.DTOs.Tenant;
+using Domain.Entities;
 using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Caching;
 using Application.Interfaces.Tenant;
@@ -58,18 +59,23 @@ public class TenantService : ITenantService
 
             var totalCount = await query.CountAsync();
 
-            var items = await query
+            var tenants = await query
                 .OrderBy(t => t.Name)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
-                .Select(x => new TenantResponse
-                {
-                    Id = x.Id,
-                    Name = x.Name,
-                    Slug = x.Slug,
-                    IsActive = x.IsActive,
-                })
                 .ToListAsync();
+
+            var tenantIds = tenants.Select(t => t.Id).ToList();
+
+            var addressesByTenantId = await AddressHelper.GetTenantAddressesAsync(
+                _context,
+                tenantIds);
+
+            var items = tenants
+                .Select(t => MapToResponse(
+                    t,
+                    addressesByTenantId.GetValueOrDefault(t.Id)))
+                .ToList();
 
             return new PagedResponse<TenantResponse>
             {
@@ -120,7 +126,11 @@ public class TenantService : ITenantService
                     throw new InvalidOperationException("Tenant not found.");
                 }
 
-                return MapToResponse(tenant);
+                var address = await AddressHelper.GetTenantAddressAsync(
+                    _context,
+                    tenantId);
+
+                return MapToResponse(tenant, address);
             },
             TimeSpan.FromMinutes(_cacheOptions.TenantDetailMinutes));
     }
@@ -174,6 +184,17 @@ public class TenantService : ITenantService
         tenant.IsActive = request.IsActive;
         tenant.UpdatedAt = DateTime.UtcNow;
 
+        await ApplyProfileFileUpdateAsync(
+            tenant,
+            request.ProfileFileId,
+            request.ClearProfileImage);
+
+        await AddressHelper.ApplyTenantAddressUpdateAsync(
+            _context,
+            tenant,
+            request.Address,
+            request.ClearAddress);
+
         await _context.SaveChangesAsync();
 
         _cache.InvalidateTenantCatalog();
@@ -183,7 +204,9 @@ public class TenantService : ITenantService
             ActivityActions.Tenants.Updated,
             $"Updated tenant '{tenant.Slug}'.");
 
-        return MapToResponse(tenant);
+        var address = await AddressHelper.GetTenantAddressAsync(_context, tenant.Id);
+
+        return MapToResponse(tenant, address);
     }
 
     public async Task DeleteAsync(DeleteTenantRequest request)
@@ -356,13 +379,54 @@ public class TenantService : ITenantService
         }
     }
 
-    private static TenantResponse MapToResponse(Domain.Entities.Tenant tenant) =>
+    private async Task ApplyProfileFileUpdateAsync(
+        Domain.Entities.Tenant tenant,
+        Guid? profileFileId,
+        bool clearProfileImage)
+    {
+        if (clearProfileImage)
+        {
+            tenant.ProfileFileId = null;
+            return;
+        }
+
+        if (!profileFileId.HasValue)
+        {
+            return;
+        }
+
+        var fileExists = await _context.Files
+            .AsNoTracking()
+            .AnyAsync(f =>
+                f.Id == profileFileId.Value &&
+                f.TenantId == tenant.Id);
+
+        if (!fileExists)
+        {
+            throw new InvalidOperationException(
+                "Profile file not found or does not belong to the tenant.");
+        }
+
+        tenant.ProfileFileId = profileFileId.Value;
+    }
+
+    private static string? BuildProfileUrl(Guid? profileFileId) =>
+        profileFileId.HasValue
+            ? $"/api/v1/files/{profileFileId.Value}/download"
+            : null;
+
+    private static TenantResponse MapToResponse(
+        Domain.Entities.Tenant tenant,
+        Address? address = null) =>
         new()
         {
             Id = tenant.Id,
             Name = tenant.Name,
             Slug = tenant.Slug,
-            IsActive = tenant.IsActive
+            IsActive = tenant.IsActive,
+            ProfileFileId = tenant.ProfileFileId,
+            ProfileUrl = BuildProfileUrl(tenant.ProfileFileId),
+            Address = AddressFormatter.ToResponse(address),
         };
 
     private bool IsSystemAdmin() =>

@@ -7,6 +7,9 @@ public class UpdateUserRequestValidator : AbstractValidator<UpdateUserRequest>
 {
     public UpdateUserRequestValidator()
     {
+        RuleFor(x => x.Address)
+            .SetValidator(new AddressRequestValidator()!)
+            .When(x => x.Address != null);
         RuleFor(x => x.Email)
             .NotEmpty()
             .EmailAddress();
@@ -18,5 +21,9 @@ public class UpdateUserRequestValidator : AbstractValidator<UpdateUserRequest>
         RuleFor(x => x.Password)
             .MinimumLength(8)
             .When(x => !string.IsNullOrWhiteSpace(x.Password));
+
+        RuleFor(x => x.ProfileFileId)
+            .NotEqual(Guid.Empty)
+            .When(x => x.ProfileFileId.HasValue);
     }
 }
