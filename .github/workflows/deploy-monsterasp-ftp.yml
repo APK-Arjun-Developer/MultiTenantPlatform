@@ -19,6 +19,31 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        
+      - name: Validate required GitHub secrets
+        shell: pwsh
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          PRODUCTION_CONNECTION_STRING: ${{ secrets.PRODUCTION_CONNECTION_STRING }}
+          JWT_KEY: ${{ secrets.JWT_KEY }}
+        run: |
+          $required = @(
+            @{ Name = 'FTP_SERVER'; Value = $env:FTP_SERVER },
+            @{ Name = 'FTP_USERNAME'; Value = $env:FTP_USERNAME },
+            @{ Name = 'FTP_PASSWORD'; Value = $env:FTP_PASSWORD },
+            @{ Name = 'PRODUCTION_CONNECTION_STRING'; Value = $env:PRODUCTION_CONNECTION_STRING },
+            @{ Name = 'JWT_KEY'; Value = $env:JWT_KEY }
+          )
+          $missing = @($required | Where-Object { [string]::IsNullOrWhiteSpace($_.Value) } | ForEach-Object { $_.Name })
+          if ($missing.Count -gt 0) {
+            throw @"
+          Missing required repository secrets: $($missing -join ', ')
+          Add them under: GitHub repo → Settings → Secrets and variables → Actions → New repository secret
+          See docs/DEPLOYMENT.md (FTP_SERVER = hostname only, e.g. site1234.siteasp.net — no ftp:// prefix).
+          "@
+          }
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
