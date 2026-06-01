@@ -128,26 +128,10 @@ Supported on:
 
 ## Current user profile
 
-- `GET /users/current` — JWT user profile (includes `profileFileId`, `profileUrl` when set)
-- `PUT /users/current` — Update **own** `fullName`, optional `password`, and profile image (requires `Users.Edit`). Cannot change email or role here.
+- `GET /users/current` — JWT user profile
+- `PUT /users/current` — Update **own** `fullName` and optional `password` (requires `Users.Edit`). Cannot change email or role here.
 
-### Profile image (FK to `Files`)
-
-1. `POST /api/v1/files` — upload image (`Files.Upload`)
-2. `PUT /users/current` with `profileFileId` set to the returned file `id`
-
-```json
-{
-  "fullName": "Jane Doe",
-  "profileFileId": "<file-guid-from-upload>"
-}
-```
-
-- `profileUrl` in responses: `/api/v1/files/{id}/download` (requires `Files.View` + Bearer token)
-- `clearProfileImage: true` — removes the FK without uploading a new file
-- Omit `profileFileId` to leave the current image unchanged
-
-Admin updates to other users: `PUT /users` with `email` in body (same `profileFileId` / `clearProfileImage` fields).
+Admin updates to other users: `PUT /users` with `email` in body.
 
 ---
 

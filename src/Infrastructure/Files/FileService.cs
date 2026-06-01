@@ -114,12 +114,6 @@ public class FileService : IFileService
         var file = await FindFileAsync(id);
 
         file.MarkDeleted();
-
-        await _context.Users
-            .Where(u => u.ProfileFileId == file.Id)
-            .ExecuteUpdateAsync(setters =>
-                setters.SetProperty(u => u.ProfileFileId, (Guid?)null));
-
         await _context.SaveChangesAsync();
 
         try

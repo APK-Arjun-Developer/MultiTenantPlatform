@@ -1,4 +1,3 @@
-using Domain.Entities;
 using Infrastructure.Identity.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -21,10 +20,5 @@ public class ApplicationUserConfiguration
             x.Email,
             x.TenantId
         }).IsUnique();
-
-        builder.HasOne(x => x.ProfileFile)
-            .WithMany()
-            .HasForeignKey(x => x.ProfileFileId)
-            .OnDelete(DeleteBehavior.SetNull);
     }
 }
