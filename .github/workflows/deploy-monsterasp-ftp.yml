@@ -80,7 +80,8 @@ jobs:
           $audience = if ([string]::IsNullOrWhiteSpace($env:JWT_AUDIENCE)) { "MultiTenantPlatformUsers" } else { $env:JWT_AUDIENCE }
 
           $settings = @{
-            SeedOnStartup = $false
+            ApplyMigrationsOnStartup = $true
+            SeedOnStartup = $true
             ConnectionStrings = @{
               DefaultConnection = $env:CONNECTION_STRING
             }

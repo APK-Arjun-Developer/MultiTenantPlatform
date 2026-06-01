@@ -19,23 +19,22 @@ Automated production deploys use [`.github/workflows/deploy-monsterasp-ftp.yml`]
 4. In the website settings, set the **.NET version** to **.NET 10** (or latest available).
 5. Copy the **SQL Server connection string** from the database panel (use it for `PRODUCTION_CONNECTION_STRING`).
 
-### First-time database
+### Database on startup (production)
 
-Run migrations **once** against the production database (from your PC or a one-off job):
+With **`ApplyMigrationsOnStartup: true`** and **`SeedOnStartup: true`** (set in `appsettings.Production.json` and the deploy workflow), each app start will:
 
-```bash
-dotnet ef database update --project src/Infrastructure --startup-project src/Api
-```
+1. Apply any **pending EF Core migrations**
+2. Run **idempotent seeders** (permissions, default tenant, SuperAdmin if missing)
 
-Use the production connection string via environment variable:
+First SuperAdmin (only if no user exists): `admin@system.com` / `Admin123!` — change the password after first login.
+
+Optional manual migration from your PC:
 
 ```powershell
 $env:ConnectionStrings__DefaultConnection = "<your-monsterasp-sql-connection-string>"
 $env:ASPNETCORE_ENVIRONMENT = "Production"
 dotnet ef database update --project src/Infrastructure --startup-project src/Api
 ```
-
-Production has **`SeedOnStartup: false`** so the default `admin@system.com` account is **not** created on the server. Create your SuperAdmin manually or run a one-time seed in a controlled environment.
 
 ---
 
@@ -65,7 +64,8 @@ Committed templates: [`appsettings.Development.json`](../src/Api/appsettings.Dev
 
 | Setting | Production behavior |
 |---------|---------------------|
-| `SeedOnStartup` | `false` — no automatic demo/admin seed |
+| `ApplyMigrationsOnStartup` | `true` — apply pending migrations on startup |
+| `SeedOnStartup` | `true` — run idempotent seeders on startup |
 | `ConnectionStrings:DefaultConnection` | Injected from `PRODUCTION_CONNECTION_STRING` |
 | `Jwt:Key` | Injected from `JWT_KEY` |
 | `Serilog` | `Warning` default |

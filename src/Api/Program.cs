@@ -1,15 +1,9 @@
 using Serilog;
 using Infrastructure.Persistence;
-using Infrastructure.Persistence.Contexts;
-using Infrastructure.Persistence.Seed;
 using Infrastructure.Identity;
-using Infrastructure.Identity.Seed;
-using Microsoft.AspNetCore.Identity;
-using Infrastructure.Identity.Entities;
 using Microsoft.OpenApi;
 using Api.Contracts;
 using Api.Middleware;
-using Application.Interfaces.Caching;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Mvc;
@@ -112,24 +106,9 @@ app.UseMiddleware<RequestLoggingMiddleware>();
 
 app.MapControllers();
 
-if (app.Configuration.GetValue("SeedOnStartup", app.Environment.IsDevelopment()))
-{
-    using var scope = app.Services.CreateScope();
-    var services = scope.ServiceProvider;
-
-    var dbContext = services.GetRequiredService<ApplicationDbContext>();
-
-    await DbSeeder.SeedAsync(dbContext);
-
-    await PermissionSeeder.SeedAsync(dbContext);
-
-    services.GetRequiredService<IAppCache>().InvalidatePermissionCatalogs();
-
-    var roleManager = services.GetRequiredService<RoleManager<ApplicationRole>>();
-
-    var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
-
-    await IdentitySeeder.SeedAsync(roleManager, userManager, dbContext);
-}
+await DatabaseInitializer.ApplyMigrationsAndSeedAsync(
+    app.Services,
+    app.Configuration,
+    app.Logger);
 
 app.Run();
