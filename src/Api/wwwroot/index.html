@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Multi-Tenant Platform</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --text: #e7ecf3;
+      --muted: #8b9cb3;
+      --accent: #3b82f6;
+      --border: #2d3a4f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 2rem 1.25rem;
+    }
+    main {
+      max-width: 32rem;
+      text-align: center;
+    }
+    h1 {
+      font-size: 1.75rem;
+      font-weight: 600;
+      margin: 0 0 0.75rem;
+      letter-spacing: -0.02em;
+    }
+    .description {
+      color: var(--muted);
+      margin: 0 0 2rem;
+      font-size: 1.05rem;
+    }
+    dl {
+      margin: 0;
+      display: grid;
+      gap: 0.75rem;
+      text-align: left;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 7rem 1fr;
+      gap: 0.5rem 1rem;
+      align-items: baseline;
+    }
+    dt {
+      margin: 0;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+    }
+    dd {
+      margin: 0;
+      font-size: 0.95rem;
+    }
+    .status {
+      color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Multi-Tenant Platform</h1>
+    <p class="description">
+      A multi-tenant SaaS API with JWT authentication, role-based permissions,
+      and tenant isolation for users, roles, products, reports, and file storage.
+    </p>
+    <dl>
+      <div class="row">
+        <dt>Version</dt>
+        <dd>1.0.0 (API v1)</dd>
+      </div>
+      <div class="row">
+        <dt>Runtime</dt>
+        <dd>.NET 10</dd>
+      </div>
+      <div class="row">
+        <dt>API base</dt>
+        <dd><span id="api-base">/api/v1</span></dd>
+      </div>
+      <div class="row">
+        <dt>Status</dt>
+        <dd class="status" id="status">Checking…</dd>
+      </div>
+    </dl>
+  </main>
+  <script>
+    document.getElementById("api-base").textContent =
+      window.location.origin + "/api/v1";
+    fetch(window.location.origin + "/api/v1/health")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        document.getElementById("status").textContent =
+          j && j.data && j.data.status === "healthy"
+            ? "Online"
+            : "Unavailable";
+      })
+      .catch(function () {
+        document.getElementById("status").textContent = "Unavailable";
+      });
+  </script>
+</body>
+</html>
