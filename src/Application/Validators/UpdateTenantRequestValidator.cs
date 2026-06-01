@@ -7,6 +7,9 @@ public class UpdateTenantRequestValidator : AbstractValidator<UpdateTenantReques
 {
     public UpdateTenantRequestValidator()
     {
+        RuleFor(x => x.Address)
+            .SetValidator(new AddressRequestValidator()!)
+            .When(x => x.Address != null);
         RuleFor(x => x.Name)
             .NotEmpty()
             .MaximumLength(200);

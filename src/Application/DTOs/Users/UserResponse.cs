@@ -1,3 +1,5 @@
+using Application.DTOs.Common;
+
 namespace Application.DTOs.Users;
 
 public class UserResponse
@@ -16,6 +18,8 @@ public class UserResponse
 
     public string? ProfileUrl { get; set; }
 
+    public AddressResponse? Address { get; set; }
+
     public UserTenantDetails? Tenant { get; set; }
 }
 
@@ -32,4 +36,6 @@ public class UserTenantDetails
     public Guid? ProfileFileId { get; set; }
 
     public string? ProfileUrl { get; set; }
+
+    public AddressResponse? Address { get; set; }
 }

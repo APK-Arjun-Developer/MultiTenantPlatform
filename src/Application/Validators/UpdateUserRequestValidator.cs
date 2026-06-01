@@ -7,6 +7,9 @@ public class UpdateUserRequestValidator : AbstractValidator<UpdateUserRequest>
 {
     public UpdateUserRequestValidator()
     {
+        RuleFor(x => x.Address)
+            .SetValidator(new AddressRequestValidator()!)
+            .When(x => x.Address != null);
         RuleFor(x => x.Email)
             .NotEmpty()
             .EmailAddress();

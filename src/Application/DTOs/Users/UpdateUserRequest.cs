@@ -1,3 +1,5 @@
+using Application.DTOs.Common;
+
 namespace Application.DTOs.Users;
 
 public class UpdateUserRequest
@@ -13,4 +15,8 @@ public class UpdateUserRequest
     public Guid? ProfileFileId { get; set; }
 
     public bool ClearProfileImage { get; set; }
+
+    public AddressRequest? Address { get; set; }
+
+    public bool ClearAddress { get; set; }
 }

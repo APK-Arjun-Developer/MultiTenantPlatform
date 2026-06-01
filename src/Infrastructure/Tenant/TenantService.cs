@@ -2,6 +2,7 @@ using Application.Common;
 using Application.DTOs.ActivityLogs;
 using Application.DTOs.Common;
 using Application.DTOs.Tenant;
+using Domain.Entities;
 using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Caching;
 using Application.Interfaces.Tenant;
@@ -64,7 +65,17 @@ public class TenantService : ITenantService
                 .Take(pageSize)
                 .ToListAsync();
 
-            var items = tenants.Select(MapToResponse).ToList();
+            var tenantIds = tenants.Select(t => t.Id).ToList();
+
+            var addressesByTenantId = await AddressHelper.GetTenantAddressesAsync(
+                _context,
+                tenantIds);
+
+            var items = tenants
+                .Select(t => MapToResponse(
+                    t,
+                    addressesByTenantId.GetValueOrDefault(t.Id)))
+                .ToList();
 
             return new PagedResponse<TenantResponse>
             {
@@ -115,7 +126,11 @@ public class TenantService : ITenantService
                     throw new InvalidOperationException("Tenant not found.");
                 }
 
-                return MapToResponse(tenant);
+                var address = await AddressHelper.GetTenantAddressAsync(
+                    _context,
+                    tenantId);
+
+                return MapToResponse(tenant, address);
             },
             TimeSpan.FromMinutes(_cacheOptions.TenantDetailMinutes));
     }
@@ -174,6 +189,12 @@ public class TenantService : ITenantService
             request.ProfileFileId,
             request.ClearProfileImage);
 
+        await AddressHelper.ApplyTenantAddressUpdateAsync(
+            _context,
+            tenant,
+            request.Address,
+            request.ClearAddress);
+
         await _context.SaveChangesAsync();
 
         _cache.InvalidateTenantCatalog();
@@ -183,7 +204,9 @@ public class TenantService : ITenantService
             ActivityActions.Tenants.Updated,
             $"Updated tenant '{tenant.Slug}'.");
 
-        return MapToResponse(tenant);
+        var address = await AddressHelper.GetTenantAddressAsync(_context, tenant.Id);
+
+        return MapToResponse(tenant, address);
     }
 
     public async Task DeleteAsync(DeleteTenantRequest request)
@@ -392,7 +415,9 @@ public class TenantService : ITenantService
             ? $"/api/v1/files/{profileFileId.Value}/download"
             : null;
 
-    private static TenantResponse MapToResponse(Domain.Entities.Tenant tenant) =>
+    private static TenantResponse MapToResponse(
+        Domain.Entities.Tenant tenant,
+        Address? address = null) =>
         new()
         {
             Id = tenant.Id,
@@ -401,6 +426,7 @@ public class TenantService : ITenantService
             IsActive = tenant.IsActive,
             ProfileFileId = tenant.ProfileFileId,
             ProfileUrl = BuildProfileUrl(tenant.ProfileFileId),
+            Address = AddressFormatter.ToResponse(address),
         };
 
     private bool IsSystemAdmin() =>

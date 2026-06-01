@@ -13,4 +13,6 @@ public class Tenant : BaseEntity
     public Guid? ProfileFileId { get; set; }
 
     public FileEntity? ProfileFile { get; set; }
+
+    public Address? Address { get; set; }
 }

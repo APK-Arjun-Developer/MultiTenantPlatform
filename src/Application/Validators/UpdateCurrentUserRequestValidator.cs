@@ -7,6 +7,9 @@ public class UpdateCurrentUserRequestValidator : AbstractValidator<UpdateCurrent
 {
     public UpdateCurrentUserRequestValidator()
     {
+        RuleFor(x => x.Address)
+            .SetValidator(new AddressRequestValidator()!)
+            .When(x => x.Address != null);
         RuleFor(x => x.FullName)
             .NotEmpty()
             .MaximumLength(200);
