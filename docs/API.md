@@ -4,6 +4,10 @@ See also [PROJECT.md](./PROJECT.md) for architecture, auth model, and permission
 
 Base URL: `/api/v1`
 
+**Live site:** open `/` in the browser for a home page (production). Interactive Swagger is **Development only**.
+
+**Health check:** `GET /api/v1/health` (no auth).
+
 All JSON responses use the same envelope:
 
 ```json
