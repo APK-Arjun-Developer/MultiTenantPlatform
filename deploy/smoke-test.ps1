@@ -37,7 +37,7 @@ function Add-UniqueBaseUrl {
     }
 
     foreach ($scheme in @("https", "http")) {
-        $base = "$scheme://$HostName"
+        $base = '{0}://{1}' -f $scheme, $HostName
         if (-not $List.Contains($base)) {
             [void]$List.Add($base)
         }
