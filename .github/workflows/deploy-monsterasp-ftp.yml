@@ -32,6 +32,7 @@ jobs:
           PRODUCTION_CONNECTION_STRING: ${{ secrets.PRODUCTION_CONNECTION_STRING }}
           JWT_KEY: ${{ secrets.JWT_KEY }}
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
         run: |
           $required = @(
             @{ Name = 'FTP_SERVER';                    Value = $env:FTP_SERVER },
@@ -39,7 +40,8 @@ jobs:
             @{ Name = 'FTP_PASSWORD';                  Value = $env:FTP_PASSWORD },
             @{ Name = 'PRODUCTION_CONNECTION_STRING';  Value = $env:PRODUCTION_CONNECTION_STRING },
             @{ Name = 'JWT_KEY';                       Value = $env:JWT_KEY },
-            @{ Name = 'ADMIN_PASSWORD';                Value = $env:ADMIN_PASSWORD }
+            @{ Name = 'ADMIN_PASSWORD';                Value = $env:ADMIN_PASSWORD },
+            @{ Name = 'ALLOWED_ORIGINS';               Value = $env:ALLOWED_ORIGINS }
           )
           $missing = @($required | Where-Object { [string]::IsNullOrWhiteSpace($_.Value) } | ForEach-Object { $_.Name })
           if ($missing.Count -gt 0) {

@@ -1,3 +1,5 @@
+using Application.Common;
+using Application.Interfaces.Tenant;
 using Domain.Entities;
 using Infrastructure.Identity.Entities;
 using Infrastructure.Persistence.Contexts;
@@ -10,13 +12,37 @@ public class IdentityRoleService : IIdentityRoleService
 {
     private readonly ApplicationDbContext _context;
     private readonly RoleManager<ApplicationRole> _roleManager;
+    private readonly ICurrentTenantService _currentTenantService;
 
     public IdentityRoleService(
         ApplicationDbContext context,
-        RoleManager<ApplicationRole> roleManager)
+        RoleManager<ApplicationRole> roleManager,
+        ICurrentTenantService currentTenantService)
     {
         _context = context;
         _roleManager = roleManager;
+        _currentTenantService = currentTenantService;
+    }
+
+    private bool IsSystemAdmin() =>
+        _currentTenantService.TenantId.HasValue &&
+        _currentTenantService.TenantId.Value == Guid.Empty;
+
+    private static void RejectPlatformPermissions(IEnumerable<Guid> permissionIds, IEnumerable<Permission> permissions)
+    {
+        var tenantSafeNames = PermissionNames.TenantPermissions.ToHashSet(StringComparer.Ordinal);
+        var platformIds = permissions
+            .Where(p => !tenantSafeNames.Contains(p.Name))
+            .Select(p => p.Id)
+            .ToHashSet();
+
+        var violating = permissionIds.Where(id => platformIds.Contains(id)).ToList();
+        if (violating.Count > 0)
+        {
+            throw new InvalidOperationException(
+                "Tenant roles cannot be assigned platform-only permissions " +
+                $"({string.Join(", ", violating)}).");
+        }
     }
 
     public async Task<ApplicationRole?> FindRoleByNameAsync(Guid tenantId, string roleName)
@@ -120,6 +146,14 @@ public class IdentityRoleService : IIdentityRoleService
     {
         var ids = await ValidatePermissionIdsAsync(permissionIds);
 
+        if (!IsSystemAdmin())
+        {
+            var permissions = await _context.Permissions
+                .Where(p => ids.Contains(p.Id))
+                .ToListAsync();
+            RejectPlatformPermissions(ids, permissions);
+        }
+
         var existingSet = (await _context.RolePermissions
             .Where(rp => rp.RoleId == roleId)
             .Select(rp => rp.PermissionId)
@@ -138,6 +172,14 @@ public class IdentityRoleService : IIdentityRoleService
     public async Task SetRolePermissionsByIdsAsync(Guid roleId, IEnumerable<Guid> permissionIds)
     {
         var ids = await ValidatePermissionIdsAsync(permissionIds);
+
+        if (!IsSystemAdmin())
+        {
+            var permissions = await _context.Permissions
+                .Where(p => ids.Contains(p.Id))
+                .ToListAsync();
+            RejectPlatformPermissions(ids, permissions);
+        }
 
         var existing = await _context.RolePermissions
             .Where(rp => rp.RoleId == roleId)

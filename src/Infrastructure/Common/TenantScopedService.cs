@@ -12,7 +12,8 @@ public abstract class TenantScopedService
     }
 
     protected bool IsSystemAdmin() =>
-        (CurrentTenantService.TenantId ?? Guid.Empty) == Guid.Empty;
+        CurrentTenantService.TenantId.HasValue &&
+        CurrentTenantService.TenantId.Value == Guid.Empty;
 
     protected Guid RequireTenantId()
     {

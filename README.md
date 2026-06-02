@@ -12,6 +12,17 @@
 
 ## Quick start
 
+Secrets are **not** committed. Set them via user secrets or environment variables before running:
+
+```powershell
+# Using .NET user secrets (recommended for local dev)
+dotnet user-secrets set "Jwt:Key" "your-32-char-dev-secret-here" --project src/Api
+dotnet user-secrets set "Seeding:AdminPassword" "Admin123!" --project src/Api
+dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Server=...;..." --project src/Api
+```
+
+Then apply migrations and run:
+
 ```bash
 dotnet ef database update --project src/Infrastructure --startup-project src/Api
 dotnet run --project src/Api

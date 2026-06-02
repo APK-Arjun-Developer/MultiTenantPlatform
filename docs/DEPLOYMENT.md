@@ -2,7 +2,7 @@
 
 Automated production deploys use [`.github/workflows/deploy-monsterasp-ftp.yml`](../.github/workflows/deploy-monsterasp-ftp.yml).
 
-**Flow:** push to `main` (or manual **Run workflow**) → build & publish (`win-x86`) → inject secrets into `appsettings.Production.json` → upload to MonsterASP **`/wwwroot/`** over FTP.
+**Flow:** push to `master` (or manual **Run workflow**) → build & publish (`win-x86`) → inject secrets into `appsettings.Production.json` → upload to MonsterASP **`/wwwroot/`** over FTP.
 
 ---
 
@@ -54,6 +54,7 @@ Open **Settings → Secrets and variables → Actions → New repository secret*
 | `JWT_KEY` | Yes | Random string, **≥ 32 characters** |
 | `JWT_ISSUER` | No | Defaults to `MultiTenantPlatform` |
 | `JWT_AUDIENCE` | No | Defaults to `MultiTenantPlatformUsers` |
+| `ALLOWED_ORIGINS` | **Yes** | Comma-separated list of allowed CORS origins, e.g. `https://myapp.com,https://www.myapp.com`. The API will refuse to start in Production if this is empty. |
 
 Never commit real connection strings or JWT keys. The workflow **overwrites** `appsettings.Production.json` in the publish output at deploy time.
 
@@ -66,7 +67,7 @@ Committed templates: [`appsettings.Development.json`](../src/Api/appsettings.Dev
 | Setting | Production behavior |
 |---------|---------------------|
 | `ApplyMigrationsOnStartup` | `true` — apply pending migrations on startup |
-| `SeedOnStartup` | `true` — run idempotent seeders on startup |
+| `SeedOnStartup` | `false` — seeders do not run on each startup; re-run manually when needed |
 | `ConnectionStrings:DefaultConnection` | Injected from `PRODUCTION_CONNECTION_STRING` |
 | `Jwt:Key` | Injected from `JWT_KEY` |
 | `Serilog` | `Warning` default |
@@ -85,7 +86,7 @@ dotnet run --project src/Api
 
 ## 4. Trigger a deploy
 
-- **Automatic:** push to the `main` branch
+- **Automatic:** push to the `master` branch
 - **Manual:** GitHub → **Actions** → **Deploy to MonsterASP (FTP)** → **Run workflow**
 
 Monitor the workflow log. On success, browse `https://<your-site>.monsterasp.net/` (or your assigned subdomain).
