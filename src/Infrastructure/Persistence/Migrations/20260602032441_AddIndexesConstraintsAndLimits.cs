@@ -78,10 +78,7 @@ namespace Infrastructure.Persistence.Migrations
                 table: "ActivityLogs",
                 column: "UserId");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_RolePermissions_PermissionId",
-                table: "RolePermissions",
-                column: "PermissionId");
+            // IX_RolePermissions_PermissionId already exists from AddRbacPermissions.
 
             migrationBuilder.AddForeignKey(
                 name: "FK_RolePermissions_Permissions_PermissionId",
@@ -118,10 +115,6 @@ namespace Infrastructure.Persistence.Migrations
             migrationBuilder.DropIndex(
                 name: "IX_ActivityLogs_UserId",
                 table: "ActivityLogs");
-
-            migrationBuilder.DropIndex(
-                name: "IX_RolePermissions_PermissionId",
-                table: "RolePermissions");
 
             migrationBuilder.AlterColumn<string>(
                 name: "Token",
