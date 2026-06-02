@@ -89,6 +89,8 @@ dotnet run --project src/Api
 
 Monitor the workflow log. On success, browse `https://<your-site>.monsterasp.net/` (or your assigned subdomain).
 
+The deploy workflow smoke test calls **`GET /api/v1/health`** (same as the site landing page). Root **`/health`** is an optional EF/database probe and may return 404 on MonsterASP depending on IIS routing.
+
 ---
 
 ## 5. FTP file locks (troubleshooting)

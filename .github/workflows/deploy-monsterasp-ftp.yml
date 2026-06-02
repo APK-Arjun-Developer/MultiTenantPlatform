@@ -175,32 +175,47 @@ jobs:
           $remotePath = "$dir/app_offline.htm"
           & ./deploy/ftp-remove-file.ps1 -Server $env:FTP_SERVER -Username $env:FTP_USERNAME -Password $env:FTP_PASSWORD -RemotePath $remotePath
 
-      - name: Smoke test – verify /health endpoint
+      - name: Smoke test – verify API health endpoint
         shell: pwsh
         env:
           FTP_SERVER: ${{ secrets.FTP_SERVER }}
         run: |
-          $url = "https://$env:FTP_SERVER/health"
-          Write-Host "Smoke testing $url ..."
+          # MonsterASP/IIS routes the ASP.NET app under /api/*; root /health often 404.
+          $candidates = @(
+            "https://$env:FTP_SERVER/api/v1/health",
+            "https://$env:FTP_SERVER/health"
+          )
           $maxAttempts = 6
           $attempt = 0
           $success = $false
           while ($attempt -lt $maxAttempts -and -not $success) {
             $attempt++
-            try {
-              $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15
-              if ($response.StatusCode -eq 200) {
+            foreach ($url in $candidates) {
+              Write-Host "Smoke testing $url (attempt $attempt) ..."
+              try {
+                $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15
+                if ($response.StatusCode -ne 200) {
+                  Write-Warning "Attempt $attempt – $url returned $($response.StatusCode)"
+                  continue
+                }
+                if ($url -like '*/api/v1/health') {
+                  $body = $response.Content | ConvertFrom-Json
+                  if ($body.data.status -ne 'healthy') {
+                    Write-Warning "Attempt $attempt – API envelope status is not healthy: $($response.Content)"
+                    continue
+                  }
+                }
                 Write-Host "Health check passed (attempt $attempt): $($response.Content)"
                 $success = $true
-              } else {
-                Write-Warning "Attempt $attempt – unexpected status: $($response.StatusCode)"
-                Start-Sleep -Seconds 10
+                break
+              } catch {
+                Write-Warning "Attempt $attempt – $url – $($_.Exception.Message)"
               }
-            } catch {
-              Write-Warning "Attempt $attempt – $($_.Exception.Message)"
+            }
+            if (-not $success) {
               Start-Sleep -Seconds 10
             }
           }
           if (-not $success) {
-            throw "Health check failed after $maxAttempts attempts. Deployment may be broken."
+            throw "Health check failed after $maxAttempts attempts. Tried: $($candidates -join ', ')"
           }
