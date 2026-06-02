@@ -21,9 +21,9 @@ public class RolesController : ApiControllerBase
 
     [HttpGet]
     [HasPermission(PermissionNames.RolesView)]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
-        var response = await _roleService.GetRolesAsync();
+        var response = await _roleService.GetRolesAsync(page, pageSize);
 
         return OkEnvelope(response, "Roles retrieved.");
     }
@@ -43,7 +43,12 @@ public class RolesController : ApiControllerBase
     {
         var response = await _roleService.CreateRoleAsync(request);
 
-        return OkEnvelope(response, "Role created.");
+        return StatusCode(StatusCodes.Status201Created, new Api.Contracts.ApiEnvelope<RoleResponse>
+        {
+            Data = response,
+            Message = "Role created.",
+            TraceId = HttpContext.TraceIdentifier,
+        });
     }
 
     [HttpPut]
@@ -55,11 +60,11 @@ public class RolesController : ApiControllerBase
         return OkEnvelope(response, "Role updated.");
     }
 
-    [HttpDelete]
+    [HttpDelete("{name}")]
     [HasPermission(PermissionNames.RolesDelete)]
-    public async Task<IActionResult> Delete(DeleteRoleRequest request)
+    public async Task<IActionResult> Delete(string name)
     {
-        await _roleService.DeleteRoleAsync(request);
+        await _roleService.DeleteRoleAsync(new DeleteRoleRequest { Name = name });
 
         return OkEnvelope("Role deleted.");
     }

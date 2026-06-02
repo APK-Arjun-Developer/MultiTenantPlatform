@@ -1,11 +1,14 @@
 using Application.Common;
 using Application.DTOs.ActivityLogs;
+using Application.DTOs.Common;
 using Application.DTOs.Roles;
+using Application.Exceptions;
 using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Caching;
 using Application.Interfaces.Roles;
-using Infrastructure.Caching;
 using Application.Interfaces.Tenant;
+using Infrastructure.Caching;
+using Infrastructure.Common;
 using Infrastructure.Identity;
 using Infrastructure.Identity.Entities;
 using Infrastructure.Persistence.Contexts;
@@ -14,19 +17,14 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Roles;
 
-public class RoleService : IRoleService
+public class RoleService : TenantScopedService, IRoleService
 {
     private readonly ApplicationDbContext _context;
-
     private readonly RoleManager<ApplicationRole> _roleManager;
-
-    private readonly ICurrentTenantService _currentTenantService;
-
     private readonly IActivityLogService _activityLogService;
-
     private readonly IRolePermissionLookup _rolePermissionLookup;
-
     private readonly IAppCache _cache;
+    private readonly IIdentityRoleService _identityRoleService;
 
     public RoleService(
         ApplicationDbContext context,
@@ -34,36 +32,55 @@ public class RoleService : IRoleService
         ICurrentTenantService currentTenantService,
         IActivityLogService activityLogService,
         IRolePermissionLookup rolePermissionLookup,
-        IAppCache cache)
+        IAppCache cache,
+        IIdentityRoleService identityRoleService)
+        : base(currentTenantService)
     {
         _context = context;
         _roleManager = roleManager;
-        _currentTenantService = currentTenantService;
         _activityLogService = activityLogService;
         _rolePermissionLookup = rolePermissionLookup;
         _cache = cache;
+        _identityRoleService = identityRoleService;
     }
 
-    public async Task<IReadOnlyList<RoleResponse>> GetRolesAsync()
+    public async Task<PagedResponse<RoleResponse>> GetRolesAsync(int page, int pageSize)
     {
         var tenantId = RequireTenantId();
 
-        return await MapRolesAsync(
-            _roleManager.Roles.Where(r => r.TenantId == tenantId));
+        (page, pageSize) = Pagination.Normalize(page, pageSize);
+
+        var query = _roleManager.Roles.Where(r => r.TenantId == tenantId);
+        var totalCount = await query.CountAsync();
+
+        var roles = await query
+            .OrderBy(r => r.Name)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        var items = await BatchMapRolesAsync(roles);
+
+        return new PagedResponse<RoleResponse>
+        {
+            Items = items,
+            Page = page,
+            PageSize = pageSize,
+            TotalCount = totalCount,
+        };
     }
 
     public async Task<RoleResponse> GetCurrentRoleAsync()
     {
-        var roleId = RequireRoleId();
+        var roleId = CurrentTenantService.RoleId
+            ?? throw new InvalidOperationException(
+                "Role context is required. Ensure role_id is present in the JWT.");
+
         var tenantId = RequireTenantId();
 
         var role = await _roleManager.Roles
-            .FirstOrDefaultAsync(r => r.Id == roleId && r.TenantId == tenantId);
-
-        if (role == null)
-        {
-            throw new InvalidOperationException("Role not found.");
-        }
+            .FirstOrDefaultAsync(r => r.Id == roleId && r.TenantId == tenantId)
+            ?? throw new NotFoundException("Role not found.");
 
         return await MapRoleAsync(role);
     }
@@ -74,38 +91,23 @@ public class RoleService : IRoleService
 
         if (request.Name == RoleNames.SuperAdmin)
         {
-            throw new InvalidOperationException("Cannot create the SuperAdmin role.");
+            throw new ForbiddenException("Cannot create the SuperAdmin role.");
         }
 
-        var exists = await IdentityRoleHelper.RoleExistsAsync(
-            _context,
-            tenantId,
-            request.Name);
-
-        if (exists)
+        if (await _identityRoleService.RoleExistsAsync(tenantId, request.Name))
         {
-            throw new InvalidOperationException(
-                $"Role '{request.Name}' already exists for this tenant.");
+            throw new ConflictException($"Role '{request.Name}' already exists for this tenant.");
         }
 
-        var role = await IdentityRoleHelper.CreateRoleAsync(
-            _context,
-            tenantId,
-            request.Name,
-            request.Description);
+        var role = await _identityRoleService.CreateRoleAsync(tenantId, request.Name, request.Description);
 
-        await IdentityRoleHelper.AssignPermissionsToRoleByIdsAsync(
-            _context,
-            role.Id,
-            request.Permissions);
+        await _identityRoleService.AssignPermissionsToRoleByIdsAsync(role.Id, request.Permissions);
 
         await _context.SaveChangesAsync();
 
         InvalidateRoleCaches(role);
 
-        await LogCurrentUserActivityAsync(
-            ActivityActions.Roles.Created,
-            $"Created role '{role.Name}'.");
+        await LogActivityAsync(ActivityActions.Roles.Created, $"Created role '{role.Name}'.");
 
         return await MapRoleAsync(role);
     }
@@ -115,34 +117,23 @@ public class RoleService : IRoleService
         var tenantId = RequireTenantId();
 
         var role = await _roleManager.Roles
-            .FirstOrDefaultAsync(r =>
-                r.TenantId == tenantId &&
-                r.Name == request.Name);
-
-        if (role == null)
-        {
-            throw new InvalidOperationException("Role not found.");
-        }
+            .FirstOrDefaultAsync(r => r.TenantId == tenantId && r.Name == request.Name)
+            ?? throw new NotFoundException("Role not found.");
 
         if (role.Name == RoleNames.SuperAdmin)
         {
-            throw new InvalidOperationException("Cannot modify the SuperAdmin role.");
+            throw new ForbiddenException("Cannot modify the SuperAdmin role.");
         }
 
         role.Description = request.Description;
 
-        await IdentityRoleHelper.SetRolePermissionsByIdsAsync(
-            _context,
-            role.Id,
-            request.Permissions);
+        await _identityRoleService.SetRolePermissionsByIdsAsync(role.Id, request.Permissions);
 
         await _context.SaveChangesAsync();
 
         InvalidateRoleCaches(role);
 
-        await LogCurrentUserActivityAsync(
-            ActivityActions.Roles.Updated,
-            $"Updated role '{role.Name}'.");
+        await LogActivityAsync(ActivityActions.Roles.Updated, $"Updated role '{role.Name}'.");
 
         return await MapRoleAsync(role);
     }
@@ -152,18 +143,12 @@ public class RoleService : IRoleService
         var tenantId = RequireTenantId();
 
         var role = await _roleManager.Roles
-            .FirstOrDefaultAsync(r =>
-                r.TenantId == tenantId &&
-                r.Name == request.Name);
-
-        if (role == null)
-        {
-            throw new InvalidOperationException("Role not found.");
-        }
+            .FirstOrDefaultAsync(r => r.TenantId == tenantId && r.Name == request.Name)
+            ?? throw new NotFoundException("Role not found.");
 
         if (role.Name == RoleNames.SuperAdmin)
         {
-            throw new InvalidOperationException("Cannot delete the SuperAdmin role.");
+            throw new ForbiddenException("Cannot delete the SuperAdmin role.");
         }
 
         var assignedUsers = await _context.Set<IdentityUserRole<Guid>>()
@@ -171,8 +156,7 @@ public class RoleService : IRoleService
 
         if (assignedUsers)
         {
-            throw new InvalidOperationException(
-                "Cannot delete a role that is assigned to users.");
+            throw new ConflictException("Cannot delete a role that is assigned to users.");
         }
 
         role.DeletedAt = DateTime.UtcNow;
@@ -186,9 +170,7 @@ public class RoleService : IRoleService
 
         InvalidateRoleCaches(role);
 
-        await LogCurrentUserActivityAsync(
-            ActivityActions.Roles.Deleted,
-            $"Deleted role '{role.Name}'.");
+        await LogActivityAsync(ActivityActions.Roles.Deleted, $"Deleted role '{role.Name}'.");
     }
 
     private void InvalidateRoleCaches(ApplicationRole role)
@@ -197,61 +179,59 @@ public class RoleService : IRoleService
         _cache.InvalidateTenantDashboard(role.TenantId);
     }
 
-    private async Task LogCurrentUserActivityAsync(string action, string description)
+    private async Task LogActivityAsync(string action, string description)
     {
-        var userId = _currentTenantService.UserId
-            ?? throw new InvalidOperationException("User context is required.");
-
         await _activityLogService.LogAsync(new LogActivityRequest
         {
-            UserId = userId,
+            UserId = RequireUserId(),
             Action = action,
             Module = ActivityModules.Roles,
             Description = description,
         });
     }
 
-    private Guid RequireTenantId()
+    // Batch-load permissions for all roles in one query — eliminates N+1.
+    private async Task<List<RoleResponse>> BatchMapRolesAsync(List<ApplicationRole> roles)
     {
-        var tenantId = _currentTenantService.TenantId ?? Guid.Empty;
-
-        if (tenantId == Guid.Empty)
+        if (roles.Count == 0)
         {
-            throw new InvalidOperationException(
-                "Tenant context is required. Ensure tenant_id is present in the JWT.");
+            return [];
         }
 
-        return tenantId;
-    }
+        var roleIds = roles.Select(r => r.Id).ToList();
 
-    private Guid RequireRoleId()
-    {
-        if (!_currentTenantService.RoleId.HasValue)
+        var permissionsByRole = await _context.RolePermissions
+            .AsNoTracking()
+            .Where(rp => roleIds.Contains(rp.RoleId))
+            .Join(_context.Permissions.AsNoTracking(),
+                rp => rp.PermissionId,
+                p => p.Id,
+                (rp, p) => new { rp.RoleId, p.Id, p.Name })
+            .ToListAsync();
+
+        var grouped = permissionsByRole
+            .GroupBy(x => x.RoleId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        return roles.Select(role =>
         {
-            throw new InvalidOperationException(
-                "Role context is required. Ensure role_id is present in the JWT.");
-        }
+            var perms = grouped.GetValueOrDefault(role.Id, []);
 
-        return _currentTenantService.RoleId.Value;
-    }
-
-    private async Task<IReadOnlyList<RoleResponse>> MapRolesAsync(
-        IQueryable<ApplicationRole> query)
-    {
-        var roles = await query.OrderBy(r => r.Name).ToListAsync();
-        var results = new List<RoleResponse>();
-
-        foreach (var role in roles)
-        {
-            results.Add(await MapRoleAsync(role));
-        }
-
-        return results;
+            return new RoleResponse
+            {
+                Id = role.Id,
+                Name = role.Name!,
+                Description = role.Description,
+                TenantId = role.TenantId,
+                PermissionIds = perms.Select(p => p.Id).ToList(),
+                PermissionNames = perms.Select(p => p.Name).ToList(),
+            };
+        }).ToList();
     }
 
     private async Task<RoleResponse> MapRoleAsync(ApplicationRole role)
     {
-        var permissions = await _rolePermissionLookup.GetAsync(role.Id);
+        var snapshot = await _rolePermissionLookup.GetAsync(role.Id);
 
         return new RoleResponse
         {
@@ -259,8 +239,8 @@ public class RoleService : IRoleService
             Name = role.Name!,
             Description = role.Description,
             TenantId = role.TenantId,
-            PermissionIds = permissions.PermissionIds.ToList(),
-            PermissionNames = permissions.PermissionNames.ToList(),
+            PermissionIds = snapshot.PermissionIds.ToList(),
+            PermissionNames = snapshot.PermissionNames.ToList(),
         };
     }
 }

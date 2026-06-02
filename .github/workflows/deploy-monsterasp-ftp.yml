@@ -1,7 +1,9 @@
-# Build, publish, and deploy the API to MonsterASP.NET (free plan) via FTP.
-# Secrets: see docs/DEPLOYMENT.md
+# Build, publish, and deploy the API to MonsterASP.NET via FTPS.
+# Required secrets: FTP_SERVER, FTP_USERNAME, FTP_PASSWORD,
+#                   PRODUCTION_CONNECTION_STRING, JWT_KEY, ADMIN_PASSWORD
+# Optional secrets: JWT_ISSUER, JWT_AUDIENCE, FTP_SERVER_DIR, ALLOWED_ORIGINS, ALLOWED_HOSTS
 
-name: Deploy to MonsterASP (FTP)
+name: Deploy to MonsterASP (FTPS)
 
 on:
   push:
@@ -19,7 +21,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        
+
       - name: Validate required GitHub secrets
         shell: pwsh
         env:
@@ -28,21 +30,22 @@ jobs:
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
           PRODUCTION_CONNECTION_STRING: ${{ secrets.PRODUCTION_CONNECTION_STRING }}
           JWT_KEY: ${{ secrets.JWT_KEY }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
         run: |
           $required = @(
-            @{ Name = 'FTP_SERVER'; Value = $env:FTP_SERVER },
-            @{ Name = 'FTP_USERNAME'; Value = $env:FTP_USERNAME },
-            @{ Name = 'FTP_PASSWORD'; Value = $env:FTP_PASSWORD },
-            @{ Name = 'PRODUCTION_CONNECTION_STRING'; Value = $env:PRODUCTION_CONNECTION_STRING },
-            @{ Name = 'JWT_KEY'; Value = $env:JWT_KEY }
+            @{ Name = 'FTP_SERVER';                    Value = $env:FTP_SERVER },
+            @{ Name = 'FTP_USERNAME';                  Value = $env:FTP_USERNAME },
+            @{ Name = 'FTP_PASSWORD';                  Value = $env:FTP_PASSWORD },
+            @{ Name = 'PRODUCTION_CONNECTION_STRING';  Value = $env:PRODUCTION_CONNECTION_STRING },
+            @{ Name = 'JWT_KEY';                       Value = $env:JWT_KEY },
+            @{ Name = 'ADMIN_PASSWORD';                Value = $env:ADMIN_PASSWORD }
           )
           $missing = @($required | Where-Object { [string]::IsNullOrWhiteSpace($_.Value) } | ForEach-Object { $_.Name })
           if ($missing.Count -gt 0) {
-            throw @"
-          Missing required repository secrets: $($missing -join ', ')
-          Add them under: GitHub repo → Settings → Secrets and variables → Actions → New repository secret
-          See docs/DEPLOYMENT.md (FTP_SERVER = hostname only, e.g. site1234.siteasp.net — no ftp:// prefix).
-          "@
+            throw "Missing required repository secrets: $($missing -join ', ')"
+          }
+          if ($env:JWT_KEY.Length -lt 32) {
+            throw "JWT_KEY must be at least 32 characters long."
           }
 
       - name: Setup .NET 10
@@ -68,54 +71,56 @@ jobs:
           JWT_KEY: ${{ secrets.JWT_KEY }}
           JWT_ISSUER: ${{ secrets.JWT_ISSUER }}
           JWT_AUDIENCE: ${{ secrets.JWT_AUDIENCE }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
+          ALLOWED_HOSTS: ${{ secrets.ALLOWED_HOSTS }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:CONNECTION_STRING)) {
-            throw "PRODUCTION_CONNECTION_STRING secret is required."
-          }
-          if ([string]::IsNullOrWhiteSpace($env:JWT_KEY) -or $env:JWT_KEY.Length -lt 32) {
-            throw "JWT_KEY secret is required (minimum 32 characters)."
-          }
+          $issuer      = if ([string]::IsNullOrWhiteSpace($env:JWT_ISSUER))    { "MultiTenantPlatform" }     else { $env:JWT_ISSUER }
+          $audience    = if ([string]::IsNullOrWhiteSpace($env:JWT_AUDIENCE))  { "MultiTenantPlatformUsers" } else { $env:JWT_AUDIENCE }
+          $allowedHostsValue = if ([string]::IsNullOrWhiteSpace($env:ALLOWED_HOSTS)) { "*" } else { $env:ALLOWED_HOSTS }
 
-          $issuer = if ([string]::IsNullOrWhiteSpace($env:JWT_ISSUER)) { "MultiTenantPlatform" } else { $env:JWT_ISSUER }
-          $audience = if ([string]::IsNullOrWhiteSpace($env:JWT_AUDIENCE)) { "MultiTenantPlatformUsers" } else { $env:JWT_AUDIENCE }
+          $originsRaw  = $env:ALLOWED_ORIGINS
+          $origins     = if ([string]::IsNullOrWhiteSpace($originsRaw)) { @() } else { $originsRaw -split ',' | ForEach-Object { $_.Trim() } }
 
           $settings = @{
             ApplyMigrationsOnStartup = $true
-            SeedOnStartup = $true
-            ConnectionStrings = @{
-              DefaultConnection = $env:CONNECTION_STRING
-            }
+            SeedOnStartup            = $false
+            ConnectionStrings        = @{ DefaultConnection = $env:CONNECTION_STRING }
             Jwt = @{
-              Issuer = $issuer
-              Audience = $audience
-              Key = $env:JWT_KEY
+              Issuer        = $issuer
+              Audience      = $audience
+              Key           = $env:JWT_KEY
               ExpiryMinutes = 60
             }
+            Seeding = @{
+              AdminPassword = $env:ADMIN_PASSWORD
+            }
+            AllowedOrigins = $origins
             FileStorage = @{
-              BasePath = "storage"
+              BasePath         = "storage"
               MaxFileSizeBytes = 10485760
             }
             Caching = @{
               PermissionCatalogMinutes = 10
-              RolePermissionsMinutes = 5
-              TenantCatalogMinutes = 5
-              TenantDetailMinutes = 5
-              ProductListMinutes = 3
-              ReportSummaryMinutes = 2
+              RolePermissionsMinutes   = 5
+              TenantCatalogMinutes     = 5
+              TenantDetailMinutes      = 5
+              ProductListMinutes       = 3
+              ReportSummaryMinutes     = 2
             }
             Serilog = @{
               MinimumLevel = @{
-                Default = "Warning"
+                Default                = "Warning"
                 "Microsoft.AspNetCore" = "Warning"
               }
             }
             Logging = @{
               LogLevel = @{
-                Default = "Warning"
+                Default                = "Warning"
                 "Microsoft.AspNetCore" = "Warning"
               }
             }
-            AllowedHosts = "*"
+            AllowedHosts = $allowedHostsValue
           }
 
           $json = $settings | ConvertTo-Json -Depth 6
@@ -134,7 +139,7 @@ jobs:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          protocol: ftp
+          protocol: ftps
           local-dir: ./ftp-app-offline/
           server-dir: ${{ secrets.FTP_SERVER_DIR || '/wwwroot/' }}
           dangerous-clean-slate: false
@@ -143,19 +148,20 @@ jobs:
       - name: Wait for IIS to release file locks
         run: powershell -Command "Start-Sleep -Seconds 20"
 
-      - name: Deploy to MonsterASP FTP (wwwroot)
+      - name: Deploy to MonsterASP FTPS (wwwroot)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.6
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          protocol: ftp
+          protocol: ftps
           local-dir: ./publish/
           server-dir: ${{ secrets.FTP_SERVER_DIR || '/wwwroot/' }}
           dangerous-clean-slate: false
           log-level: standard
           exclude: |
-            **/wwwroot/swagger-ui/**
+            **/swagger-ui/**
+            **/*.pdb
 
       - name: Start site (remove app_offline.htm)
         shell: pwsh
@@ -165,6 +171,36 @@ jobs:
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
           FTP_SERVER_DIR: ${{ secrets.FTP_SERVER_DIR || '/wwwroot/' }}
         run: |
-          $dir = $env:FTP_SERVER_DIR.Trim().TrimEnd('/')
+          $dir        = $env:FTP_SERVER_DIR.Trim().TrimEnd('/')
           $remotePath = "$dir/app_offline.htm"
           & ./deploy/ftp-remove-file.ps1 -Server $env:FTP_SERVER -Username $env:FTP_USERNAME -Password $env:FTP_PASSWORD -RemotePath $remotePath
+
+      - name: Smoke test – verify /health endpoint
+        shell: pwsh
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+        run: |
+          $url = "https://$env:FTP_SERVER/health"
+          Write-Host "Smoke testing $url ..."
+          $maxAttempts = 6
+          $attempt = 0
+          $success = $false
+          while ($attempt -lt $maxAttempts -and -not $success) {
+            $attempt++
+            try {
+              $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 15
+              if ($response.StatusCode -eq 200) {
+                Write-Host "Health check passed (attempt $attempt): $($response.Content)"
+                $success = $true
+              } else {
+                Write-Warning "Attempt $attempt – unexpected status: $($response.StatusCode)"
+                Start-Sleep -Seconds 10
+              }
+            } catch {
+              Write-Warning "Attempt $attempt – $($_.Exception.Message)"
+              Start-Sleep -Seconds 10
+            }
+          }
+          if (-not $success) {
+            throw "Health check failed after $maxAttempts attempts. Deployment may be broken."
+          }

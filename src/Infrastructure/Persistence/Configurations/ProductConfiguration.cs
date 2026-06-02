@@ -18,5 +18,9 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
 
         builder.Property(x => x.Price)
             .HasPrecision(18, 2);
+
+        builder.HasIndex(x => new { x.TenantId, x.Name })
+            .HasDatabaseName("IX_Products_TenantId_Name")
+            .HasFilter("[DeletedAt] IS NULL");
     }
 }

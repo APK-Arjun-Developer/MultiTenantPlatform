@@ -1,7 +1,5 @@
 using Application.Interfaces.Authentication;
 using Infrastructure.Authentication.JWT;
-using Infrastructure.Identity.Entities;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
@@ -29,13 +27,12 @@ public class JwtTokenGenerator : IJwtTokenGenerator
     {
         var claims = new List<Claim>
         {
-            new(ClaimTypes.NameIdentifier, userId.ToString()),
-            new("user_id", userId.ToString()),
-            new(ClaimTypes.Email, email),
             new(JwtRegisteredClaimNames.Sub, userId.ToString()),
             new(JwtRegisteredClaimNames.Email, email),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new("user_id", userId.ToString()),
             new("tenant_id", tenantId.ToString()),
-            new("full_name", fullName)
+            new("full_name", fullName),
         };
 
         if (roleId.HasValue)
@@ -49,9 +46,7 @@ public class JwtTokenGenerator : IJwtTokenGenerator
         }
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtSettings.Key));
-
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-
         var expires = ComputeAccessTokenExpiryUtc();
 
         var token = new JwtSecurityToken(

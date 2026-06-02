@@ -18,22 +18,14 @@ public sealed class AppCache : IAppCache
         TimeSpan absoluteExpiration,
         CancellationToken cancellationToken = default)
     {
-        if (_cache.TryGetValue(key, out T? cached) && cached is not null)
+        // IMemoryCache.GetOrCreateAsync has internal locking to prevent cache stampede.
+        var result = await _cache.GetOrCreateAsync(key, async entry =>
         {
-            return cached;
-        }
+            entry.AbsoluteExpirationRelativeToNow = absoluteExpiration;
+            return await factory(cancellationToken);
+        });
 
-        var value = await factory(cancellationToken);
-
-        _cache.Set(
-            key,
-            value,
-            new MemoryCacheEntryOptions
-            {
-                AbsoluteExpirationRelativeToNow = absoluteExpiration,
-            });
-
-        return value;
+        return result!;
     }
 
     public void Remove(string key) => _cache.Remove(key);

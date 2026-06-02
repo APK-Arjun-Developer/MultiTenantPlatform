@@ -4,16 +4,16 @@ using Application.Interfaces.Caching;
 using Application.Interfaces.Permissions;
 using Application.Interfaces.Tenant;
 using Infrastructure.Caching;
+using Infrastructure.Common;
 using Infrastructure.Persistence.Contexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Permissions;
 
-public class PermissionService : IPermissionService
+public class PermissionService : TenantScopedService, IPermissionService
 {
     private readonly ApplicationDbContext _context;
-    private readonly ICurrentTenantService _currentTenantService;
     private readonly IAppCache _cache;
     private readonly CacheOptions _cacheOptions;
 
@@ -22,9 +22,9 @@ public class PermissionService : IPermissionService
         ICurrentTenantService currentTenantService,
         IAppCache cache,
         IOptions<CacheOptions> cacheOptions)
+        : base(currentTenantService)
     {
         _context = context;
-        _currentTenantService = currentTenantService;
         _cache = cache;
         _cacheOptions = cacheOptions.Value;
     }
@@ -65,10 +65,7 @@ public class PermissionService : IPermissionService
             })
             .ToListAsync();
 
-        return new PermissionsCatalogResponse
-        {
-            Items = items,
-        };
+        return new PermissionsCatalogResponse { Items = items };
     }
 
     private static PermissionsCatalogResponse CloneForGrouping(
@@ -77,10 +74,7 @@ public class PermissionService : IPermissionService
     {
         if (!groupByModule)
         {
-            return new PermissionsCatalogResponse
-            {
-                Items = source.Items,
-            };
+            return new PermissionsCatalogResponse { Items = source.Items };
         }
 
         return new PermissionsCatalogResponse
@@ -96,7 +90,4 @@ public class PermissionService : IPermissionService
                 .ToList(),
         };
     }
-
-    private bool IsSystemAdmin() =>
-        (_currentTenantService.TenantId ?? Guid.Empty) == Guid.Empty;
 }

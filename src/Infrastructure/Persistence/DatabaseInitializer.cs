@@ -1,4 +1,5 @@
 using Application.Interfaces.Caching;
+using Infrastructure.Identity;
 using Infrastructure.Identity.Entities;
 using Infrastructure.Identity.Seed;
 using Infrastructure.Persistence.Contexts;
@@ -27,8 +28,8 @@ public static class DatabaseInitializer
         }
 
         using var scope = services.CreateScope();
-        var scopedServices = scope.ServiceProvider;
-        var dbContext = scopedServices.GetRequiredService<ApplicationDbContext>();
+        var sp = scope.ServiceProvider;
+        var dbContext = sp.GetRequiredService<ApplicationDbContext>();
 
         if (applyMigrations)
         {
@@ -59,12 +60,18 @@ public static class DatabaseInitializer
         await DbSeeder.SeedAsync(dbContext);
         await PermissionSeeder.SeedAsync(dbContext);
 
-        scopedServices.GetRequiredService<IAppCache>().InvalidatePermissionCatalogs();
+        sp.GetRequiredService<IAppCache>().InvalidatePermissionCatalogs();
 
-        var roleManager = scopedServices.GetRequiredService<RoleManager<ApplicationRole>>();
-        var userManager = scopedServices.GetRequiredService<UserManager<ApplicationUser>>();
+        var roleManager = sp.GetRequiredService<RoleManager<ApplicationRole>>();
+        var userManager = sp.GetRequiredService<UserManager<ApplicationUser>>();
+        var identityRoleService = sp.GetRequiredService<IIdentityRoleService>();
 
-        await IdentitySeeder.SeedAsync(roleManager, userManager, dbContext);
+        await IdentitySeeder.SeedAsync(
+            roleManager,
+            userManager,
+            dbContext,
+            identityRoleService,
+            configuration);
 
         logger.LogInformation("Database seeding completed.");
     }

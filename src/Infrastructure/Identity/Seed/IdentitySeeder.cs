@@ -1,9 +1,9 @@
 using Application.Common;
-using Domain.Entities;
 using Infrastructure.Identity.Entities;
 using Infrastructure.Persistence.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 
 namespace Infrastructure.Identity.Seed;
 
@@ -12,29 +12,34 @@ public static class IdentitySeeder
     public static async Task SeedAsync(
         RoleManager<ApplicationRole> roleManager,
         UserManager<ApplicationUser> userManager,
-        ApplicationDbContext context)
+        ApplicationDbContext context,
+        IIdentityRoleService identityRoleService,
+        IConfiguration configuration)
     {
+        var adminPassword = configuration["Seeding:AdminPassword"];
+
+        if (string.IsNullOrWhiteSpace(adminPassword))
+        {
+            throw new InvalidOperationException(
+                "Seeding:AdminPassword must be configured before seeding. " +
+                "Set it via environment variable, user secrets, or a secrets manager. " +
+                "Never hardcode credentials in source files.");
+        }
+
         const string adminRole = RoleNames.SuperAdmin;
         var platformTenantId = Guid.Empty;
 
-        var superAdminRole = await IdentityRoleHelper.FindRoleByNameAsync(
-            roleManager,
-            platformTenantId,
-            adminRole);
+        var superAdminRole = await identityRoleService.FindRoleByNameAsync(platformTenantId, adminRole);
 
         if (superAdminRole == null)
         {
-            superAdminRole = await IdentityRoleHelper.CreateRoleAsync(
-                context,
+            superAdminRole = await identityRoleService.CreateRoleAsync(
                 platformTenantId,
                 adminRole,
                 "System Super Administrator");
         }
 
-        await IdentityRoleHelper.AssignPermissionsToRoleAsync(
-            context,
-            superAdminRole.Id,
-            PermissionNames.All);
+        await identityRoleService.AssignPermissionsToRoleAsync(superAdminRole.Id, PermissionNames.All);
 
         await context.SaveChangesAsync();
 
@@ -60,16 +65,17 @@ public static class IdentitySeeder
                 CreatedAt = DateTime.UtcNow
             };
 
-            var result = await userManager.CreateAsync(
-                user,
-                "Admin123!");
+            var result = await userManager.CreateAsync(user, adminPassword);
 
             if (result.Succeeded)
             {
-                await IdentityRoleHelper.AddUserToRoleAsync(
-                    context,
-                    user.Id,
-                    superAdminRole.Id);
+                await identityRoleService.AddUserToRoleAsync(user.Id, superAdminRole.Id);
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    "Failed to create system admin user: " +
+                    string.Join(", ", result.Errors.Select(e => e.Description)));
             }
         }
     }

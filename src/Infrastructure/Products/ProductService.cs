@@ -1,11 +1,14 @@
 using Application.Common;
 using Application.DTOs.ActivityLogs;
+using Application.DTOs.Common;
 using Application.DTOs.Products;
+using Application.Exceptions;
 using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Caching;
 using Application.Interfaces.Products;
 using Application.Interfaces.Tenant;
 using Infrastructure.Caching;
+using Infrastructure.Common;
 using Domain.Entities;
 using Infrastructure.Persistence;
 using Infrastructure.Persistence.Contexts;
@@ -14,16 +17,11 @@ using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Products;
 
-public class ProductService : IProductService
+public class ProductService : TenantScopedService, IProductService
 {
     private readonly ApplicationDbContext _context;
-
-    private readonly ICurrentTenantService _currentTenantService;
-
     private readonly IActivityLogService _activityLogService;
-
     private readonly IAppCache _cache;
-
     private readonly CacheOptions _cacheOptions;
 
     public ProductService(
@@ -32,40 +30,49 @@ public class ProductService : IProductService
         IActivityLogService activityLogService,
         IAppCache cache,
         IOptions<CacheOptions> cacheOptions)
+        : base(currentTenantService)
     {
         _context = context;
-        _currentTenantService = currentTenantService;
         _activityLogService = activityLogService;
         _cache = cache;
         _cacheOptions = cacheOptions.Value;
     }
 
-    public async Task<IReadOnlyList<ProductResponse>> GetAllAsync()
+    public async Task<PagedResponse<ProductResponse>> GetAllAsync(int page, int pageSize)
     {
         var tenantId = RequireTenantId();
 
-        return await _cache.GetOrCreateAsync(
-            CacheKeys.Products(tenantId),
-            async _ =>
-            {
-                var products = await _context.Products
-                    .AsNoTracking()
-                    .OrderBy(p => p.Name)
-                    .ToListAsync();
+        (page, pageSize) = Pagination.Normalize(page, pageSize);
 
-                return products.Select(MapToResponse).ToList();
-            },
-            TimeSpan.FromMinutes(_cacheOptions.ProductListMinutes));
+        var query = _context.Products
+            .AsNoTracking()
+            .Where(p => p.TenantId == tenantId)
+            .OrderBy(p => p.Name);
+
+        var totalCount = await query.CountAsync();
+
+        var products = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return new PagedResponse<ProductResponse>
+        {
+            Items = products.Select(MapToResponse).ToList(),
+            Page = page,
+            PageSize = pageSize,
+            TotalCount = totalCount,
+        };
     }
 
     public async Task<ProductResponse> GetByNameAsync(string name)
     {
-        var product = await FindProductByNameAsync(name);
+        var tenantId = RequireTenantId();
 
-        if (product == null)
-        {
-            throw new InvalidOperationException("Product not found.");
-        }
+        var product = await _context.Products
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.Name == name)
+            ?? throw new NotFoundException($"Product '{name}' was not found.");
 
         return MapToResponse(product);
     }
@@ -75,12 +82,11 @@ public class ProductService : IProductService
         var tenantId = RequireTenantId();
 
         var exists = await _context.Products
-            .AnyAsync(p => p.Name == request.Name);
+            .AnyAsync(p => p.TenantId == tenantId && p.Name == request.Name);
 
         if (exists)
         {
-            throw new InvalidOperationException(
-                $"Product '{request.Name}' already exists.");
+            throw new ConflictException($"Product '{request.Name}' already exists.");
         }
 
         var product = new Product
@@ -94,106 +100,70 @@ public class ProductService : IProductService
         _context.Products.Add(product);
         await _context.SaveChangesAsync();
 
-        InvalidateProductCaches(tenantId);
+        _cache.InvalidateTenantDashboard(tenantId);
 
-        await LogCurrentUserActivityAsync(
-            ActivityActions.Products.Created,
-            $"Created product '{product.Name}'.");
+        await LogActivityAsync(ActivityActions.Products.Created, $"Created product '{product.Name}'.");
 
         return MapToResponse(product);
     }
 
     public async Task<ProductResponse> UpdateAsync(UpdateProductRequest request)
     {
-        var product = await FindProductByNameAsync(request.Name);
+        var tenantId = RequireTenantId();
 
-        if (product == null)
-        {
-            throw new InvalidOperationException("Product not found.");
-        }
+        var product = await _context.Products
+            .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.Name == request.Name)
+            ?? throw new NotFoundException($"Product '{request.Name}' was not found.");
 
-        if (!string.IsNullOrWhiteSpace(request.NewName) &&
-            request.NewName != product.Name)
+        if (!string.IsNullOrWhiteSpace(request.NewName) && request.NewName != product.Name)
         {
             var nameTaken = await _context.Products
-                .AnyAsync(p => p.Name == request.NewName && p.Id != product.Id);
+                .AnyAsync(p => p.TenantId == tenantId && p.Name == request.NewName && p.Id != product.Id);
 
             if (nameTaken)
             {
-                throw new InvalidOperationException(
-                    $"Product '{request.NewName}' already exists.");
+                throw new ConflictException($"Product '{request.NewName}' already exists.");
             }
 
             product.Name = request.NewName;
         }
 
         product.Price = request.Price;
-        product.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync();
 
-        InvalidateProductCaches(product.TenantId);
+        _cache.InvalidateTenantDashboard(product.TenantId);
 
-        await LogCurrentUserActivityAsync(
-            ActivityActions.Products.Updated,
-            $"Updated product '{product.Name}'.");
+        await LogActivityAsync(ActivityActions.Products.Updated, $"Updated product '{product.Name}'.");
 
         return MapToResponse(product);
     }
 
     public async Task DeleteAsync(DeleteProductRequest request)
     {
-        var product = await FindProductByNameAsync(request.Name);
+        var tenantId = RequireTenantId();
 
-        if (product == null)
-        {
-            throw new InvalidOperationException("Product not found.");
-        }
+        var product = await _context.Products
+            .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.Name == request.Name)
+            ?? throw new NotFoundException($"Product '{request.Name}' was not found.");
 
         product.MarkDeleted();
         await _context.SaveChangesAsync();
 
-        InvalidateProductCaches(product.TenantId);
+        _cache.InvalidateTenantDashboard(product.TenantId);
 
-        await LogCurrentUserActivityAsync(
-            ActivityActions.Products.Deleted,
-            $"Deleted product '{product.Name}'.");
+        await LogActivityAsync(ActivityActions.Products.Deleted, $"Deleted product '{product.Name}'.");
     }
 
-    private void InvalidateProductCaches(Guid tenantId) =>
-        _cache.InvalidateTenantDashboard(tenantId);
-
-    private async Task LogCurrentUserActivityAsync(string action, string description)
+    private async Task LogActivityAsync(string action, string description)
     {
-        var userId = _currentTenantService.UserId
-            ?? throw new InvalidOperationException("User context is required.");
-
         await _activityLogService.LogAsync(new LogActivityRequest
         {
-            UserId = userId,
+            UserId = RequireUserId(),
             Action = action,
             Module = ActivityModules.Products,
             Description = description,
         });
-    }
-
-    private async Task<Product?> FindProductByNameAsync(string name)
-    {
-        return await _context.Products
-            .FirstOrDefaultAsync(p => p.Name == name);
-    }
-
-    private Guid RequireTenantId()
-    {
-        var tenantId = _currentTenantService.TenantId ?? Guid.Empty;
-
-        if (tenantId == Guid.Empty)
-        {
-            throw new InvalidOperationException(
-                "Products can only be managed within a tenant context.");
-        }
-
-        return tenantId;
     }
 
     private static ProductResponse MapToResponse(Product product) =>

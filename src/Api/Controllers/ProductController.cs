@@ -21,9 +21,9 @@ public class ProductController : ApiControllerBase
 
     [HttpGet]
     [HasPermission(PermissionNames.ProductsView)]
-    public async Task<IActionResult> GetAll()
+    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
-        var response = await _productService.GetAllAsync();
+        var response = await _productService.GetAllAsync(page, pageSize);
 
         return OkEnvelope(response, "Products retrieved.");
     }
@@ -34,7 +34,7 @@ public class ProductController : ApiControllerBase
     {
         var response = await _productService.GetByNameAsync(name);
 
-        return OkEnvelope(response, "Products retrieved.");
+        return OkEnvelope(response, "Product retrieved.");
     }
 
     [HttpPost]
@@ -43,7 +43,12 @@ public class ProductController : ApiControllerBase
     {
         var response = await _productService.CreateAsync(request);
 
-        return OkEnvelope(response, "Product created.");
+        return StatusCode(StatusCodes.Status201Created, new Api.Contracts.ApiEnvelope<ProductResponse>
+        {
+            Data = response,
+            Message = "Product created.",
+            TraceId = HttpContext.TraceIdentifier,
+        });
     }
 
     [HttpPut]
@@ -55,11 +60,11 @@ public class ProductController : ApiControllerBase
         return OkEnvelope(response, "Product updated.");
     }
 
-    [HttpDelete]
+    [HttpDelete("{name}")]
     [HasPermission(PermissionNames.ProductsDelete)]
-    public async Task<IActionResult> Delete(DeleteProductRequest request)
+    public async Task<IActionResult> Delete(string name)
     {
-        await _productService.DeleteAsync(request);
+        await _productService.DeleteAsync(new DeleteProductRequest { Name = name });
 
         return OkEnvelope("Product deleted.");
     }

@@ -4,8 +4,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Infrastructure.Persistence.Configurations;
 
-public class RefreshTokenConfiguration
-    : IEntityTypeConfiguration<RefreshToken>
+public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
 {
     public void Configure(EntityTypeBuilder<RefreshToken> builder)
     {
@@ -14,9 +13,17 @@ public class RefreshTokenConfiguration
         builder.HasKey(x => x.Id);
 
         builder.Property(x => x.Token)
+            .HasMaxLength(128)
             .IsRequired();
 
         builder.HasIndex(x => x.Token)
-            .IsUnique();
+            .IsUnique()
+            .HasDatabaseName("IX_RefreshTokens_Token");
+
+        builder.HasIndex(x => x.UserId)
+            .HasDatabaseName("IX_RefreshTokens_UserId");
+
+        builder.HasIndex(x => x.ExpiresAt)
+            .HasDatabaseName("IX_RefreshTokens_ExpiresAt");
     }
 }

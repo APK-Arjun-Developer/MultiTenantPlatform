@@ -13,11 +13,16 @@ public class TenantMiddleware
     {
         if (context.User.Identity?.IsAuthenticated == true)
         {
-            var tenantId = context.User.FindFirst("tenant_id")?.Value;
+            var tenantIdValue = context.User.FindFirst("tenant_id")?.Value;
 
-            if (string.IsNullOrWhiteSpace(tenantId))
+            if (string.IsNullOrWhiteSpace(tenantIdValue))
             {
                 throw new UnauthorizedAccessException("Tenant claim missing.");
+            }
+
+            if (!Guid.TryParse(tenantIdValue, out _))
+            {
+                throw new UnauthorizedAccessException("Tenant claim is invalid.");
             }
         }
 

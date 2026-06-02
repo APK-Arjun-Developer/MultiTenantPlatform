@@ -18,10 +18,15 @@ public sealed class RequestLoggingMiddleware
     {
         var tenantId = context.User.FindFirst("tenant_id")?.Value;
         var userId = context.User.FindFirst("user_id")?.Value;
+        var correlationId = context.Request.Headers["X-Correlation-Id"].FirstOrDefault()
+            ?? context.TraceIdentifier;
 
         using (LogContext.PushProperty("tenant_id", tenantId ?? "-"))
         using (LogContext.PushProperty("user_id", userId ?? "-"))
+        using (LogContext.PushProperty("correlation_id", correlationId))
         {
+            context.Response.Headers["X-Correlation-Id"] = correlationId;
+
             var stopwatch = Stopwatch.StartNew();
 
             try
@@ -33,11 +38,12 @@ public sealed class RequestLoggingMiddleware
                 stopwatch.Stop();
 
                 _logger.LogInformation(
-                    "HTTP {Method} {Path} responded {StatusCode} in {ElapsedMs}ms",
+                    "HTTP {Method} {Path} responded {StatusCode} in {ElapsedMs}ms [corr={CorrelationId}]",
                     context.Request.Method,
                     context.Request.Path.Value,
                     context.Response.StatusCode,
-                    stopwatch.ElapsedMilliseconds);
+                    stopwatch.ElapsedMilliseconds,
+                    correlationId);
             }
         }
     }

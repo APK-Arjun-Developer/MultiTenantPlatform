@@ -5,6 +5,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Identity;
 
+/// <summary>
+/// Replaced by <see cref="IIdentityRoleService"/> / <see cref="IdentityRoleService"/>.
+/// Retained for reference only — do not add new usages.
+/// </summary>
+[Obsolete("Use IIdentityRoleService instead. This static class will be removed in a future version.")]
 public static class IdentityRoleHelper
 {
     public static async Task<ApplicationRole?> FindRoleByNameAsync(

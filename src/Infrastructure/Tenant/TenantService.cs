@@ -2,11 +2,13 @@ using Application.Common;
 using Application.DTOs.ActivityLogs;
 using Application.DTOs.Common;
 using Application.DTOs.Tenant;
+using Application.Exceptions;
 using Domain.Entities;
 using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Caching;
 using Application.Interfaces.Tenant;
 using Infrastructure.Caching;
+using Infrastructure.Common;
 using Infrastructure.Identity;
 using Infrastructure.Identity.Entities;
 using Infrastructure.Persistence;
@@ -17,19 +19,14 @@ using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Tenant;
 
-public class TenantService : ITenantService
+public class TenantService : TenantScopedService, ITenantService
 {
     private readonly ApplicationDbContext _context;
-
     private readonly UserManager<ApplicationUser> _userManager;
-
-    private readonly ICurrentTenantService _currentTenantService;
-
     private readonly IActivityLogService _activityLogService;
-
     private readonly IAppCache _cache;
-
     private readonly CacheOptions _cacheOptions;
+    private readonly IIdentityRoleService _identityRoleService;
 
     public TenantService(
         ApplicationDbContext context,
@@ -37,14 +34,16 @@ public class TenantService : ITenantService
         ICurrentTenantService currentTenantService,
         IActivityLogService activityLogService,
         IAppCache cache,
-        IOptions<CacheOptions> cacheOptions)
+        IOptions<CacheOptions> cacheOptions,
+        IIdentityRoleService identityRoleService)
+        : base(currentTenantService)
     {
         _context = context;
         _userManager = userManager;
-        _currentTenantService = currentTenantService;
         _activityLogService = activityLogService;
         _cache = cache;
         _cacheOptions = cacheOptions.Value;
+        _identityRoleService = identityRoleService;
     }
 
     public async Task<PagedResponse<TenantResponse>> GetTenantsAsync(int page, int pageSize)
@@ -68,13 +67,10 @@ public class TenantService : ITenantService
             var tenantIds = tenants.Select(t => t.Id).ToList();
 
             var addressesByTenantId = await AddressHelper.GetTenantAddressesAsync(
-                _context,
-                tenantIds);
+                _context, tenantIds);
 
             var items = tenants
-                .Select(t => MapToResponse(
-                    t,
-                    addressesByTenantId.GetValueOrDefault(t.Id)))
+                .Select(t => MapToResponse(t, addressesByTenantId.GetValueOrDefault(t.Id)))
                 .ToList();
 
             return new PagedResponse<TenantResponse>
@@ -106,9 +102,7 @@ public class TenantService : ITenantService
                 "Use GET /api/v1/tenants for system admin tenant listing.");
         }
 
-        var tenantId = RequireTenantId();
-
-        return await GetTenantByIdCachedAsync(tenantId);
+        return await GetTenantByIdCachedAsync(RequireTenantId());
     }
 
     private async Task<TenantResponse> GetTenantByIdCachedAsync(Guid tenantId)
@@ -119,16 +113,10 @@ public class TenantService : ITenantService
             {
                 var tenant = await _context.Tenants
                     .IgnoreQueryFilters()
-                    .FirstOrDefaultAsync(t => t.Id == tenantId && t.DeletedAt == null);
+                    .FirstOrDefaultAsync(t => t.Id == tenantId && t.DeletedAt == null)
+                    ?? throw new NotFoundException("Tenant not found.");
 
-                if (tenant == null)
-                {
-                    throw new InvalidOperationException("Tenant not found.");
-                }
-
-                var address = await AddressHelper.GetTenantAddressAsync(
-                    _context,
-                    tenantId);
+                var address = await AddressHelper.GetTenantAddressAsync(_context, tenantId);
 
                 return MapToResponse(tenant, address);
             },
@@ -150,31 +138,25 @@ public class TenantService : ITenantService
             tenant = await _context.Tenants
                 .IgnoreQueryFilters()
                 .FirstOrDefaultAsync(t => t.Slug == request.Slug && t.DeletedAt == null)
-                ?? throw new InvalidOperationException("Tenant not found.");
+                ?? throw new NotFoundException("Tenant not found.");
         }
         else
         {
-            var tenantId = RequireTenantId();
-
             tenant = await _context.Tenants
                 .IgnoreQueryFilters()
-                .FirstOrDefaultAsync(t => t.Id == tenantId && t.DeletedAt == null)
-                ?? throw new InvalidOperationException("Tenant not found.");
+                .FirstOrDefaultAsync(t => t.Id == RequireTenantId() && t.DeletedAt == null)
+                ?? throw new NotFoundException("Tenant not found.");
         }
 
-        if (!string.IsNullOrWhiteSpace(request.NewSlug) &&
-            request.NewSlug != tenant.Slug)
+        if (!string.IsNullOrWhiteSpace(request.NewSlug) && request.NewSlug != tenant.Slug)
         {
             var slugTaken = await _context.Tenants
                 .IgnoreQueryFilters()
-                .AnyAsync(t =>
-                    t.Slug == request.NewSlug
-                    && t.Id != tenant.Id
-                    && t.DeletedAt == null);
+                .AnyAsync(t => t.Slug == request.NewSlug && t.Id != tenant.Id && t.DeletedAt == null);
 
             if (slugTaken)
             {
-                throw new InvalidOperationException("Tenant slug already exists.");
+                throw new ConflictException("Tenant slug already exists.");
             }
 
             tenant.Slug = request.NewSlug;
@@ -184,25 +166,17 @@ public class TenantService : ITenantService
         tenant.IsActive = request.IsActive;
         tenant.UpdatedAt = DateTime.UtcNow;
 
-        await ApplyProfileFileUpdateAsync(
-            tenant,
-            request.ProfileFileId,
-            request.ClearProfileImage);
+        await ApplyProfileFileUpdateAsync(tenant, request.ProfileFileId, request.ClearProfileImage);
 
         await AddressHelper.ApplyTenantAddressUpdateAsync(
-            _context,
-            tenant,
-            request.Address,
-            request.ClearAddress);
+            _context, tenant, request.Address, request.ClearAddress);
 
         await _context.SaveChangesAsync();
 
         _cache.InvalidateTenantCatalog();
         _cache.InvalidateTenant(tenant.Id);
 
-        await LogCurrentUserActivityAsync(
-            ActivityActions.Tenants.Updated,
-            $"Updated tenant '{tenant.Slug}'.");
+        await LogActivityAsync(ActivityActions.Tenants.Updated, $"Updated tenant '{tenant.Slug}'.");
 
         var address = await AddressHelper.GetTenantAddressAsync(_context, tenant.Id);
 
@@ -213,26 +187,19 @@ public class TenantService : ITenantService
     {
         if (!IsSystemAdmin())
         {
-            throw new InvalidOperationException(
-                "Only system admin can delete tenants.");
+            throw new ForbiddenException("Only system admin can delete tenants.");
         }
 
         var tenant = await _context.Tenants
             .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(t => t.Slug == request.Slug && t.DeletedAt == null);
+            .FirstOrDefaultAsync(t => t.Slug == request.Slug && t.DeletedAt == null)
+            ?? throw new NotFoundException("Tenant not found.");
 
-        if (tenant == null)
-        {
-            throw new InvalidOperationException("Tenant not found.");
-        }
-
-        var hasUsers = await _userManager.Users
-            .AnyAsync(u => u.TenantId == tenant.Id);
+        var hasUsers = await _userManager.Users.AnyAsync(u => u.TenantId == tenant.Id);
 
         if (hasUsers)
         {
-            throw new InvalidOperationException(
-                "Cannot delete a tenant that still has users.");
+            throw new ConflictException("Cannot delete a tenant that still has users.");
         }
 
         tenant.MarkDeleted();
@@ -242,13 +209,10 @@ public class TenantService : ITenantService
         _cache.InvalidateTenantCatalog();
         _cache.InvalidateTenant(tenant.Id);
 
-        await LogCurrentUserActivityAsync(
-            ActivityActions.Tenants.Deleted,
-            $"Deleted tenant '{tenant.Slug}'.");
+        await LogActivityAsync(ActivityActions.Tenants.Deleted, $"Deleted tenant '{tenant.Slug}'.");
     }
 
-    public async Task<OnboardTenantResponse> OnboardTenantAsync(
-        OnboardTenantRequest request)
+    public async Task<OnboardTenantResponse> OnboardTenantAsync(OnboardTenantRequest request)
     {
         var slugExists = await _context.Tenants
             .IgnoreQueryFilters()
@@ -256,7 +220,7 @@ public class TenantService : ITenantService
 
         if (slugExists)
         {
-            throw new InvalidOperationException("Tenant slug already exists.");
+            throw new ConflictException("Tenant slug already exists.");
         }
 
         if (request.Roles.Count == 0)
@@ -264,8 +228,7 @@ public class TenantService : ITenantService
             throw new InvalidOperationException("At least one role is required.");
         }
 
-        await using var transaction =
-            await _context.Database.BeginTransactionAsync();
+        await using var transaction = await _context.Database.BeginTransactionAsync();
 
         try
         {
@@ -286,39 +249,24 @@ public class TenantService : ITenantService
 
             foreach (var roleDetails in request.Roles)
             {
-                if (roleDetails.Name == Application.Common.RoleNames.SuperAdmin)
+                if (roleDetails.Name == RoleNames.SuperAdmin)
                 {
-                    throw new InvalidOperationException(
-                        "Cannot create the SuperAdmin role for a tenant.");
+                    throw new ForbiddenException("Cannot create the SuperAdmin role for a tenant.");
                 }
 
-                var exists = await IdentityRoleHelper.RoleExistsAsync(
-                    _context,
-                    tenant.Id,
-                    roleDetails.Name);
-
-                if (exists)
+                if (await _identityRoleService.RoleExistsAsync(tenant.Id, roleDetails.Name))
                 {
-                    throw new InvalidOperationException(
+                    throw new ConflictException(
                         $"Role '{roleDetails.Name}' already exists for this tenant.");
                 }
 
-                var role = await IdentityRoleHelper.CreateRoleAsync(
-                    _context,
-                    tenant.Id,
-                    roleDetails.Name,
-                    roleDetails.Description);
+                var role = await _identityRoleService.CreateRoleAsync(
+                    tenant.Id, roleDetails.Name, roleDetails.Description);
 
-                await IdentityRoleHelper.AssignPermissionsToRoleByIdsAsync(
-                    _context,
-                    role.Id,
-                    roleDetails.Permissions);
+                await _identityRoleService.AssignPermissionsToRoleByIdsAsync(
+                    role.Id, roleDetails.Permissions);
 
-                createdRoles.Add(new CreatedRoleSummary
-                {
-                    Id = role.Id,
-                    Name = role.Name!
-                });
+                createdRoles.Add(new CreatedRoleSummary { Id = role.Id, Name = role.Name! });
             }
 
             await _context.SaveChangesAsync();
@@ -336,28 +284,22 @@ public class TenantService : ITenantService
                 CreatedAt = DateTime.UtcNow
             };
 
-            var createResult = await _userManager.CreateAsync(
-                adminUser,
-                request.User.Password);
+            var createResult = await _userManager.CreateAsync(adminUser, request.User.Password);
 
             if (!createResult.Succeeded)
             {
                 throw new InvalidOperationException(
-                    string.Join(", ",
-                        createResult.Errors.Select(e => e.Description)));
+                    string.Join(", ", createResult.Errors.Select(e => e.Description)));
             }
 
-            await IdentityRoleHelper.AddUserToRoleAsync(
-                _context,
-                adminUser.Id,
-                createdRoles[0].Id);
+            await _identityRoleService.AddUserToRoleAsync(adminUser.Id, createdRoles[0].Id);
 
             await transaction.CommitAsync();
 
             _cache.InvalidateTenantCatalog();
             _cache.InvalidateTenant(tenant.Id);
 
-            await LogCurrentUserActivityAsync(
+            await LogActivityAsync(
                 ActivityActions.Tenants.Onboarded,
                 $"Onboarded tenant '{tenant.Slug}' with admin '{adminUser.Email}'.",
                 tenantId: tenant.Id);
@@ -397,23 +339,18 @@ public class TenantService : ITenantService
 
         var fileExists = await _context.Files
             .AsNoTracking()
-            .AnyAsync(f =>
-                f.Id == profileFileId.Value &&
-                f.TenantId == tenant.Id);
+            .AnyAsync(f => f.Id == profileFileId.Value && f.TenantId == tenant.Id);
 
         if (!fileExists)
         {
-            throw new InvalidOperationException(
-                "Profile file not found or does not belong to the tenant.");
+            throw new NotFoundException("Profile file not found or does not belong to the tenant.");
         }
 
         tenant.ProfileFileId = profileFileId.Value;
     }
 
     private static string? BuildProfileUrl(Guid? profileFileId) =>
-        profileFileId.HasValue
-            ? $"/api/v1/files/{profileFileId.Value}/download"
-            : null;
+        profileFileId.HasValue ? $"/api/v1/files/{profileFileId.Value}/download" : null;
 
     private static TenantResponse MapToResponse(
         Domain.Entities.Tenant tenant,
@@ -429,37 +366,15 @@ public class TenantService : ITenantService
             Address = AddressFormatter.ToResponse(address),
         };
 
-    private bool IsSystemAdmin() =>
-        (_currentTenantService.TenantId ?? Guid.Empty) == Guid.Empty;
-
-    private async Task LogCurrentUserActivityAsync(
-        string action,
-        string description,
-        Guid? tenantId = null)
+    private async Task LogActivityAsync(string action, string description, Guid? tenantId = null)
     {
-        var userId = _currentTenantService.UserId
-            ?? throw new InvalidOperationException("User context is required.");
-
         await _activityLogService.LogAsync(new LogActivityRequest
         {
-            UserId = userId,
+            UserId = RequireUserId(),
             TenantId = tenantId,
             Action = action,
             Module = ActivityModules.Tenants,
             Description = description,
         });
-    }
-
-    private Guid RequireTenantId()
-    {
-        var tenantId = _currentTenantService.TenantId ?? Guid.Empty;
-
-        if (tenantId == Guid.Empty)
-        {
-            throw new InvalidOperationException(
-                "Tenant context is required. Ensure tenant_id is present in the JWT.");
-        }
-
-        return tenantId;
     }
 }

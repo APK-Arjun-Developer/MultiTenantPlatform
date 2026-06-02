@@ -1,38 +1,43 @@
 using Application.Common;
 using Application.DTOs.ActivityLogs;
 using Application.DTOs.Files;
+using Application.Exceptions;
 using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Files;
 using Application.Interfaces.Tenant;
 using Domain.Entities;
+using Infrastructure.Common;
 using Infrastructure.Persistence;
 using Infrastructure.Persistence.Contexts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Files;
 
-public class FileService : IFileService
+public class FileService : TenantScopedService, IFileService
 {
     private readonly ApplicationDbContext _context;
     private readonly IFileStorageService _fileStorageService;
-    private readonly ICurrentTenantService _currentTenantService;
     private readonly IActivityLogService _activityLogService;
     private readonly FileStorageSettings _settings;
+    private readonly ILogger<FileService> _logger;
 
     public FileService(
         ApplicationDbContext context,
         IFileStorageService fileStorageService,
         ICurrentTenantService currentTenantService,
         IActivityLogService activityLogService,
-        IOptions<FileStorageSettings> settings)
+        IOptions<FileStorageSettings> settings,
+        ILogger<FileService> logger)
+        : base(currentTenantService)
     {
         _context = context;
         _fileStorageService = fileStorageService;
-        _currentTenantService = currentTenantService;
         _activityLogService = activityLogService;
         _settings = settings.Value;
+        _logger = logger;
     }
 
     public async Task<IReadOnlyList<FileResponse>> GetAllAsync()
@@ -49,9 +54,7 @@ public class FileService : IFileService
 
     public async Task<FileResponse> GetMetadataAsync(Guid id)
     {
-        var file = await FindFileAsync(id);
-
-        return MapToResponse(file);
+        return MapToResponse(await FindFileAsync(id));
     }
 
     public async Task<(Stream Stream, string ContentType, string FileName)> DownloadAsync(Guid id)
@@ -74,7 +77,7 @@ public class FileService : IFileService
         if (file.Length > _settings.MaxFileSizeBytes)
         {
             throw new InvalidOperationException(
-                $"File exceeds maximum size of {_settings.MaxFileSizeBytes} bytes.");
+                $"File exceeds maximum size of {_settings.MaxFileSizeBytes / 1024 / 1024} MB.");
         }
 
         await using var stream = file.OpenReadStream();
@@ -102,9 +105,7 @@ public class FileService : IFileService
         _context.Files.Add(entity);
         await _context.SaveChangesAsync();
 
-        await LogCurrentUserActivityAsync(
-            ActivityActions.Files.Uploaded,
-            $"Uploaded file '{entity.OriginalName}'.");
+        await LogActivityAsync(ActivityActions.Files.Uploaded, $"Uploaded file '{entity.OriginalName}'.");
 
         return MapToResponse(entity);
     }
@@ -117,13 +118,11 @@ public class FileService : IFileService
 
         await _context.Users
             .Where(u => u.ProfileFileId == file.Id)
-            .ExecuteUpdateAsync(setters =>
-                setters.SetProperty(u => u.ProfileFileId, (Guid?)null));
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.ProfileFileId, (Guid?)null));
 
         await _context.Tenants
             .Where(t => t.ProfileFileId == file.Id)
-            .ExecuteUpdateAsync(setters =>
-                setters.SetProperty(t => t.ProfileFileId, (Guid?)null));
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.ProfileFileId, (Guid?)null));
 
         await _context.SaveChangesAsync();
 
@@ -131,49 +130,27 @@ public class FileService : IFileService
         {
             await _fileStorageService.DeletePhysicalAsync(file.RelativePath);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Soft-deleted in DB even if physical cleanup fails.
+            _logger.LogError(ex,
+                "Physical file deletion failed for '{RelativePath}'. Record is soft-deleted; orphaned file requires manual cleanup.",
+                file.RelativePath);
         }
 
-        await LogCurrentUserActivityAsync(
-            ActivityActions.Files.Deleted,
-            $"Deleted file '{file.OriginalName}'.");
+        await LogActivityAsync(ActivityActions.Files.Deleted, $"Deleted file '{file.OriginalName}'.");
     }
 
     private async Task<FileEntity> FindFileAsync(Guid id)
     {
-        var file = await _context.Files.FirstOrDefaultAsync(f => f.Id == id);
-
-        if (file == null)
-        {
-            throw new InvalidOperationException("File not found.");
-        }
-
-        return file;
+        return await _context.Files.FirstOrDefaultAsync(f => f.Id == id)
+            ?? throw new NotFoundException($"File '{id}' was not found.");
     }
 
-    private Guid RequireTenantId()
+    private async Task LogActivityAsync(string action, string description)
     {
-        var tenantId = _currentTenantService.TenantId ?? Guid.Empty;
-
-        if (tenantId == Guid.Empty)
-        {
-            throw new InvalidOperationException(
-                "Files can only be managed within a tenant context.");
-        }
-
-        return tenantId;
-    }
-
-    private async Task LogCurrentUserActivityAsync(string action, string description)
-    {
-        var userId = _currentTenantService.UserId
-            ?? throw new InvalidOperationException("User context is required.");
-
         await _activityLogService.LogAsync(new LogActivityRequest
         {
-            UserId = userId,
+            UserId = RequireUserId(),
             Action = action,
             Module = ActivityModules.Files,
             Description = description,

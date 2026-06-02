@@ -13,14 +13,19 @@ public class RolePermissionConfiguration : IEntityTypeConfiguration<RolePermissi
 
         builder.HasKey(x => new { x.RoleId, x.PermissionId });
 
+        // Deleting a role cascades its permission assignments — expected.
         builder.HasOne<ApplicationRole>()
             .WithMany()
             .HasForeignKey(x => x.RoleId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        // Deleting a permission definition must be explicit — prevents silent data loss.
         builder.HasOne<Permission>()
             .WithMany()
             .HasForeignKey(x => x.PermissionId)
-            .OnDelete(DeleteBehavior.Cascade);
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.HasIndex(x => x.PermissionId)
+            .HasDatabaseName("IX_RolePermissions_PermissionId");
     }
 }

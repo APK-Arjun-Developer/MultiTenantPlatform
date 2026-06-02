@@ -1,5 +1,6 @@
 using System.Net.Mime;
 using Api.Contracts;
+using Application.Exceptions;
 using FluentValidation;
 
 namespace Api.Middleware;
@@ -31,7 +32,14 @@ public sealed class ExceptionHandlingMiddleware
 
             var (statusCode, message, errors) = MapException(ex);
 
-            _logger.LogError(ex, "Unhandled exception mapped to {StatusCode}.", statusCode);
+            if (statusCode >= 500)
+            {
+                _logger.LogError(ex, "Unhandled exception mapped to {StatusCode}.", statusCode);
+            }
+            else
+            {
+                _logger.LogWarning(ex, "Client error mapped to {StatusCode}: {Message}", statusCode, message);
+            }
 
             var envelope = new ApiEnvelope<object?>
             {
@@ -49,41 +57,35 @@ public sealed class ExceptionHandlingMiddleware
         }
     }
 
-    private static (int statusCode, string message, object? errors) MapException(Exception ex)
-    {
-        return ex switch
+    private static (int statusCode, string message, object? errors) MapException(Exception ex) =>
+        ex switch
         {
-            ValidationException ve => (StatusCodes.Status400BadRequest, ApiEnvelopeFactory.ValidationFailedMessage, ApiEnvelopeFactory.FromFluentValidation(ve)),
-            UnauthorizedAccessException => (StatusCodes.Status401Unauthorized, "Unauthorized.", new { code = "unauthorized" }),
-            KeyNotFoundException => (StatusCodes.Status404NotFound, "Not found.", new { code = "not_found" }),
-            InvalidOperationException ioe => MapInvalidOperation(ioe),
-            _ => (StatusCodes.Status500InternalServerError, "An unexpected error occurred.", new { code = "unexpected_error" }),
+            ValidationException ve =>
+                (StatusCodes.Status400BadRequest,
+                 ApiEnvelopeFactory.ValidationFailedMessage,
+                 ApiEnvelopeFactory.FromFluentValidation(ve)),
+
+            NotFoundException =>
+                (StatusCodes.Status404NotFound, ex.Message, new { code = "not_found" }),
+
+            ConflictException =>
+                (StatusCodes.Status409Conflict, ex.Message, new { code = "conflict" }),
+
+            ForbiddenException =>
+                (StatusCodes.Status403Forbidden, ex.Message, new { code = "forbidden" }),
+
+            UnauthorizedAccessException =>
+                (StatusCodes.Status401Unauthorized, "Unauthorized.", new { code = "unauthorized" }),
+
+            KeyNotFoundException =>
+                (StatusCodes.Status404NotFound, "Not found.", new { code = "not_found" }),
+
+            InvalidOperationException =>
+                (StatusCodes.Status400BadRequest, ex.Message, new { code = "bad_request" }),
+
+            _ =>
+                (StatusCodes.Status500InternalServerError,
+                 "An unexpected error occurred.",
+                 new { code = "unexpected_error" }),
         };
-    }
-
-    private static (int statusCode, string message, object? errors) MapInvalidOperation(InvalidOperationException ex)
-    {
-        var msg = ex.Message ?? string.Empty;
-
-        if (msg.Contains("not found", StringComparison.OrdinalIgnoreCase))
-        {
-            return (StatusCodes.Status404NotFound, msg, new { code = "not_found" });
-        }
-
-        if (msg.Contains("already exists", StringComparison.OrdinalIgnoreCase)
-            || msg.Contains("already", StringComparison.OrdinalIgnoreCase)
-            || msg.Contains("conflict", StringComparison.OrdinalIgnoreCase))
-        {
-            return (StatusCodes.Status409Conflict, msg, new { code = "conflict" });
-        }
-
-        if (msg.Contains("invalid", StringComparison.OrdinalIgnoreCase))
-        {
-            return (StatusCodes.Status400BadRequest, msg, new { code = "bad_request" });
-        }
-
-        return (StatusCodes.Status400BadRequest, msg, new { code = "bad_request" });
-    }
-
 }
-

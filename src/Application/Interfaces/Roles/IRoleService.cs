@@ -1,10 +1,11 @@
+using Application.DTOs.Common;
 using Application.DTOs.Roles;
 
 namespace Application.Interfaces.Roles;
 
 public interface IRoleService
 {
-    Task<IReadOnlyList<RoleResponse>> GetRolesAsync();
+    Task<PagedResponse<RoleResponse>> GetRolesAsync(int page, int pageSize);
 
     Task<RoleResponse> GetCurrentRoleAsync();
 
