@@ -44,10 +44,11 @@ Open **Settings → Secrets and variables → Actions → New repository secret*
 
 | Secret | Required | Example / notes |
 |--------|----------|-----------------|
-| `FTP_SERVER` | Yes | `site1234.siteasp.net` |
+| `FTP_SERVER` | Yes | FTP host only: `site1234.siteasp.net` (no `https://`) |
 | `FTP_USERNAME` | Yes | `site1234` |
 | `FTP_PASSWORD` | Yes | FTP password from control panel |
 | `FTP_SERVER_DIR` | No | Default `/wwwroot/` |
+| `SITE_URL` | No | **Recommended.** Public site URL for smoke test, e.g. `https://site1234.monsterasp.net`. FTP host (`*.siteasp.net`) is not the browser URL and often returns 404. |
 | `FTP_PORT` | No | Default `21` |
 | `PRODUCTION_CONNECTION_STRING` | Yes | MonsterASP MSSQL connection string |
 | `JWT_KEY` | Yes | Random string, **≥ 32 characters** |
@@ -89,7 +90,9 @@ dotnet run --project src/Api
 
 Monitor the workflow log. On success, browse `https://<your-site>.monsterasp.net/` (or your assigned subdomain).
 
-The deploy workflow smoke test calls **`GET /api/v1/health`** (same as the site landing page). Root **`/health`** is an optional EF/database probe and may return 404 on MonsterASP depending on IIS routing.
+The deploy smoke test calls **`GET /api/v1/health`** on your public site URL. It auto-tries `https://<ftp-host-with-siteasp-replaced-by-monsterasp.net>` when `SITE_URL` is not set. Set **`SITE_URL`** if you use a custom domain.
+
+If the smoke test fails but FTP deploy succeeded, open `https://<your-site>/api/v1/health` in a browser and check `wwwroot/logs/stdout*.log` on FTP for startup errors (migrations, connection string, .NET version in control panel).
 
 ---
 
