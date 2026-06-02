@@ -96,6 +96,12 @@ jobs:
             Seeding = @{
               AdminPassword = $env:ADMIN_PASSWORD
             }
+            Swagger = @{
+              EnabledInProduction = $true
+              AdminUsername       = "admin@system.com"
+              AdminPassword       = $env:ADMIN_PASSWORD
+              SessionHours        = 8
+            }
             AllowedOrigins = $origins
             FileStorage = @{
               BasePath         = "storage"
@@ -167,7 +173,6 @@ jobs:
           dangerous-clean-slate: false
           log-level: standard
           exclude: |
-            **/swagger-ui/**
             **/*.pdb
 
       - name: Start site (remove app_offline.htm)

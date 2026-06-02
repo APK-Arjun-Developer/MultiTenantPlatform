@@ -70,7 +70,7 @@ Committed templates: [`appsettings.Development.json`](../src/Api/appsettings.Dev
 | `ConnectionStrings:DefaultConnection` | Injected from `PRODUCTION_CONNECTION_STRING` |
 | `Jwt:Key` | Injected from `JWT_KEY` |
 | `Serilog` | `Warning` default |
-| Swagger | Disabled (only registered in Development) |
+| Swagger | **Production:** enabled at `/swagger` behind login (`admin@system.com` + `ADMIN_PASSWORD` from secrets). **Development:** open without login. |
 
 Local production testing (without FTP):
 

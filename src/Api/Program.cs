@@ -3,7 +3,9 @@ using Serilog;
 using Infrastructure.Persistence;
 using Infrastructure.Identity;
 using Api.Contracts;
+using Api.Extensions;
 using Api.Middleware;
+using Api.Options;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -129,6 +131,9 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
+builder.Services.Configure<SwaggerAccessOptions>(
+    builder.Configuration.GetSection(SwaggerAccessOptions.SectionName));
+
 // ── Forwarded Headers (for correct client IP behind proxy) ────────────────────
 builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
@@ -171,17 +176,9 @@ app.UseCors("Default");
 
 app.UseRateLimiter();
 
-// Swagger only in development
-if (app.Environment.IsDevelopment())
+if (app.IsSwaggerEnabled(app.Configuration))
 {
-    app.MapOpenApi();
-    app.UseSwagger();
-    app.UseSwaggerUI(options =>
-    {
-        options.EnableTryItOutByDefault();
-        options.EnablePersistAuthorization();
-        options.InjectJavascript("/swagger-ui/swagger-auto-auth.js");
-    });
+    app.UseSwaggerDocumentation();
 }
 
 app.UseAuthentication();
