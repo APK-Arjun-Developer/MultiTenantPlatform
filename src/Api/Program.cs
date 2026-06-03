@@ -61,6 +61,13 @@ var allowedOrigins = builder.Configuration
     .GetSection("AllowedOrigins")
     .Get<string[]>() ?? [];
 
+if (allowedOrigins.Length == 0 && builder.Environment.IsProduction())
+{
+    throw new InvalidOperationException(
+        "AllowedOrigins must be configured in Production. " +
+        "Set the ALLOWED_ORIGINS secret (comma-separated list of allowed origins).");
+}
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Default", policy =>
@@ -140,7 +147,7 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     options.ForwardedHeaders =
         Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor |
         Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
-    options.KnownNetworks.Clear();
+    options.KnownIPNetworks.Clear();
     options.KnownProxies.Clear();
 });
 

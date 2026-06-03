@@ -1,10 +1,10 @@
 # Multi-Tenant Platform API (v1)
 
-See also [PROJECT.md](./PROJECT.md) for architecture, auth model, and permission conventions.
+Architecture summary: [PROJECT.md](./PROJECT.md). Deploy: [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 Base URL: `/api/v1`
 
-All JSON responses use the same envelope:
+All JSON responses use the envelope:
 
 ```json
 {
@@ -15,7 +15,16 @@ All JSON responses use the same envelope:
 }
 ```
 
-Errors return `data: null`, a `message`, and optional `errors` (validation details, codes).
+---
+
+## Health
+
+| Method | Path | Auth | Notes |
+|--------|------|------|-------|
+| GET | `/api/v1/health` | No | API envelope; `data.status` = `"healthy"` |
+| GET | `/health` | No | EF health check JSON (database probe) |
+
+Deploy smoke test uses `/api/v1/health` on your public `SITE_URL`.
 
 ---
 
@@ -25,13 +34,13 @@ Errors return `data: null`, a `message`, and optional `errors` (validation detai
 
 | Field | Required | Notes |
 |-------|----------|--------|
-| `email` | Yes | User email |
+| `email` | Yes | |
 | `password` | Yes | |
-| `tenantSlug` | No | **Omit** for platform **SuperAdmin** (`tenant_id` = `00000000-0000-0000-0000-000000000000`). **Required** for tenant users. Slug must match an active, non-deleted tenant (e.g. `acme-corp`). |
+| `tenantSlug` | No | **Omit** for SuperAdmin. **Required** for tenant users. |
 
-**Examples**
+Examples:
 
-- SuperAdmin: `{ "email": "admin@system.com", "password": "..." }` — no `tenantSlug`
+- SuperAdmin: `{ "email": "admin@system.com", "password": "..." }`
 - Tenant user: `{ "email": "user@acme.com", "password": "...", "tenantSlug": "acme-corp" }`
 
 ### Refresh — `POST /auth/refresh`
@@ -46,12 +55,12 @@ Body: `{ "refreshToken": "..." }`
 
 | Claim | Description |
 |-------|-------------|
-| `user_id` | Current user GUID |
-| `tenant_id` | Tenant GUID (empty GUID for platform SuperAdmin) |
-| `role_id` | Primary role GUID (optional) |
-| Role names | Standard `role` claims (e.g. `SuperAdmin`) |
+| `user_id` | User GUID |
+| `tenant_id` | Tenant GUID (`Guid.Empty` for SuperAdmin) |
+| `role_id` | Primary role GUID |
+| `role` | Role name claims |
 
-Permissions are **not** embedded in the JWT. Each request is checked against the database (with caching).
+Permissions are checked per request from the database (cached), not from the token.
 
 ---
 
@@ -59,62 +68,48 @@ Permissions are **not** embedded in the JWT. Each request is checked against the
 
 ### `POST /tenants`
 
-Requires `Tenants.Create`. Creates a tenant, initial roles (with permission IDs), and the first admin user in one transaction.
+Requires `Tenants.Create`. Creates tenant, roles (with permission GUIDs), and first admin in one transaction.
 
 ```json
 {
-  "tenant": {
-    "name": "Acme Corp",
-    "slug": "acme-corp"
-  },
-  "user": {
-    "fullName": "Acme Admin",
-    "email": "admin@acme.com",
-    "password": "SecurePass123!"
-  },
+  "tenant": { "name": "Acme Corp", "slug": "acme-corp" },
+  "user": { "fullName": "Acme Admin", "email": "admin@acme.com", "password": "SecurePass123!" },
   "roles": [
-    {
-      "name": "Admin",
-      "description": "Tenant administrator",
-      "permissions": ["<permission-guid>", "..."]
-    }
+    { "name": "Admin", "description": "Tenant administrator", "permissions": ["<guid>", "..."] }
   ]
 }
 ```
 
-Use `GET /permissions` (optionally `?grouped=true`) to obtain permission GUIDs for role setup.
+Use `GET /permissions` for permission GUIDs.
 
 ---
 
-## List scoping (who sees what)
+## List scoping
 
-| Endpoint | SuperAdmin (`tenant_id` empty) | Tenant user |
-|----------|-------------------------------|-------------|
-| `GET /users` | All users in all tenants (except self), includes `tenant` on each user | Users in **current tenant** only |
-| `GET /tenants` | Paginated list of all tenants | Single current tenant (`totalCount: 1`) |
-| `GET /roles` | N/A (platform scope) | Roles in **current tenant** |
-| `GET /products` | N/A | Products in **current tenant** (EF filter) |
-| `GET /permissions` | Full catalog including `Tenants.*` | Tenant-safe permissions only (no `Tenants.*`) |
+| Endpoint | SuperAdmin | Tenant user |
+|----------|------------|-------------|
+| `GET /users` | All tenants (except self); includes nested `tenant` | Current tenant only |
+| `GET /tenants` | Paginated all tenants | Single current tenant |
+| `GET /roles` | — | Current tenant roles |
+| `GET /products` | — | Current tenant (EF filter) |
+| `GET /permissions` | Full catalog incl. `Tenants.*` | Tenant-safe (no `Tenants.*`) |
+
+Mutating operations identify resources by **body** fields (email, slug, role name, product name) — not route IDs.
 
 ---
 
 ## Pagination
 
-Supported on:
-
-- `GET /users?page=1&pageSize=20`
-- `GET /tenants?page=1&pageSize=20`
+`GET /users`, `GET /tenants`:
 
 | Query | Default | Max |
 |-------|---------|-----|
 | `page` | `1` | — |
 | `pageSize` | `20` | `100` |
 
-`data` shape:
-
 ```json
 {
-  "items": [ ],
+  "items": [],
   "page": 1,
   "pageSize": 20,
   "totalCount": 42,
@@ -126,37 +121,118 @@ Supported on:
 
 ---
 
-## Current user profile
+## Profiles (user & tenant)
 
-- `GET /users/current` — JWT user profile (includes `profileFileId`, `profileUrl` when set)
-- `PUT /users/current` — Update **own** `fullName`, optional `password`, and profile image (requires `Users.Edit`). Cannot change email or role here.
+Responses include `profileFileId` and `profileUrl` (`/api/v1/files/{id}/download`) when set.
 
-### Profile image (FK to `Files`)
+### User profile
 
-1. `POST /api/v1/files` — upload image (`Files.Upload`)
-2. `PUT /users/current` with `profileFileId` set to the returned file `id`
+- `GET /users/current` — own profile (+ optional nested `tenant` with profile/address)
+- `PUT /users/current` — update `fullName`, optional `password`, profile image, address
+- `PUT /users` — admin update by `email` in body
+
+### Tenant profile
+
+- `GET /tenants/current` — tenant profile + address
+- `PUT /tenants` — update name, slug, active flag, profile image, address
+
+### Profile image flow
+
+1. `POST /files` — upload (`Files.Upload`)
+2. `PUT /users/current` or `PUT /tenants` with `profileFileId: "<file-guid>"`
+3. `clearProfileImage: true` — remove without replacing
+
+---
+
+## Addresses
+
+Optional address on users and tenants. Returned on GET responses:
 
 ```json
-{
-  "fullName": "Jane Doe",
-  "profileFileId": "<file-guid-from-upload>"
+"address": {
+  "id": "...",
+  "line1": "123 Main St",
+  "line2": "Suite 4",
+  "city": "Austin",
+  "state": "TX",
+  "postalCode": "78701",
+  "country": "US",
+  "fullAddress": "123 Main St, Suite 4, Austin, TX, 78701, US"
 }
 ```
 
-- `profileUrl` in responses: `/api/v1/files/{id}/download` (requires `Files.View` + Bearer token)
-- `clearProfileImage: true` — removes the FK without uploading a new file
-- Omit `profileFileId` to leave the current image unchanged
+Update via `PUT /users`, `PUT /users/current`, or `PUT /tenants`:
 
-Admin updates to other users: `PUT /users` with `email` in body (same `profileFileId` / `clearProfileImage` fields).
+```json
+{
+  "address": {
+    "line1": "123 Main St",
+    "line2": null,
+    "city": "Austin",
+    "state": "TX",
+    "postalCode": "78701",
+    "country": "US"
+  },
+  "clearAddress": false
+}
+```
+
+Set `"clearAddress": true` to remove. Omit `address` to leave unchanged.
+
+---
+
+## Files
+
+| Method | Path | Permission |
+|--------|------|------------|
+| GET | `/files` | `Files.View` |
+| GET | `/files/{id}` | `Files.View` |
+| GET | `/files/{id}/download` | `Files.View` |
+| POST | `/files` | `Files.Upload` |
+| DELETE | `/files/{id}` | `Files.Delete` |
+
+Deleting a file clears any user/tenant `ProfileFileId` referencing it.
+
+---
+
+## Reports
+
+| Method | Path | Permission |
+|--------|------|------------|
+| GET | `/reports/summary` | `Reports.View` |
+| GET | `/reports/export` | `Reports.Export` |
 
 ---
 
 ## Permission names
 
-PascalCase with module prefix, e.g. `Users.View`, `Products.Create`, `Tenants.Onboard` is not used — use `Tenants.Create` for onboarding.
+PascalCase with module prefix: `Users.View`, `Products.Create`, `Tenants.Create`, etc.
+
+Constants: `Application.Common.PermissionNames`.
 
 ---
 
 ## Swagger
 
-Run the API in Development and open `/swagger` for interactive docs. Use **Authorize** with `Bearer {accessToken}`.
+| Environment | URL | Access |
+|-------------|-----|--------|
+| Development | `/swagger` | Open |
+| Production | `/swagger` | Sign in at `/swagger/login` (`admin@system.com` + admin password) |
+
+Use **Authorize** with `Bearer {accessToken}` from login. Swagger auto-auth script persists tokens in Development.
+
+---
+
+## Endpoint index
+
+| Area | Methods |
+|------|---------|
+| Auth | `POST login`, `refresh`, `logout` |
+| Users | `GET`, `GET current`, `POST`, `PUT`, `PUT current`, `DELETE` |
+| Tenants | `GET`, `GET current`, `POST`, `PUT`, `DELETE` |
+| Roles | `GET`, `GET current`, `POST`, `PUT`, `DELETE` |
+| Products | `GET`, `GET by-name`, `POST`, `PUT`, `DELETE` |
+| Permissions | `GET` |
+| Files | `GET`, `GET {id}`, `GET {id}/download`, `POST`, `DELETE` |
+| Reports | `GET summary`, `GET export` |
+| Health | `GET /api/v1/health` |

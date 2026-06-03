@@ -1,8 +1,19 @@
 # Deployment — MonsterASP.NET (FTP) via GitHub Actions
 
-Automated production deploys use [`.github/workflows/deploy-monsterasp-ftp.yml`](../.github/workflows/deploy-monsterasp-ftp.yml).
+Production deploy workflow: [`.github/workflows/deploy-monsterasp-ftp.yml`](../.github/workflows/deploy-monsterasp-ftp.yml).
 
-**Flow:** push to `main` (or manual **Run workflow**) → build & publish (`win-x86`) → inject secrets into `appsettings.Production.json` → upload to MonsterASP **`/wwwroot/`** over FTP.
+## End-to-end flow
+
+```text
+push master / manual run
+    → dotnet publish (win-x86)
+    → inject secrets → appsettings.Production.json
+    → upload app_offline.htm (stop IIS)
+    → FTPS deploy to /wwwroot/
+    → remove app_offline.htm
+    → smoke test GET /api/v1/health on SITE_URL
+    → app starts: pending migrations + pending seeds
+```
 
 ---
 
@@ -21,24 +32,50 @@ Automated production deploys use [`.github/workflows/deploy-monsterasp-ftp.yml`]
 
 ### Database on startup (production)
 
-With **`ApplyMigrationsOnStartup: true`** and **`SeedOnStartup: true`** (set in `appsettings.Production.json` and the deploy workflow), each app start will:
+| Setting | Default on deploy | What it does |
+|---------|-------------------|--------------|
+| `ApplyMigrationsOnStartup` | `true` | Applies **pending** EF migrations (`__EFMigrationsHistory`) |
+| `ApplySeedsOnStartup` | `true` | Applies **pending** versioned seeds (`SeedHistory` table) |
 
-1. Apply any **pending EF Core migrations**
-2. Run **idempotent seeders** (permissions, default tenant, SuperAdmin if missing)
+Both work like migrations: only missing versions run. Already-applied migrations/seeds are skipped.
 
-First SuperAdmin (only if no user exists): `admin@system.com` / `Admin123!` — change the password after first login.
+**Current seeds** (in order):
 
-Optional manual migration from your PC:
+| SeedId | Description |
+|--------|-------------|
+| `20260603000002_Permissions` | RBAC permission catalog |
+| `20260603000003_SuperAdmin` | SuperAdmin role + `admin@system.com` user |
 
-```powershell
-$env:ConnectionStrings__DefaultConnection = "<your-monsterasp-sql-connection-string>"
-$env:ASPNETCORE_ENVIRONMENT = "Production"
-dotnet ef database update --project src/Infrastructure --startup-project src/Api
-```
+**SuperAdmin login:** `admin@system.com` / `ADMIN_PASSWORD` GitHub secret.
 
 ---
 
-## 2. GitHub repository secrets
+## 2. Fresh database (when needed)
+
+The schema baseline is a single migration: **`InitialCreate`**. If you need an empty database:
+
+### Local
+
+```powershell
+dotnet ef database drop --force `
+  --project src/Infrastructure/Infrastructure.csproj `
+  --startup-project src/Api/Api.csproj
+dotnet run --project src/Api
+```
+
+Pending migrations and seeds apply on startup.
+
+### Production (MonsterASP)
+
+1. **Control panel** — delete and recreate the MSSQL database, **or**
+2. **SSMS** — connect to your database and drop all user tables
+3. Redeploy the app — on startup, `InitialCreate` and pending seeds run
+
+Ensure `ADMIN_PASSWORD` is set in GitHub secrets before the SuperAdmin seed runs.
+
+---
+
+## 3. GitHub repository secrets
 
 Open **Settings → Secrets and variables → Actions → New repository secret**.
 
@@ -48,77 +85,75 @@ Open **Settings → Secrets and variables → Actions → New repository secret*
 | `FTP_USERNAME` | Yes | `site1234` |
 | `FTP_PASSWORD` | Yes | FTP password from control panel |
 | `FTP_SERVER_DIR` | No | Default `/wwwroot/` |
-| `SITE_URL` | No | **Recommended.** Public site URL for smoke test, e.g. `https://site1234.monsterasp.net`. FTP host (`*.siteasp.net`) is not the browser URL and often returns 404. |
-| `FTP_PORT` | No | Default `21` |
+| `SITE_URL` | No | **Recommended.** Public site URL for smoke test, e.g. `https://site1234.monsterasp.net` |
 | `PRODUCTION_CONNECTION_STRING` | Yes | MonsterASP MSSQL connection string |
 | `JWT_KEY` | Yes | Random string, **≥ 32 characters** |
+| `ADMIN_PASSWORD` | Yes | SuperAdmin + Swagger login password |
 | `JWT_ISSUER` | No | Defaults to `MultiTenantPlatform` |
 | `JWT_AUDIENCE` | No | Defaults to `MultiTenantPlatformUsers` |
+| `ALLOWED_ORIGINS` | No | Comma-separated CORS origins |
 
-Never commit real connection strings or JWT keys. The workflow **overwrites** `appsettings.Production.json` in the publish output at deploy time.
+Never commit real connection strings or JWT keys. The workflow **overwrites** `appsettings.Production.json` at deploy time.
 
 ---
 
-## 3. Production configuration
-
-Committed templates: [`appsettings.Development.json`](../src/Api/appsettings.Development.json) and [`appsettings.Production.json`](../src/Api/appsettings.Production.json) use the **same keys**; only values differ (local SQL/JWT vs empty secrets, `SeedOnStartup`, log levels).
+## 4. Production configuration
 
 | Setting | Production behavior |
 |---------|---------------------|
-| `ApplyMigrationsOnStartup` | `true` — apply pending migrations on startup |
-| `SeedOnStartup` | `true` — run idempotent seeders on startup |
-| `ConnectionStrings:DefaultConnection` | Injected from `PRODUCTION_CONNECTION_STRING` |
-| `Jwt:Key` | Injected from `JWT_KEY` |
-| `Serilog` | `Warning` default |
-| Swagger | **Production:** enabled at `/swagger` behind login (`admin@system.com` + `ADMIN_PASSWORD` from secrets). **Development:** open without login. |
+| `ApplyMigrationsOnStartup` | `true` |
+| `ApplySeedsOnStartup` | `true` |
+| `ConnectionStrings:DefaultConnection` | From `PRODUCTION_CONNECTION_STRING` |
+| `Seeding:AdminPassword` | From `ADMIN_PASSWORD` |
+| Swagger | `/swagger` behind login (`admin@system.com` + `ADMIN_PASSWORD`) |
 
-Local production testing (without FTP):
+---
+
+## 5. Adding a new seed (developers)
+
+1. Create `Infrastructure/Persistence/Seed/Seeds/YourSeed.cs` implementing `IDataSeed` with a **new unique** `SeedId` (timestamp prefix, e.g. `20260604000001_MyFeature`).
+2. Register in `Infrastructure/Persistence/DependencyInjection.cs`: `services.AddScoped<IDataSeed, YourSeed>();`
+3. Deploy — only the new seed runs on next startup.
+
+---
+
+## 6. EF migrations (developers)
 
 ```powershell
-$env:ASPNETCORE_ENVIRONMENT = "Production"
-$env:ConnectionStrings__DefaultConnection = "<connection-string>"
-$env:Jwt__Key = "<at-least-32-char-secret>"
-dotnet run --project src/Api
+dotnet ef migrations add YourMigrationName `
+  --project src/Infrastructure/Infrastructure.csproj `
+  --startup-project src/Api/Api.csproj `
+  --output-dir Persistence/Migrations
 ```
 
 ---
 
-## 4. Trigger a deploy
+## 7. Trigger a deploy
 
-- **Automatic:** push to the `main` branch
-- **Manual:** GitHub → **Actions** → **Deploy to MonsterASP (FTP)** → **Run workflow**
+- **Automatic:** push to `master`
+- **Manual:** GitHub → **Actions** → **Deploy to MonsterASP (FTPS)** → **Run workflow**
 
-Monitor the workflow log. On success, browse `https://<your-site>.monsterasp.net/` (or your assigned subdomain).
-
-The deploy smoke test calls **`GET /api/v1/health`** on your public site URL. It auto-tries `https://<ftp-host-with-siteasp-replaced-by-monsterasp.net>` when `SITE_URL` is not set. Set **`SITE_URL`** if you use a custom domain.
-
-If the smoke test fails but FTP deploy succeeded, open `https://<your-site>/api/v1/health` in a browser and check `wwwroot/logs/stdout*.log` on FTP for startup errors (migrations, connection string, .NET version in control panel).
+Smoke test: `GET /api/v1/health` on `SITE_URL`.
 
 ---
 
-## 5. FTP file locks (troubleshooting)
+## 8. Local vs production settings
 
-Error **`550 Could not access file: driver error: calling GetHandle`** usually means **IIS has locked `Api.dll`** while the site is running.
+| Setting | Development | Production (deployed) |
+|---------|-------------|------------------------|
+| `ApplyMigrationsOnStartup` | `true` | `true` |
+| `ApplySeedsOnStartup` | `true` | `true` |
+| `Seeding:AdminPassword` | `appsettings.Development.json` or user secrets | `ADMIN_PASSWORD` GitHub secret |
+| Swagger | Open at `/swagger` | Login at `/swagger/login` |
+| CORS | `AllowedOrigins` in Development config | `ALLOWED_ORIGINS` secret (optional) |
 
-The workflow handles this automatically:
-
-1. Upload `app_offline.htm` to `wwwroot` (stops the site)
-2. Wait 20 seconds
-3. Deploy all files
-4. Delete `app_offline.htm` (site comes back online)
-
-If deploy still fails:
-
-1. **Control panel** → Websites → your site → **Restart**, then re-run the workflow, or  
-2. Manually upload [`deploy/app_offline.htm`](../deploy/app_offline.htm) via FileZilla, deploy, then delete it.
-
-See [MonsterASP FTP deploy docs](https://help.monsterasp.net/books/deploy/page/how-to-deploy-website-content-via-ftpsftp).
+Both environments only apply **pending** migrations and seeds — safe on every restart.
 
 ---
 
-## 6. Alternative: WebDeploy
+## 9. FTP file locks (troubleshooting)
 
-MonsterASP also documents [GitHub Actions with WebDeploy](https://help.monsterasp.net/books/github/page/how-to-deploy-website-via-github-actions). This project uses **FTP** as requested; WebDeploy secrets differ (`WEBSITE_NAME`, `SERVER_COMPUTER_NAME`, etc.).
+See [MonsterASP FTP deploy docs](https://help.monsterasp.net/books/deploy/page/how-to-deploy-website-content-via-ftpsftp). The workflow uploads `app_offline.htm` before deploy.
 
 ---
 

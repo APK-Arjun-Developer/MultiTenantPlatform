@@ -1,7 +1,10 @@
 using Infrastructure.Persistence.Contexts;
+using Infrastructure.Persistence.Seed;
+using Infrastructure.Persistence.Seed.Seeds;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+
 namespace Infrastructure.Persistence;
 
 public static class DependencyInjection
@@ -13,8 +16,13 @@ public static class DependencyInjection
         services.AddDbContext<ApplicationDbContext>(options =>
         {
             options.UseSqlServer(
-                configuration.GetConnectionString("DefaultConnection"));
+                configuration.GetConnectionString("DefaultConnection"),
+                sql => sql.MigrationsAssembly(typeof(ApplicationDbContext).Assembly.FullName));
         });
+
+        services.AddScoped<SeedRunner>();
+        services.AddScoped<IDataSeed, PermissionsSeed>();
+        services.AddScoped<IDataSeed, SuperAdminSeed>();
 
         return services;
     }

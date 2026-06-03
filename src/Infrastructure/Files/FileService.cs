@@ -65,6 +65,14 @@ public class FileService : TenantScopedService, IFileService
         return (stream, file.ContentType, file.OriginalName);
     }
 
+    private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp",
+        ".pdf", ".txt", ".csv", ".json", ".xml",
+        ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+        ".zip", ".mp4", ".mp3",
+    };
+
     public async Task<FileResponse> UploadAsync(IFormFile file)
     {
         var tenantId = RequireTenantId();
@@ -78,6 +86,13 @@ public class FileService : TenantScopedService, IFileService
         {
             throw new InvalidOperationException(
                 $"File exceeds maximum size of {_settings.MaxFileSizeBytes / 1024 / 1024} MB.");
+        }
+
+        var extension = Path.GetExtension(file.FileName);
+        if (!AllowedExtensions.Contains(extension))
+        {
+            throw new InvalidOperationException(
+                $"File type '{extension}' is not allowed.");
         }
 
         await using var stream = file.OpenReadStream();

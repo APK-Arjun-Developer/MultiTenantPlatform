@@ -35,6 +35,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Applicati
 
     public DbSet<Address> Addresses => Set<Address>();
 
+    public DbSet<SeedHistory> SeedHistory => Set<SeedHistory>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
