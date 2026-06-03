@@ -37,6 +37,10 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Applicati
 
     public DbSet<SeedHistory> SeedHistory => Set<SeedHistory>();
 
+    public DbSet<AccountSetupToken> AccountSetupTokens => Set<AccountSetupToken>();
+
+    public DbSet<Invitation> Invitations => Set<Invitation>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);

@@ -1,6 +1,9 @@
 using Api.Attributes;
 using Application.Common;
+using Application.DTOs.Onboarding;
 using Application.DTOs.Users;
+using Application.Interfaces.Invitations;
+using Application.Interfaces.Onboarding;
 using Application.Interfaces.Users;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,10 +16,17 @@ namespace Api.Controllers;
 public class UsersController : ApiControllerBase
 {
     private readonly IUserManagementService _userManagementService;
+    private readonly IOnboardingService _onboardingService;
+    private readonly IInvitationService _invitationService;
 
-    public UsersController(IUserManagementService userManagementService)
+    public UsersController(
+        IUserManagementService userManagementService,
+        IOnboardingService onboardingService,
+        IInvitationService invitationService)
     {
         _userManagementService = userManagementService;
+        _onboardingService = onboardingService;
+        _invitationService = invitationService;
     }
 
     [HttpGet]
@@ -73,5 +83,88 @@ public class UsersController : ApiControllerBase
         await _userManagementService.DeleteUserAsync(request);
 
         return OkEnvelope("User deleted.");
+    }
+
+    // ── Onboarding: Tenant Admin creates Tenant User ──────────────────────────
+
+    /// <summary>
+    /// Directly create a tenant user. Generates an account-setup token and sends a
+    /// setup email — the account remains inactive until the user sets their password.
+    /// </summary>
+    [HttpPost("direct-create")]
+    [HasPermission(PermissionNames.OnboardingCreate)]
+    public async Task<IActionResult> DirectCreate(
+        CreateTenantUserRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await _onboardingService.CreateTenantUserAsync(request, cancellationToken);
+
+        return OkEnvelope(response, "User created. Setup email sent.");
+    }
+
+    /// <summary>
+    /// Send an invitation email to a prospective tenant user.
+    /// The invited user self-registers via the link in the email.
+    /// </summary>
+    [HttpPost("invite")]
+    [HasPermission(PermissionNames.OnboardingInvite)]
+    public async Task<IActionResult> Invite(
+        InviteTenantUserRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await _invitationService.InviteTenantUserAsync(request, cancellationToken);
+
+        return OkEnvelope(response, "User invitation sent.");
+    }
+
+    /// <summary>
+    /// Resend the account-setup email for an inactive tenant user.
+    /// Issues a fresh token, invalidating the previous one.
+    /// </summary>
+    [HttpPost("{userId:guid}/resend")]
+    [HasPermission(PermissionNames.OnboardingResend)]
+    public async Task<IActionResult> ResendSetupEmail(
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        await _onboardingService.ResendTenantUserSetupEmailAsync(userId, cancellationToken);
+
+        return OkEnvelope("Setup email resent.");
+    }
+
+    /// <summary>Revoke a pending tenant user invitation.</summary>
+    [HttpPost("invitations/{invitationId:guid}/revoke")]
+    [HasPermission(PermissionNames.OnboardingRevoke)]
+    public async Task<IActionResult> RevokeInvitation(
+        Guid invitationId,
+        CancellationToken cancellationToken)
+    {
+        await _invitationService.RevokeInvitationAsync(invitationId, cancellationToken);
+
+        return OkEnvelope("Invitation revoked.");
+    }
+
+    /// <summary>Activate a tenant user account.</summary>
+    [HttpPost("{userId:guid}/activate")]
+    [HasPermission(PermissionNames.OnboardingActivate)]
+    public async Task<IActionResult> Activate(
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        var response = await _onboardingService.ActivateUserAsync(userId, cancellationToken);
+
+        return OkEnvelope(response, "User activated.");
+    }
+
+    /// <summary>Deactivate a tenant user account.</summary>
+    [HttpPost("{userId:guid}/deactivate")]
+    [HasPermission(PermissionNames.OnboardingDeactivate)]
+    public async Task<IActionResult> Deactivate(
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        var response = await _onboardingService.DeactivateUserAsync(userId, cancellationToken);
+
+        return OkEnvelope(response, "User deactivated.");
     }
 }

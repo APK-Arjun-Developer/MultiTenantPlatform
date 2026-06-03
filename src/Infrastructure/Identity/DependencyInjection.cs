@@ -32,7 +32,15 @@ using Infrastructure.MultiTenancy;
 using Infrastructure.Roles;
 using Infrastructure.Tenant;
 using Infrastructure.Users;
+using Application.Interfaces.AccountSetup;
+using Application.Interfaces.Email;
+using Application.Interfaces.Invitations;
+using Application.Interfaces.Onboarding;
+using Infrastructure.AccountSetup;
+using Infrastructure.Email;
+using Infrastructure.Invitations;
 using Infrastructure.Jobs;
+using Infrastructure.Onboarding;
 using Microsoft.AspNetCore.Authorization;
 
 namespace Infrastructure.Identity;
@@ -131,6 +139,11 @@ public static class DependencyInjection
         services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
 
         services.AddHostedService<ExpiredTokenCleanupJob>();
+
+        services.AddScoped<IOnboardingService, OnboardingService>();
+        services.AddScoped<IAccountSetupService, AccountSetupService>();
+        services.AddScoped<IInvitationService, InvitationService>();
+        services.AddScoped<IEmailService, StubEmailService>();
 
         return services;
     }

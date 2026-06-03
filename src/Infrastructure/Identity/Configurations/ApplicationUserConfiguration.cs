@@ -21,6 +21,9 @@ public class ApplicationUserConfiguration
             x.TenantId
         }).IsUnique();
 
+        builder.Property(x => x.IsActive)
+            .HasDefaultValue(true);
+
         builder.HasOne(x => x.ProfileFile)
             .WithMany()
             .HasForeignKey(x => x.ProfileFileId)

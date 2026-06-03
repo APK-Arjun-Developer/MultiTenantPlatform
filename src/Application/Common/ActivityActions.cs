@@ -42,4 +42,18 @@ public static class ActivityActions
         public const string Uploaded = "Uploaded";
         public const string Deleted = "Deleted";
     }
+
+    public static class Onboarding
+    {
+        public const string TenantAdminCreated = "TenantAdminCreated";
+        public const string TenantAdminInvited = "TenantAdminInvited";
+        public const string TenantUserCreated = "TenantUserCreated";
+        public const string TenantUserInvited = "TenantUserInvited";
+        public const string AccountSetupCompleted = "AccountSetupCompleted";
+        public const string InvitationAccepted = "InvitationAccepted";
+        public const string InvitationRevoked = "InvitationRevoked";
+        public const string OnboardingEmailResent = "OnboardingEmailResent";
+        public const string UserActivated = "UserActivated";
+        public const string UserDeactivated = "UserDeactivated";
+    }
 }
