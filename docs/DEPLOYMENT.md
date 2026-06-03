@@ -91,7 +91,7 @@ Open **Settings → Secrets and variables → Actions → New repository secret*
 | `ADMIN_PASSWORD` | Yes | SuperAdmin + Swagger login password |
 | `JWT_ISSUER` | No | Defaults to `MultiTenantPlatform` |
 | `JWT_AUDIENCE` | No | Defaults to `MultiTenantPlatformUsers` |
-| `ALLOWED_ORIGINS` | No | Comma-separated CORS origins |
+| `ALLOWED_ORIGINS` | No | Comma-separated CORS origins. If empty, deploy uses `SITE_URL` as the allowed origin. |
 
 Never commit real connection strings or JWT keys. The workflow **overwrites** `appsettings.Production.json` at deploy time.
 

@@ -77,13 +77,18 @@ jobs:
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
           ALLOWED_HOSTS: ${{ secrets.ALLOWED_HOSTS }}
+          SITE_URL: ${{ secrets.SITE_URL }}
         run: |
           $issuer      = if ([string]::IsNullOrWhiteSpace($env:JWT_ISSUER))    { "MultiTenantPlatform" }     else { $env:JWT_ISSUER }
           $audience    = if ([string]::IsNullOrWhiteSpace($env:JWT_AUDIENCE))  { "MultiTenantPlatformUsers" } else { $env:JWT_AUDIENCE }
           $allowedHostsValue = if ([string]::IsNullOrWhiteSpace($env:ALLOWED_HOSTS)) { "*" } else { $env:ALLOWED_HOSTS }
 
-          $originsRaw  = $env:ALLOWED_ORIGINS
-          $origins     = if ([string]::IsNullOrWhiteSpace($originsRaw)) { @() } else { $originsRaw -split ',' | ForEach-Object { $_.Trim() } }
+          $originsRaw = $env:ALLOWED_ORIGINS
+          if ([string]::IsNullOrWhiteSpace($originsRaw) -and -not [string]::IsNullOrWhiteSpace($env:SITE_URL)) {
+            $originsRaw = $env:SITE_URL.Trim().TrimEnd('/')
+            Write-Host "ALLOWED_ORIGINS not set; using SITE_URL as CORS origin: $originsRaw"
+          }
+          $origins = if ([string]::IsNullOrWhiteSpace($originsRaw)) { @() } else { $originsRaw -split ',' | ForEach-Object { $_.Trim() } }
 
           $settings = @{
             ApplyMigrationsOnStartup = $true
@@ -195,9 +200,13 @@ jobs:
           FTP_SERVER: ${{ secrets.FTP_SERVER }}
           SITE_URL: ${{ secrets.SITE_URL }}
         run: |
+          if ([string]::IsNullOrWhiteSpace($env:SITE_URL)) {
+            Write-Warning "SITE_URL secret is not set. Smoke test will try FTP host only (often wrong)."
+          }
+
           ./deploy/smoke-test.ps1 `
             -FtpServer $env:FTP_SERVER `
             -SiteUrl $env:SITE_URL `
-            -MaxAttempts 8 `
-            -InitialDelaySeconds 30 `
+            -MaxAttempts 10 `
+            -InitialDelaySeconds 45 `
             -RetryDelaySeconds 15
