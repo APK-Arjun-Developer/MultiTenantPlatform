@@ -1,6 +1,6 @@
 # Multi-Tenant Platform — Project Summary
 
-This document is the **canonical project summary** for the codebase. It reflects what is implemented today (Phases 1–4). For endpoint-level details, see [API.md](./API.md).
+Canonical architecture and workflow summary. For endpoints see [API.md](./API.md); for deploy see [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 ---
 
@@ -8,11 +8,12 @@ This document is the **canonical project summary** for the codebase. It reflects
 
 A **multi-tenant SaaS backend** on **.NET 10** with:
 
-- Tenant isolation via `TenantId`, EF Core global query filters, and middleware
+- Tenant isolation via `TenantId`, EF global query filters, and middleware
 - **JWT** access tokens + **refresh tokens** (login / refresh / logout)
-- **Permission-based RBAC** checked per request against the database (with in-memory caching)
+- **Permission-based RBAC** checked per request (with `IMemoryCache`)
 - **ASP.NET Core Identity** for users and roles (`Guid` keys)
-- No public self-registration — tenants are onboarded by a platform **SuperAdmin**
+- **Versioned database seeds** tracked in `SeedHistory` (like EF migrations)
+- No public self-registration — tenants onboarded by platform **SuperAdmin**
 
 ---
 
@@ -25,8 +26,9 @@ A **multi-tenant SaaS backend** on **.NET 10** with:
 | Data | EF Core 10, SQL Server |
 | Auth | JWT Bearer + ASP.NET Core Identity |
 | Validation | FluentValidation |
-| Logging | Serilog (host + request middleware enrichers) |
-| Docs | Swagger (Development), [API.md](./API.md) |
+| Logging | Serilog + request middleware |
+| API docs | Swagger (Development open; Production login-gated) |
+| Deploy | GitHub Actions → MonsterASP.NET FTPS (`win-x86`, InProcess) |
 
 ---
 
@@ -34,71 +36,95 @@ A **multi-tenant SaaS backend** on **.NET 10** with:
 
 ```text
 src/
-  Api/              HTTP pipeline, controllers, middleware, API envelope
-  Application/      DTOs, validators, interfaces, permission/role constants
-  Domain/           Entities, contracts (ITenantEntity, IAuditableEntity)
-  Infrastructure/   EF DbContext, Identity, services, caching, file storage
-  Shared/           Shared utilities (minimal today)
+  Api/              HTTP pipeline, controllers, middleware, envelope, Swagger gate
+  Application/      DTOs, validators, interfaces, PermissionNames / RoleNames
+  Domain/           Entities, ITenantEntity, IAuditableEntity
+  Infrastructure/   DbContext, migrations, seeds, Identity, feature services
+  Shared/           Minimal shared utilities
+deploy/             FTP deploy helpers (app_offline, smoke test, web.config)
 ```
 
-Services live in **Infrastructure** and are registered from `Infrastructure` DI extensions. There is **no generic `IRepository<>`** — data access uses `ApplicationDbContext` and feature services directly.
+Services live in **Infrastructure** and register via DI extensions. Data access uses `ApplicationDbContext` and feature services directly (no generic repository).
+
+---
+
+## Database workflow
+
+### Migrations
+
+- Stored in `Infrastructure/Persistence/Migrations/`
+- Baseline: **`InitialCreate`** (consolidated schema)
+- History table: `__EFMigrationsHistory`
+- On startup when `ApplyMigrationsOnStartup: true`: apply **pending** migrations only
+
+```powershell
+dotnet ef migrations add Name `
+  --project src/Infrastructure/Infrastructure.csproj `
+  --startup-project src/Api/Api.csproj `
+  --output-dir Persistence/Migrations
+```
+
+### Versioned seeds
+
+- Interface: `IDataSeed` with stable `SeedId` (e.g. `20260603000002_Permissions`)
+- Runner: `SeedRunner` compares registered seeds vs `SeedHistory` table
+- On startup when `ApplySeedsOnStartup: true`: apply **pending** seeds only, in `SeedId` order
+
+| SeedId | Purpose |
+|--------|---------|
+| `20260603000002_Permissions` | RBAC permission catalog |
+| `20260603000003_SuperAdmin` | SuperAdmin role + `admin@system.com` (requires `Seeding:AdminPassword`) |
+
+Add a seed: new class in `Persistence/Seed/Seeds/`, register in `Persistence/DependencyInjection.cs`.
+
+### Fresh database
+
+| Environment | Approach |
+|-------------|----------|
+| Local | `dotnet ef database drop --force` then `dotnet run --project src/Api` |
+| Production | Delete/recreate database in MonsterASP control panel, or drop all tables in SSMS, then redeploy |
 
 ---
 
 ## Multi-tenancy
 
-- Every tenant-scoped row carries **`TenantId`** (`ITenantEntity`).
-- **EF global filters** hide rows where `DeletedAt != null` (soft delete) and scope tenant data where applicable.
-- **`TenantMiddleware`** resolves the current tenant from the JWT `tenant_id` claim after authentication.
-- Platform **SuperAdmin** users have `tenant_id = 00000000-0000-0000-0000-000000000000` (`Guid.Empty`). Login omits `tenantSlug`; tenant users must send a matching `tenantSlug`.
+- Tenant-scoped rows carry **`TenantId`** (`ITenantEntity`).
+- EF global filters: soft delete (`DeletedAt == null`) + tenant scope where applicable.
+- **`TenantMiddleware`** validates JWT `tenant_id` after authentication.
+- **SuperAdmin**: `tenant_id = Guid.Empty`. Login omits `tenantSlug`; tenant users require matching `tenantSlug`.
 
 ---
 
 ## Authentication
 
-### Endpoints
-
 | Method | Path | Purpose |
 |--------|------|---------|
-| POST | `/api/v1/auth/login` | Issue access + refresh tokens |
+| POST | `/api/v1/auth/login` | Access + refresh tokens |
 | POST | `/api/v1/auth/refresh` | Rotate tokens |
 | POST | `/api/v1/auth/logout` | Revoke refresh token |
 
-### JWT claims (access token)
+### JWT claims
 
 | Claim | Description |
 |-------|-------------|
-| `user_id` | Current user GUID |
+| `user_id` | User GUID |
 | `tenant_id` | Tenant GUID (`Guid.Empty` for SuperAdmin) |
-| `role_id` | Primary role GUID (when applicable) |
+| `role_id` | Primary role GUID |
 | `full_name` | Display name |
-| Standard `role` claims | Role names (e.g. `SuperAdmin`) |
+| `role` | Role names |
 
-**Permissions are not embedded in the JWT.** Authorization loads effective permissions from the database (role → permission mappings) on each request, with request-scoped and `IMemoryCache` caching.
-
-### Refresh tokens
-
-Stored in the database; validated on refresh and revoked on logout.
+**Permissions are not in the JWT.** Loaded from DB per request (cached).
 
 ---
 
 ## Authorization
 
-- Controllers/actions use **`[HasPermission("Module.Action")]`** (PascalCase permission names).
-- Policies are resolved by `PermissionPolicyProvider`; requirements are handled by `PermissionAuthorizationHandler`.
-- **SuperAdmin** receives all permissions from the catalog (cached).
-- **Tenant users** receive the union of permissions assigned to their roles in the current tenant.
+- **`[HasPermission("Module.Action")]`** on controllers/actions (PascalCase).
+- `PermissionPolicyProvider` + `PermissionAuthorizationHandler`.
+- SuperAdmin: all permissions from catalog.
+- Tenant users: union of role permissions in current tenant.
 
-### Permission naming
-
-Permissions use **PascalCase** with a module prefix, for example:
-
-- `Users.View`, `Users.Create`, `Users.Edit`, `Users.Delete`
-- `Roles.*`, `Products.*`, `Reports.*`, `Files.*`
-- `Tenants.*` (platform scope only — hidden from tenant permission catalog)
-
-Constants: `Application.Common.PermissionNames`.  
-Catalog API: `GET /api/v1/permissions` (optional `?grouped=true`).
+Catalog: `GET /api/v1/permissions` (`?grouped=true` optional). Tenant callers do not see `Tenants.*`.
 
 ---
 
@@ -106,43 +132,43 @@ Catalog API: `GET /api/v1/permissions` (optional `?grouped=true`).
 
 | Concept | Implementation |
 |---------|----------------|
-| Users | `ApplicationUser` : `IdentityUser<Guid>` + `TenantId`, `FullName`, soft-delete `DeletedAt` |
-| Roles | `ApplicationRole` : `IdentityRole<Guid>` + `TenantId`, `Description`, soft-delete `DeletedAt` |
-| User ↔ role | **ASP.NET Identity** `AspNetUserRoles` (`IdentityUserRole<Guid>`) — **no custom UserRole table** |
-| Role ↔ permission | `RolePermissions` join table (`Domain.Entities.RolePermission`) |
-| Permissions | `Permissions` master table (seeded) |
+| Users | `ApplicationUser` + `TenantId`, `FullName`, `ProfileFileId`, soft delete |
+| Roles | `ApplicationRole` + `TenantId`, `Description`, soft delete |
+| User ↔ role | Identity `AspNetUserRoles` |
+| Role ↔ permission | `RolePermissions` |
+| Permissions | `Permissions` table (seeded) |
+| Addresses | `Addresses` table; optional FK to user or tenant |
+| Seed tracking | `SeedHistory` table |
 
-The reserved platform role name **`SuperAdmin`** cannot be created, modified, deleted, or assigned inside tenant onboarding.
+**SuperAdmin** cannot be created/modified/deleted/assigned inside tenant onboarding.
+
+---
+
+## Profiles & addresses
+
+- **User / tenant profile image**: `ProfileFileId` → `Files`; `profileUrl` = `/api/v1/files/{id}/download`
+- **Address**: separate `Addresses` row linked to user or tenant; responses include `line1`, `city`, … and `fullAddress`
+- Update via `PUT /users`, `PUT /users/current`, `PUT /tenants` with `address` / `clearAddress`
 
 ---
 
 ## Tenant onboarding (SuperAdmin)
 
-`POST /api/v1/tenants` requires `Tenants.Create`. Body shape:
+`POST /api/v1/tenants` requires `Tenants.Create`:
 
 ```json
 {
   "tenant": { "name": "...", "slug": "..." },
   "user": { "fullName": "...", "email": "...", "password": "..." },
-  "roles": [
-    {
-      "name": "Admin",
-      "description": "...",
-      "permissions": ["<permission-guid>", "..."]
-    }
-  ]
+  "roles": [{ "name": "Admin", "description": "...", "permissions": ["<guid>", "..."] }]
 }
 ```
-
-Use `GET /api/v1/permissions` to obtain permission GUIDs for role setup.
 
 ---
 
 ## API conventions
 
 ### Response envelope
-
-All JSON responses use:
 
 ```json
 {
@@ -153,73 +179,87 @@ All JSON responses use:
 }
 ```
 
-Errors set `data` to `null`, include a `message`, and optional `errors` (validation details). Unhandled exceptions are mapped by `ExceptionHandlingMiddleware` to the same envelope (not RFC 7807 ProblemDetails).
+Errors mapped by `ExceptionHandlingMiddleware` to the same envelope.
 
 ### Pagination
 
-`GET /api/v1/users` and `GET /api/v1/tenants` support `page` (default 1) and `pageSize` (default 20, max 100). Response `data` is a `PagedResponse<T>`.
+`GET /users`, `GET /tenants`: `page` (default 1), `pageSize` (default 20, max 100).
 
 ### List scoping
 
 | Resource | SuperAdmin | Tenant user |
 |----------|------------|-------------|
-| Users | All tenants (except self in list) | Current tenant only |
-| Tenants | Paginated all | Single current tenant |
-| Roles / products / files / reports | Platform rules vary | Current tenant |
-| Permissions | Full catalog incl. `Tenants.*` | Tenant-safe set (no `Tenants.*`) |
-
-See [API.md](./API.md) for login rules and profile endpoints.
+| Users | All tenants (excl. self) + nested tenant | Current tenant only |
+| Tenants | Paginated all | Own tenant only |
+| Roles / products / files / reports | Platform rules | Current tenant |
 
 ---
 
 ## HTTP surface (v1)
 
-| Area | Base route |
-|------|------------|
+| Area | Route |
+|------|-------|
 | Auth | `/api/v1/auth` |
-| Users | `/api/v1/users` (+ `GET`/`PUT` `/current`) |
-| Tenants | `/api/v1/tenants` |
-| Roles | `/api/v1/roles` |
+| Health | `/api/v1/health` (+ `/health` EF probe) |
+| Users | `/api/v1/users`, `/current` |
+| Tenants | `/api/v1/tenants`, `/current` |
+| Roles | `/api/v1/roles`, `/current` |
 | Products | `/api/v1/products` |
 | Permissions | `/api/v1/permissions` |
-| Reports | `/api/v1/reports` (`summary`, `export`) |
+| Reports | `/api/v1/reports` |
 | Files | `/api/v1/files` |
 
 ---
 
 ## Cross-cutting behavior
 
-### Soft delete
+- **Soft delete** — `DeletedAt` / `DeletedBy`; global query filters
+- **Audit fields** — stamped on `SaveChangesAsync` from JWT `user_id`
+- **Activity logging** — auth and CRUD events to `ActivityLogs`
+- **Request logging** — path, status, duration, tenant/user correlation
+- **Caching** — permission catalog, roles, tenants, products, reports (`Caching` section in appsettings)
+- **File storage** — local disk (`FileStorage:BasePath`)
+- **Rate limiting** — auth endpoints (`10`/minute)
+- **CORS** — `AllowedOrigins` in configuration
 
-Entities with `DeletedAt` (including `ApplicationUser`, `ApplicationRole`, and `BaseEntity` types) are filtered with `DeletedAt == null`. Delete operations set `DeletedAt` / `DeletedBy` instead of removing rows.
+---
 
-### Audit fields
+## Swagger
 
-On `SaveChangesAsync`, `CreatedAt` / `UpdatedAt` / `DeletedAt` and `CreatedBy` / `UpdatedBy` / `DeletedBy` are stamped from the JWT `user_id` where applicable.
+| Environment | URL | Access |
+|-------------|-----|--------|
+| Development | `/swagger` | Open |
+| Production | `/swagger` | Login page (`admin@system.com` + `Seeding:AdminPassword` / `ADMIN_PASSWORD` secret) |
 
-### Activity logging
+Use **Authorize** in Swagger UI with `Bearer {accessToken}` from `POST /auth/login`.
 
-`IActivityLogService` records auth events and significant CRUD actions to `ActivityLogs`.
+---
 
-### Request logging
+## Deployment
 
-`RequestLoggingMiddleware` logs path, status, duration, and Serilog properties `tenant_id` / `user_id`.
+Production: **GitHub Actions** → **MonsterASP.NET** via FTPS. See [DEPLOYMENT.md](./DEPLOYMENT.md).
 
-### Caching (`IMemoryCache` via `IAppCache`)
+Startup on production:
 
-Cached with TTL from `appsettings.json` → `Caching`:
+- `ApplyMigrationsOnStartup: true`
+- `ApplySeedsOnStartup: true`
+- Secrets injected: connection string, JWT key, admin password, CORS origins
 
-- Permission catalog (system and tenant views)
-- Role → permission snapshots
-- Tenant catalog / detail
-- Product lists
-- Report summaries
+Post-deploy smoke test: `GET /api/v1/health` on `SITE_URL`.
 
-Cache entries are invalidated on relevant writes. **User list endpoints are not cached.**
+---
 
-### File storage
+## Local development
 
-Local disk implementation (`FileStorage:BasePath` in configuration). Upload, list, download, and soft-delete via `/api/v1/files`.
+```powershell
+dotnet ef database drop --force `
+  --project src/Infrastructure/Infrastructure.csproj `
+  --startup-project src/Api/Api.csproj   # optional — fresh start
+dotnet run --project src/Api
+```
+
+- Swagger: `/swagger`
+- SuperAdmin: `admin@system.com` / `Seeding:AdminPassword` from Development config or user secrets
 
 ---
 
@@ -227,47 +267,14 @@ Local disk implementation (`FileStorage:BasePath` in configuration). Upload, lis
 
 - Public user registration
 - Permissions inside JWT
-- Custom `UserRole` table (Identity `AspNetUserRoles` is correct)
-- `/api/v2` (deferred until breaking changes)
-- Redis, Hangfire, CQRS, cloud blob storage, centralized log stacks (see backlog below)
-
----
-
-## Backlog (Phase 6)
-
-Deferred unless explicitly prioritized:
-
-- Redis distributed cache
-- Hangfire background jobs
-- CQRS / domain events / microservices split
-- S3 / Azure Blob file providers
-- Seq / Elasticsearch / Grafana observability stack
-- API v2
-
----
-
-## Deployment
-
-Production deploys to **MonsterASP.NET** (free plan) via **GitHub Actions** and **FTP**. Secrets are injected at deploy time; see [DEPLOYMENT.md](./DEPLOYMENT.md).
-
----
-
-## Local development
-
-```bash
-# Apply migrations
-dotnet ef database update --project src/Infrastructure --startup-project src/Api
-
-# Run API
-dotnet run --project src/Api
-```
-
-Swagger: `https://localhost:<port>/swagger` (Development).  
-Default seeded SuperAdmin: `admin@system.com` / `Admin123!` (change in production).
+- Custom `UserRole` table
+- `/api/v2`
+- Redis, Hangfire, cloud blob storage, centralized log stacks
 
 ---
 
 ## Related documentation
 
-- [API.md](./API.md) — envelope, login, onboarding, scoping, pagination
-- Permission constants: `src/Application/Common/PermissionNames.cs`
+- [API.md](./API.md) — endpoints, profiles, addresses, login
+- [DEPLOYMENT.md](./DEPLOYMENT.md) — FTP deploy, secrets, migrations & seeds
+- `src/Application/Common/PermissionNames.cs` — permission constants

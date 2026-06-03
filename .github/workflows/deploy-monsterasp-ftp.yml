@@ -87,7 +87,7 @@ jobs:
 
           $settings = @{
             ApplyMigrationsOnStartup = $true
-            SeedOnStartup            = $false
+            ApplySeedsOnStartup      = $true
             ConnectionStrings        = @{ DefaultConnection = $env:CONNECTION_STRING }
             Jwt = @{
               Issuer        = $issuer

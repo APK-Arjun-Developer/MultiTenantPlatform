@@ -3,10 +3,12 @@ using Domain.Entities;
 using Infrastructure.Persistence.Contexts;
 using Microsoft.EntityFrameworkCore;
 
-namespace Infrastructure.Persistence.Seed;
+namespace Infrastructure.Persistence.Seed.Seeds;
 
-public static class PermissionSeeder
+public sealed class PermissionsSeed : IDataSeed
 {
+    public const string Id = "20260603000002_Permissions";
+
     private static readonly (string Name, string Module, string Description)[] PermissionDefinitions =
     [
         (PermissionNames.UsersCreate, "Users", "Create users"),
@@ -29,14 +31,25 @@ public static class PermissionSeeder
         (PermissionNames.TenantsCreate, "Tenants", "Create tenants"),
         (PermissionNames.TenantsView, "Tenants", "View tenants"),
         (PermissionNames.TenantsEdit, "Tenants", "Edit tenants"),
-        (PermissionNames.TenantsDelete, "Tenants", "Delete tenants")
+        (PermissionNames.TenantsDelete, "Tenants", "Delete tenants"),
     ];
 
-    public static async Task SeedAsync(ApplicationDbContext context)
+    private readonly ApplicationDbContext _context;
+
+    public PermissionsSeed(ApplicationDbContext context)
     {
-        var existingNames = await context.Permissions
+        _context = context;
+    }
+
+    public string SeedId => Id;
+
+    public string Description => "RBAC permission catalog.";
+
+    public async Task ApplyAsync(CancellationToken cancellationToken = default)
+    {
+        var existingNames = await _context.Permissions
             .Select(p => p.Name)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         var existingSet = existingNames.ToHashSet(StringComparer.Ordinal);
 
@@ -47,16 +60,16 @@ public static class PermissionSeeder
                 continue;
             }
 
-            context.Permissions.Add(new Permission
+            _context.Permissions.Add(new Permission
             {
                 Id = Guid.NewGuid(),
                 Name = name,
                 Module = module,
                 Description = description,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.UtcNow,
             });
         }
 
-        await context.SaveChangesAsync();
+        await _context.SaveChangesAsync(cancellationToken);
     }
 }

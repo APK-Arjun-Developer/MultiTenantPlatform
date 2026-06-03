@@ -1,10 +1,5 @@
-using Application.Interfaces.Caching;
-using Infrastructure.Identity;
-using Infrastructure.Identity.Entities;
-using Infrastructure.Identity.Seed;
 using Infrastructure.Persistence.Contexts;
 using Infrastructure.Persistence.Seed;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,9 +15,9 @@ public static class DatabaseInitializer
         ILogger logger)
     {
         var applyMigrations = configuration.GetValue("ApplyMigrationsOnStartup", true);
-        var seedOnStartup = configuration.GetValue("SeedOnStartup", false);
+        var applySeeds = configuration.GetValue("ApplySeedsOnStartup", true);
 
-        if (!applyMigrations && !seedOnStartup)
+        if (!applyMigrations && !applySeeds)
         {
             return;
         }
@@ -50,29 +45,12 @@ public static class DatabaseInitializer
             }
         }
 
-        if (!seedOnStartup)
+        if (!applySeeds)
         {
             return;
         }
 
-        logger.LogInformation("Running database seeders.");
-
-        await DbSeeder.SeedAsync(dbContext);
-        await PermissionSeeder.SeedAsync(dbContext);
-
-        sp.GetRequiredService<IAppCache>().InvalidatePermissionCatalogs();
-
-        var roleManager = sp.GetRequiredService<RoleManager<ApplicationRole>>();
-        var userManager = sp.GetRequiredService<UserManager<ApplicationUser>>();
-        var identityRoleService = sp.GetRequiredService<IIdentityRoleService>();
-
-        await IdentitySeeder.SeedAsync(
-            roleManager,
-            userManager,
-            dbContext,
-            identityRoleService,
-            configuration);
-
-        logger.LogInformation("Database seeding completed.");
+        var seedRunner = sp.GetRequiredService<SeedRunner>();
+        await seedRunner.ApplyPendingSeedsAsync();
     }
 }
