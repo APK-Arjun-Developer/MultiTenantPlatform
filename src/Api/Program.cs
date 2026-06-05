@@ -29,9 +29,33 @@ builder.Host.UseSerilog((context, config) =>
         "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] tenant={tenant_id} user={user_id} corr={correlation_id} {Message:lj}{NewLine}{Exception}");
 });
 
+// ── AppBaseUrl guard ─────────────────────────────────────────────────────────
+// AppBaseUrl drives every emailed link. In non-dev environments it must be an
+// HTTPS URL — never the placeholder "https://app.example.com".
+if (!builder.Environment.IsDevelopment())
+{
+    var appBaseUrl = builder.Configuration["AppBaseUrl"] ?? string.Empty;
+
+    if (string.IsNullOrWhiteSpace(appBaseUrl) ||
+        appBaseUrl.Equals("https://app.example.com", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException(
+            "AppBaseUrl must be configured to a real HTTPS URL in non-Development environments. " +
+            "Set it via environment variable AppBaseUrl or a secrets manager.");
+    }
+
+    if (!appBaseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException(
+            $"AppBaseUrl must start with 'https://' — got '{appBaseUrl}'. " +
+            "Email tokens must only be transmitted over TLS.");
+    }
+}
+
 // ── Persistence & Identity ───────────────────────────────────────────────────
 builder.Services.AddPersistence(builder.Configuration);
 builder.Services.AddIdentityInfrastructure(builder.Configuration);
+builder.Services.AddEmailInfrastructure(builder.Configuration, builder.Environment);
 
 // ── RBAC Hierarchy Policies ───────────────────────────────────────────────────
 // These are checked by [Authorize(Policy="...")] as an alternative to permission checks
@@ -115,7 +139,12 @@ builder.Services.AddRateLimiter(options =>
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<Infrastructure.Persistence.Contexts.ApplicationDbContext>(
         name: "database",
-        failureStatus: HealthStatus.Unhealthy);
+        failureStatus: HealthStatus.Unhealthy)
+    .Add(new HealthCheckRegistration(
+        "email",
+        sp => sp.GetRequiredService<Infrastructure.Email.SmtpHealthCheck>(),
+        failureStatus: HealthStatus.Degraded,
+        tags: ["email"]));
 
 // ── OpenAPI / Swagger ─────────────────────────────────────────────────────────
 builder.Services.AddEndpointsApiExplorer();

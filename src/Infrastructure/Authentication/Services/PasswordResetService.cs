@@ -12,6 +12,7 @@ using Infrastructure.Persistence.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Authentication.Services;
 
@@ -21,6 +22,7 @@ public class PasswordResetService : IPasswordResetService
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IEmailService _emailService;
     private readonly IActivityLogService _activityLogService;
+    private readonly ILogger<PasswordResetService> _logger;
     private readonly string _appBaseUrl;
 
     private static readonly TimeSpan TokenLifetime = TimeSpan.FromHours(24);
@@ -30,12 +32,14 @@ public class PasswordResetService : IPasswordResetService
         UserManager<ApplicationUser> userManager,
         IEmailService emailService,
         IActivityLogService activityLogService,
+        ILogger<PasswordResetService> logger,
         IConfiguration configuration)
     {
         _context = context;
         _userManager = userManager;
         _emailService = emailService;
         _activityLogService = activityLogService;
+        _logger = logger;
         _appBaseUrl = configuration["AppBaseUrl"] ?? "https://app.example.com";
     }
 
@@ -79,8 +83,18 @@ public class PasswordResetService : IPasswordResetService
 
         var resetUrl = $"{_appBaseUrl}/reset-password?token={rawToken}";
 
-        await _emailService.SendPasswordResetEmailAsync(
-            user.Email!, user.FullName, resetUrl, cancellationToken);
+        try
+        {
+            await _emailService.SendPasswordResetEmailAsync(
+                user.Email!, user.FullName, resetUrl, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to send PasswordReset email to {Email}. " +
+                "The reset token was stored — the user can request a new link.",
+                user.Email);
+        }
 
         await _activityLogService.LogAsync(new LogActivityRequest
         {

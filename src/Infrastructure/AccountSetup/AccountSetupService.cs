@@ -4,11 +4,14 @@ using Application.DTOs.ActivityLogs;
 using Application.Exceptions;
 using Application.Interfaces.AccountSetup;
 using Application.Interfaces.ActivityLogs;
+using Application.Interfaces.Email;
 using Infrastructure.Identity.Entities;
 using Infrastructure.Onboarding;
 using Infrastructure.Persistence.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.AccountSetup;
 
@@ -17,15 +20,24 @@ public class AccountSetupService : IAccountSetupService
     private readonly ApplicationDbContext _context;
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IActivityLogService _activityLogService;
+    private readonly IEmailService _emailService;
+    private readonly ILogger<AccountSetupService> _logger;
+    private readonly string _appBaseUrl;
 
     public AccountSetupService(
         ApplicationDbContext context,
         UserManager<ApplicationUser> userManager,
-        IActivityLogService activityLogService)
+        IActivityLogService activityLogService,
+        IEmailService emailService,
+        ILogger<AccountSetupService> logger,
+        IConfiguration configuration)
     {
         _context = context;
         _userManager = userManager;
         _activityLogService = activityLogService;
+        _emailService = emailService;
+        _logger = logger;
+        _appBaseUrl = configuration["AppBaseUrl"] ?? "https://app.example.com";
     }
 
     public async Task<ValidateAccountSetupResponse> ValidateTokenAsync(
@@ -115,6 +127,19 @@ public class AccountSetupService : IAccountSetupService
             Module = ActivityModules.Onboarding,
             Description = $"User '{user.Email}' completed account setup.",
         }, cancellationToken);
+
+        var loginUrl = $"{_appBaseUrl}/login";
+
+        try
+        {
+            await _emailService.SendWelcomeEmailAsync(user.Email!, user.FullName, loginUrl, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to send Welcome email to {Email} after account setup — non-fatal.",
+                user.Email);
+        }
 
         return new SetPasswordResponse
         {

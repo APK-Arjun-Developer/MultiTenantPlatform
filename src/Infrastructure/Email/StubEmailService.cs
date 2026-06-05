@@ -5,9 +5,10 @@ namespace Infrastructure.Email;
 
 /// <summary>
 /// No-op email service that logs outgoing messages to Serilog.
-/// Replace with a real SMTP / SendGrid / SES implementation in production.
+/// Used in Development so developers can click URLs from logs without needing an SMTP server.
+/// Replace with SmtpEmailService (or a provider SDK) in Production via DI.
 /// </summary>
-public class StubEmailService : IEmailService
+public sealed class StubEmailService : IEmailService
 {
     private readonly ILogger<StubEmailService> _logger;
 
@@ -17,47 +18,71 @@ public class StubEmailService : IEmailService
     }
 
     public Task SendAccountSetupEmailAsync(
-        string toEmail,
-        string fullName,
-        string setupUrl,
+        string toEmail, string fullName, string setupUrl,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
-            "[EMAIL] AccountSetup → {Email} ({FullName}): {Url}",
+            "[STUB EMAIL] AccountSetup → {Email} ({FullName}): {Url}",
             toEmail, fullName, setupUrl);
         return Task.CompletedTask;
     }
 
-    public Task SendTenantAdminInvitationAsync(
-        string toEmail,
-        string invitationUrl,
+    public Task SendWelcomeEmailAsync(
+        string toEmail, string fullName, string loginUrl,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
-            "[EMAIL] TenantAdminInvitation → {Email}: {Url}",
-            toEmail, invitationUrl);
+            "[STUB EMAIL] Welcome → {Email} ({FullName}): {Url}",
+            toEmail, fullName, loginUrl);
+        return Task.CompletedTask;
+    }
+
+    public Task SendTenantAdminInvitationAsync(
+        string toEmail, string invitationUrl, string tenantName,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "[STUB EMAIL] TenantAdminInvitation → {Email} (tenant: {Tenant}): {Url}",
+            toEmail, tenantName, invitationUrl);
         return Task.CompletedTask;
     }
 
     public Task SendTenantUserInvitationAsync(
-        string toEmail,
-        string invitationUrl,
+        string toEmail, string invitationUrl, string tenantName,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
-            "[EMAIL] TenantUserInvitation → {Email}: {Url}",
-            toEmail, invitationUrl);
+            "[STUB EMAIL] TenantUserInvitation → {Email} (tenant: {Tenant}): {Url}",
+            toEmail, tenantName, invitationUrl);
+        return Task.CompletedTask;
+    }
+
+    public Task SendAccountActivationEmailAsync(
+        string toEmail, string fullName, string loginUrl,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "[STUB EMAIL] AccountActivated → {Email} ({FullName}): {Url}",
+            toEmail, fullName, loginUrl);
+        return Task.CompletedTask;
+    }
+
+    public Task SendAccountDeactivationEmailAsync(
+        string toEmail, string fullName,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "[STUB EMAIL] AccountDeactivated → {Email} ({FullName})",
+            toEmail, fullName);
         return Task.CompletedTask;
     }
 
     public Task SendPasswordResetEmailAsync(
-        string toEmail,
-        string fullName,
-        string resetUrl,
+        string toEmail, string fullName, string resetUrl,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation(
-            "[EMAIL] PasswordReset → {Email} ({FullName}): {Url}",
+            "[STUB EMAIL] PasswordReset → {Email} ({FullName}): {Url}",
             toEmail, fullName, resetUrl);
         return Task.CompletedTask;
     }

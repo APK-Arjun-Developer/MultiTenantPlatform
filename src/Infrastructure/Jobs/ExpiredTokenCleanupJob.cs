@@ -7,14 +7,16 @@ using Microsoft.Extensions.Logging;
 namespace Infrastructure.Jobs;
 
 /// <summary>
-/// Deletes refresh tokens that have been expired or revoked for more than 30 days.
-/// Runs once every 24 hours to keep the RefreshTokens table bounded.
+/// Runs every 24 hours and removes tokens that are well past their useful life:
+///   • Refresh tokens    — expired or revoked > 30 days ago
+///   • AccountSetupTokens — used or expired > 30 days ago
+///   • PasswordResetTokens — used or expired > 30 days ago
 /// </summary>
 public sealed class ExpiredTokenCleanupJob : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<ExpiredTokenCleanupJob> _logger;
-    private static readonly TimeSpan RunInterval = TimeSpan.FromHours(24);
+    private static readonly TimeSpan RunInterval    = TimeSpan.FromHours(24);
     private static readonly TimeSpan RetentionPeriod = TimeSpan.FromDays(30);
 
     public ExpiredTokenCleanupJob(
@@ -53,18 +55,31 @@ public sealed class ExpiredTokenCleanupJob : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-        var deleted = await context.RefreshTokens
+        var refreshDeleted = await context.RefreshTokens
             .Where(t =>
-                (t.ExpiresAt < cutoff) ||
+                t.ExpiresAt < cutoff ||
                 (t.RevokedAt != null && t.RevokedAt < cutoff))
             .ExecuteDeleteAsync(cancellationToken);
 
-        if (deleted > 0)
+        var setupDeleted = await context.AccountSetupTokens
+            .Where(t =>
+                (t.UsedAt != null && t.UsedAt < cutoff) ||
+                (t.UsedAt == null && t.ExpiresAt < cutoff))
+            .ExecuteDeleteAsync(cancellationToken);
+
+        var resetDeleted = await context.PasswordResetTokens
+            .Where(t =>
+                (t.UsedAt != null && t.UsedAt < cutoff) ||
+                (t.UsedAt == null && t.ExpiresAt < cutoff))
+            .ExecuteDeleteAsync(cancellationToken);
+
+        var totalDeleted = refreshDeleted + setupDeleted + resetDeleted;
+
+        if (totalDeleted > 0)
         {
             _logger.LogInformation(
-                "Cleaned up {Count} expired/revoked refresh tokens (cutoff: {Cutoff:O}).",
-                deleted,
-                cutoff);
+                "Token cleanup complete. Deleted: {Refresh} refresh, {Setup} setup, {Reset} password-reset (cutoff: {Cutoff:O}).",
+                refreshDeleted, setupDeleted, resetDeleted, cutoff);
         }
     }
 }

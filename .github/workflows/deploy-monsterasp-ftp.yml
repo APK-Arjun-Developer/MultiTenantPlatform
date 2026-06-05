@@ -1,8 +1,11 @@
 # Build, publish, and deploy the API to MonsterASP.NET via FTPS.
 # Required secrets: FTP_SERVER, FTP_USERNAME, FTP_PASSWORD,
-#                   PRODUCTION_CONNECTION_STRING, JWT_KEY, ADMIN_PASSWORD
-# Optional secrets: JWT_ISSUER, JWT_AUDIENCE, FTP_SERVER_DIR, ALLOWED_ORIGINS, ALLOWED_HOSTS,
-#                   SITE_URL (public https URL, e.g. https://site1234.monsterasp.net)
+#                   PRODUCTION_CONNECTION_STRING, JWT_KEY, ADMIN_PASSWORD,
+#                   ALLOWED_ORIGINS, APP_BASE_URL,
+#                   EMAIL_HOST, EMAIL_USERNAME, EMAIL_PASSWORD, EMAIL_FROM_ADDRESS
+# Optional secrets: JWT_ISSUER, JWT_AUDIENCE, FTP_SERVER_DIR, ALLOWED_HOSTS,
+#                   SITE_URL (public https URL, e.g. https://site1234.monsterasp.net),
+#                   EMAIL_PORT (default 587), EMAIL_FROM_NAME, EMAIL_ENABLE_SSL (default true)
 
 name: Deploy to MonsterASP (FTPS)
 
@@ -33,6 +36,11 @@ jobs:
           JWT_KEY: ${{ secrets.JWT_KEY }}
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          EMAIL_HOST: ${{ secrets.EMAIL_HOST }}
+          EMAIL_USERNAME: ${{ secrets.EMAIL_USERNAME }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_FROM_ADDRESS: ${{ secrets.EMAIL_FROM_ADDRESS }}
         run: |
           $required = @(
             @{ Name = 'FTP_SERVER';                    Value = $env:FTP_SERVER },
@@ -41,7 +49,12 @@ jobs:
             @{ Name = 'PRODUCTION_CONNECTION_STRING';  Value = $env:PRODUCTION_CONNECTION_STRING },
             @{ Name = 'JWT_KEY';                       Value = $env:JWT_KEY },
             @{ Name = 'ADMIN_PASSWORD';                Value = $env:ADMIN_PASSWORD },
-            @{ Name = 'ALLOWED_ORIGINS';               Value = $env:ALLOWED_ORIGINS }
+            @{ Name = 'ALLOWED_ORIGINS';               Value = $env:ALLOWED_ORIGINS },
+            @{ Name = 'APP_BASE_URL';                  Value = $env:APP_BASE_URL },
+            @{ Name = 'EMAIL_HOST';                    Value = $env:EMAIL_HOST },
+            @{ Name = 'EMAIL_USERNAME';                Value = $env:EMAIL_USERNAME },
+            @{ Name = 'EMAIL_PASSWORD';                Value = $env:EMAIL_PASSWORD },
+            @{ Name = 'EMAIL_FROM_ADDRESS';            Value = $env:EMAIL_FROM_ADDRESS }
           )
           $missing = @($required | Where-Object { [string]::IsNullOrWhiteSpace($_.Value) } | ForEach-Object { $_.Name })
           if ($missing.Count -gt 0) {
@@ -49,6 +62,9 @@ jobs:
           }
           if ($env:JWT_KEY.Length -lt 32) {
             throw "JWT_KEY must be at least 32 characters long."
+          }
+          if (-not $env:APP_BASE_URL.StartsWith("https://")) {
+            throw "APP_BASE_URL must start with 'https://' — got: $($env:APP_BASE_URL)"
           }
 
       - name: Setup .NET 10
@@ -78,6 +94,14 @@ jobs:
           ALLOWED_ORIGINS: ${{ secrets.ALLOWED_ORIGINS }}
           ALLOWED_HOSTS: ${{ secrets.ALLOWED_HOSTS }}
           SITE_URL: ${{ secrets.SITE_URL }}
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          EMAIL_HOST: ${{ secrets.EMAIL_HOST }}
+          EMAIL_PORT: ${{ secrets.EMAIL_PORT }}
+          EMAIL_USERNAME: ${{ secrets.EMAIL_USERNAME }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_FROM_ADDRESS: ${{ secrets.EMAIL_FROM_ADDRESS }}
+          EMAIL_FROM_NAME: ${{ secrets.EMAIL_FROM_NAME }}
+          EMAIL_ENABLE_SSL: ${{ secrets.EMAIL_ENABLE_SSL }}
         run: |
           $issuer      = if ([string]::IsNullOrWhiteSpace($env:JWT_ISSUER))    { "MultiTenantPlatform" }     else { $env:JWT_ISSUER }
           $audience    = if ([string]::IsNullOrWhiteSpace($env:JWT_AUDIENCE))  { "MultiTenantPlatformUsers" } else { $env:JWT_AUDIENCE }
@@ -89,6 +113,10 @@ jobs:
             Write-Host "ALLOWED_ORIGINS not set; using SITE_URL as CORS origin: $originsRaw"
           }
           $origins = if ([string]::IsNullOrWhiteSpace($originsRaw)) { @() } else { $originsRaw -split ',' | ForEach-Object { $_.Trim() } }
+
+          $emailPort      = if ([string]::IsNullOrWhiteSpace($env:EMAIL_PORT))       { 587 }                      else { [int]$env:EMAIL_PORT }
+          $emailFromName  = if ([string]::IsNullOrWhiteSpace($env:EMAIL_FROM_NAME))  { "MultiTenant Platform" }   else { $env:EMAIL_FROM_NAME }
+          $emailEnableSsl = if ([string]::IsNullOrWhiteSpace($env:EMAIL_ENABLE_SSL)) { $true }                    else { [System.Convert]::ToBoolean($env:EMAIL_ENABLE_SSL) }
 
           $settings = @{
             ApplyMigrationsOnStartup = $true
@@ -110,6 +138,16 @@ jobs:
               SessionHours        = 8
             }
             AllowedOrigins = $origins
+            AppBaseUrl     = $env:APP_BASE_URL
+            Email = @{
+              Host          = $env:EMAIL_HOST
+              Port          = $emailPort
+              Username      = $env:EMAIL_USERNAME
+              Password      = $env:EMAIL_PASSWORD
+              FromAddress   = $env:EMAIL_FROM_ADDRESS
+              FromName      = $emailFromName
+              EnableSsl     = $emailEnableSsl
+            }
             FileStorage = @{
               BasePath         = "storage"
               MaxFileSizeBytes = 10485760

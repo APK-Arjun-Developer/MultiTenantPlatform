@@ -19,6 +19,7 @@ using Infrastructure.Persistence.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Invitations;
 
@@ -29,6 +30,7 @@ public class InvitationService : TenantScopedService, IInvitationService
     private readonly IIdentityRoleService _identityRoleService;
     private readonly IEmailService _emailService;
     private readonly IActivityLogService _activityLogService;
+    private readonly ILogger<InvitationService> _logger;
     private readonly string _appBaseUrl;
 
     private static readonly TimeSpan InvitationLifetime = TimeSpan.FromDays(7);
@@ -40,6 +42,7 @@ public class InvitationService : TenantScopedService, IInvitationService
         IIdentityRoleService identityRoleService,
         IEmailService emailService,
         IActivityLogService activityLogService,
+        ILogger<InvitationService> logger,
         IConfiguration configuration)
         : base(currentTenantService)
     {
@@ -48,6 +51,7 @@ public class InvitationService : TenantScopedService, IInvitationService
         _identityRoleService = identityRoleService;
         _emailService = emailService;
         _activityLogService = activityLogService;
+        _logger = logger;
         _appBaseUrl = configuration["AppBaseUrl"] ?? "https://app.example.com";
     }
 
@@ -125,8 +129,10 @@ public class InvitationService : TenantScopedService, IInvitationService
 
         var url = BuildInvitationUrl(InvitationType.TenantAdmin, invitation.RawToken);
 
-        await _emailService.SendTenantAdminInvitationAsync(
-            request.Email, url, cancellationToken);
+        await SendEmailSafeAsync(
+            () => _emailService.SendTenantAdminInvitationAsync(request.Email, url, tenant.Name, cancellationToken),
+            emailType: "TenantAdminInvitation",
+            toEmail: request.Email);
 
         await LogAsync(
             ActivityActions.Onboarding.TenantAdminInvited,
@@ -194,8 +200,16 @@ public class InvitationService : TenantScopedService, IInvitationService
 
         var url = BuildInvitationUrl(InvitationType.TenantUser, invitation.RawToken);
 
-        await _emailService.SendTenantUserInvitationAsync(
-            request.Email, url, cancellationToken);
+        var tenantName = await _context.Tenants
+            .IgnoreQueryFilters()
+            .Where(t => t.Id == tenantId && t.DeletedAt == null)
+            .Select(t => t.Name)
+            .FirstOrDefaultAsync(cancellationToken) ?? string.Empty;
+
+        await SendEmailSafeAsync(
+            () => _emailService.SendTenantUserInvitationAsync(request.Email, url, tenantName, cancellationToken),
+            emailType: "TenantUserInvitation",
+            toEmail: request.Email);
 
         await LogAsync(
             ActivityActions.Onboarding.TenantUserInvited,
@@ -603,6 +617,27 @@ public class InvitationService : TenantScopedService, IInvitationService
         if (i.IsExpired)  return "Expired";
 
         return "Pending";
+    }
+
+    /// <summary>
+    /// Sends an email without letting delivery failures propagate to the caller.
+    /// The DB operation already committed successfully — a failed email is logged
+    /// as an error (with enough context to retry) but does not roll back the action.
+    /// TODO: Replace with an outbox pattern for guaranteed delivery at scale.
+    /// </summary>
+    private async Task SendEmailSafeAsync(Func<Task> send, string emailType, string toEmail)
+    {
+        try
+        {
+            await send();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to send {EmailType} email to {Email}. " +
+                "The operation succeeded in the database — trigger a resend manually if needed.",
+                emailType, toEmail);
+        }
     }
 
     private static InvitationListItemResponse MapToListItem(Invitation i, string? tenantName) =>

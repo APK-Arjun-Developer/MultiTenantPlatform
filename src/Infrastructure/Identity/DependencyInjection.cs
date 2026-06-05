@@ -42,11 +42,44 @@ using Infrastructure.Invitations;
 using Infrastructure.Jobs;
 using Infrastructure.Onboarding;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Hosting;
 
 namespace Infrastructure.Identity;
 
 public static class DependencyInjection
 {
+    public static IServiceCollection AddEmailInfrastructure(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        IWebHostEnvironment environment)
+    {
+        services.Configure<SmtpSettings>(configuration.GetSection(SmtpSettings.SectionName));
+
+        if (environment.IsDevelopment())
+        {
+            services.AddScoped<IEmailService, StubEmailService>();
+        }
+        else
+        {
+            var host = configuration[$"{SmtpSettings.SectionName}:Host"];
+
+            if (string.IsNullOrWhiteSpace(host))
+            {
+                throw new InvalidOperationException(
+                    $"Email:Host is required in non-Development environments. " +
+                    $"Set it via environment variable Email__Host or a secrets manager.");
+            }
+
+            services.AddScoped<IEmailService, SmtpEmailService>();
+        }
+
+        services.AddSingleton<SmtpHealthCheck>();
+
+        return services;
+    }
+
     public static IServiceCollection AddIdentityInfrastructure(
         this IServiceCollection services,
         IConfiguration configuration)
@@ -144,7 +177,6 @@ public static class DependencyInjection
         services.AddScoped<IOnboardingService, OnboardingService>();
         services.AddScoped<IAccountSetupService, AccountSetupService>();
         services.AddScoped<IInvitationService, InvitationService>();
-        services.AddScoped<IEmailService, StubEmailService>();
 
         return services;
     }

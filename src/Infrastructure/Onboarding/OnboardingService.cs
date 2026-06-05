@@ -14,6 +14,7 @@ using Infrastructure.Persistence.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Onboarding;
 
@@ -24,6 +25,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
     private readonly IIdentityRoleService _identityRoleService;
     private readonly IEmailService _emailService;
     private readonly IActivityLogService _activityLogService;
+    private readonly ILogger<OnboardingService> _logger;
     private readonly string _appBaseUrl;
 
     private static readonly TimeSpan SetupTokenLifetime = TimeSpan.FromDays(7);
@@ -35,6 +37,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
         IIdentityRoleService identityRoleService,
         IEmailService emailService,
         IActivityLogService activityLogService,
+        ILogger<OnboardingService> logger,
         IConfiguration configuration)
         : base(currentTenantService)
     {
@@ -43,6 +46,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
         _identityRoleService = identityRoleService;
         _emailService = emailService;
         _activityLogService = activityLogService;
+        _logger = logger;
         _appBaseUrl = configuration["AppBaseUrl"] ?? "https://app.example.com";
     }
 
@@ -84,8 +88,9 @@ public class OnboardingService : TenantScopedService, IOnboardingService
 
             await tx.CommitAsync(cancellationToken);
 
-            await _emailService.SendAccountSetupEmailAsync(
-                user.Email!, user.FullName, setupUrl, cancellationToken);
+            await SendEmailSafeAsync(
+                () => _emailService.SendAccountSetupEmailAsync(user.Email!, user.FullName, setupUrl, cancellationToken),
+                emailType: "AccountSetup", toEmail: user.Email!);
 
             await LogAsync(
                 ActivityActions.Onboarding.TenantAdminCreated,
@@ -157,6 +162,11 @@ public class OnboardingService : TenantScopedService, IOnboardingService
             $"Activated user '{user.Email}'.",
             user.TenantId);
 
+        var loginUrl = $"{_appBaseUrl}/login";
+        await SendEmailSafeAsync(
+            () => _emailService.SendAccountActivationEmailAsync(user.Email!, user.FullName, loginUrl),
+            emailType: "AccountActivation", toEmail: user.Email!);
+
         return new UserStatusResponse { UserId = user.Id, Email = user.Email!, IsActive = true };
     }
 
@@ -179,6 +189,10 @@ public class OnboardingService : TenantScopedService, IOnboardingService
             ActivityActions.Onboarding.UserDeactivated,
             $"Deactivated user '{user.Email}'.",
             user.TenantId);
+
+        await SendEmailSafeAsync(
+            () => _emailService.SendAccountDeactivationEmailAsync(user.Email!, user.FullName),
+            emailType: "AccountDeactivation", toEmail: user.Email!);
 
         return new UserStatusResponse { UserId = user.Id, Email = user.Email!, IsActive = false };
     }
@@ -211,8 +225,9 @@ public class OnboardingService : TenantScopedService, IOnboardingService
 
             await tx.CommitAsync(cancellationToken);
 
-            await _emailService.SendAccountSetupEmailAsync(
-                user.Email!, user.FullName, setupUrl, cancellationToken);
+            await SendEmailSafeAsync(
+                () => _emailService.SendAccountSetupEmailAsync(user.Email!, user.FullName, setupUrl, cancellationToken),
+                emailType: "AccountSetup", toEmail: user.Email!);
 
             await LogAsync(
                 ActivityActions.Onboarding.TenantUserCreated,
@@ -404,6 +419,21 @@ public class OnboardingService : TenantScopedService, IOnboardingService
         }
 
         return user;
+    }
+
+    private async Task SendEmailSafeAsync(Func<Task> send, string emailType, string toEmail)
+    {
+        try
+        {
+            await send();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to send {EmailType} email to {Email}. " +
+                "The operation succeeded in the database — trigger a resend manually if needed.",
+                emailType, toEmail);
+        }
     }
 
     private async Task LogAsync(string action, string description, Guid tenantId)
