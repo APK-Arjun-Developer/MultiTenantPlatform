@@ -163,6 +163,10 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Applicati
             }
         }
 
+        // Tenant is the root aggregate — no TenantId, soft-delete only.
+        builder.Entity<Domain.Entities.Tenant>()
+            .HasQueryFilter(t => t.DeletedAt == null);
+
         builder.Entity<ApplicationUser>()
             .HasQueryFilter(u => u.DeletedAt == null);
 

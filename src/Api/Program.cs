@@ -33,6 +33,22 @@ builder.Host.UseSerilog((context, config) =>
 builder.Services.AddPersistence(builder.Configuration);
 builder.Services.AddIdentityInfrastructure(builder.Configuration);
 
+// ── RBAC Hierarchy Policies ───────────────────────────────────────────────────
+// These are checked by [Authorize(Policy="...")] as an alternative to permission checks
+// where the requirement is purely about caller scope (not a specific permission).
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("SystemAdminOnly", policy =>
+        policy.RequireClaim("tenant_id", Guid.Empty.ToString()))
+    .AddPolicy("TenantAdminOrAbove", policy =>
+        policy.RequireAssertion(ctx =>
+            ctx.User.IsInRole(Application.Common.RoleNames.SuperAdmin) ||
+            ctx.User.IsInRole(Application.Common.RoleNames.TenantAdmin)))
+    .AddPolicy("AuthenticatedTenantUser", policy =>
+        policy.RequireAuthenticatedUser()
+              .RequireAssertion(ctx =>
+                  ctx.User.FindFirst("tenant_id")?.Value is string tid &&
+                  tid != Guid.Empty.ToString()));
+
 // ── Response Compression ─────────────────────────────────────────────────────
 builder.Services.AddResponseCompression(options =>
 {

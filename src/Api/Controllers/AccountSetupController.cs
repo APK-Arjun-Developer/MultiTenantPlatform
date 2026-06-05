@@ -2,6 +2,7 @@ using Application.DTOs.AccountSetup;
 using Application.Interfaces.AccountSetup;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Api.Controllers;
 
@@ -26,6 +27,7 @@ public class AccountSetupController : ApiControllerBase
     /// Returns the user's email and name so the frontend can pre-fill the form.
     /// </summary>
     [HttpGet("validate")]
+    [EnableRateLimiting("auth")]
     public async Task<IActionResult> Validate(
         [FromQuery] string token,
         CancellationToken cancellationToken)
@@ -42,6 +44,7 @@ public class AccountSetupController : ApiControllerBase
     /// The token is consumed and becomes single-use after this call.
     /// </summary>
     [HttpPost("set-password")]
+    [EnableRateLimiting("auth")]
     public async Task<IActionResult> SetPassword(
         SetPasswordRequest request,
         CancellationToken cancellationToken)

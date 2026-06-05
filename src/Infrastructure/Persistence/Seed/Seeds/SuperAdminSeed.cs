@@ -1,4 +1,5 @@
 using Application.Common;
+using Domain.Enums;
 using Infrastructure.Identity;
 using Infrastructure.Identity.Entities;
 using Infrastructure.Persistence.Contexts;
@@ -57,6 +58,10 @@ public sealed class SuperAdminSeed : IDataSeed
                 platformTenantId,
                 adminRole,
                 "System Super Administrator");
+        }
+        else if (superAdminRole.Scope != RoleScope.System)
+        {
+            superAdminRole.Scope = RoleScope.System;
         }
 
         await _identityRoleService.AssignPermissionsToRoleAsync(

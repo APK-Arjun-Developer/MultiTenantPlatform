@@ -41,5 +41,6 @@ file sealed class NullTenantService : Application.Interfaces.Tenant.ICurrentTena
     public Guid? TenantId => null;
     public Guid? UserId => null;
     public Guid? RoleId => null;
+    public IReadOnlyList<Guid> RoleIds => [];
     public string? Email => null;
 }

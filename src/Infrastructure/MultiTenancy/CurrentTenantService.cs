@@ -12,6 +12,8 @@ public class CurrentTenantService : ICurrentTenantService
 
     public Guid? RoleId { get; }
 
+    public IReadOnlyList<Guid> RoleIds { get; }
+
     public string? Email { get; }
 
     public CurrentTenantService(IHttpContextAccessor httpContextAccessor)
@@ -20,6 +22,7 @@ public class CurrentTenantService : ICurrentTenantService
 
         if (user == null)
         {
+            RoleIds = [];
             return;
         }
 
@@ -39,12 +42,14 @@ public class CurrentTenantService : ICurrentTenantService
             UserId = userId;
         }
 
-        var roleIdClaim = user.FindFirst("role_id")?.Value;
+        // Read all role_ids claims (one emitted per role at login/refresh).
+        RoleIds = user.FindAll("role_ids")
+            .Select(c => Guid.TryParse(c.Value, out var id) ? (Guid?)id : null)
+            .Where(id => id.HasValue)
+            .Select(id => id!.Value)
+            .ToList();
 
-        if (Guid.TryParse(roleIdClaim, out var roleId))
-        {
-            RoleId = roleId;
-        }
+        RoleId = RoleIds.Count > 0 ? RoleIds[0] : null;
 
         Email = user.FindFirst(ClaimTypes.Email)?.Value;
     }

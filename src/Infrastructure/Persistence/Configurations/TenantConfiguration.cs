@@ -26,5 +26,13 @@ public class TenantConfiguration : IEntityTypeConfiguration<Domain.Entities.Tena
             .WithMany()
             .HasForeignKey(x => x.ProfileFileId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        // Audit columns — no TenantId (Tenant is the root aggregate, not a tenant-scoped entity).
+        builder.Property(x => x.CreatedAt).IsRequired();
+        builder.Property(x => x.CreatedBy);
+        builder.Property(x => x.UpdatedAt);
+        builder.Property(x => x.UpdatedBy);
+        builder.Property(x => x.DeletedAt);
+        builder.Property(x => x.DeletedBy);
     }
 }

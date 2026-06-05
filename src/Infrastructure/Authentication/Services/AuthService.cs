@@ -63,15 +63,13 @@ public class AuthService : IAuthService
         user.LastLoginAt = DateTime.UtcNow;
         await _userManager.UpdateAsync(user);
 
-        var roles = await _userManager.GetRolesAsync(user);
-        var roleId = await GetPrimaryRoleIdAsync(user);
+        var roles = await GetUserRolesWithIdsAsync(user);
 
         var token = _jwtTokenGenerator.GenerateTokenAsync(
             user.Id,
             user.Email!,
             user.FullName,
             user.TenantId,
-            roleId,
             roles);
 
         var refreshToken = await _refreshTokenService.CreateAsync(
@@ -119,15 +117,13 @@ public class AuthService : IAuthService
 
         var newRefreshToken = await _refreshTokenService.CreateAsync(user.Id, user.TenantId, ipAddress);
 
-        var roles = await _userManager.GetRolesAsync(user);
-        var roleId = await GetPrimaryRoleIdAsync(user);
+        var roles = await GetUserRolesWithIdsAsync(user);
 
         var accessToken = _jwtTokenGenerator.GenerateTokenAsync(
             user.Id,
             user.Email!,
             user.FullName,
             user.TenantId,
-            roleId,
             roles);
 
         await _activityLogService.LogAsync(new LogActivityRequest
@@ -202,17 +198,15 @@ public class AuthService : IAuthService
                 u.TenantId == tenant.Id);
     }
 
-    private async Task<Guid?> GetPrimaryRoleIdAsync(ApplicationUser user)
+    private async Task<IList<(Guid Id, string Name)>> GetUserRolesWithIdsAsync(ApplicationUser user)
     {
-        var roleId = await _context.Set<IdentityUserRole<Guid>>()
+        return await _context.Set<IdentityUserRole<Guid>>()
             .Where(ur => ur.UserId == user.Id)
             .Join(
                 _context.Roles.Where(r => r.TenantId == user.TenantId),
                 ur => ur.RoleId,
                 r => r.Id,
-                (_, r) => r.Id)
-            .FirstOrDefaultAsync();
-
-        return roleId == Guid.Empty ? null : roleId;
+                (_, r) => new ValueTuple<Guid, string>(r.Id, r.Name!))
+            .ToListAsync();
     }
 }
