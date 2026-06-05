@@ -235,7 +235,6 @@ public class TenantService : TenantScopedService, ITenantService
             var tenant = new Domain.Entities.Tenant
             {
                 Id = Guid.NewGuid(),
-                TenantId = Guid.Empty,
                 Name = request.Tenant.Name,
                 Slug = request.Tenant.Slug,
                 IsActive = true,

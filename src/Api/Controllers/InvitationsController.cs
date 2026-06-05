@@ -2,6 +2,7 @@ using Application.DTOs.Invitations;
 using Application.Interfaces.Invitations;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Api.Controllers;
 
@@ -26,6 +27,7 @@ public class InvitationsController : ApiControllerBase
     /// Returns the invited email, invitation type, and tenant name.
     /// </summary>
     [HttpGet("validate")]
+    [EnableRateLimiting("auth")]
     public async Task<IActionResult> Validate(
         [FromQuery] string token,
         CancellationToken cancellationToken)
@@ -43,6 +45,7 @@ public class InvitationsController : ApiControllerBase
     /// The invitation is marked accepted and cannot be reused.
     /// </summary>
     [HttpPost("accept/tenant-admin")]
+    [EnableRateLimiting("auth")]
     public async Task<IActionResult> AcceptTenantAdmin(
         AcceptTenantAdminInvitationRequest request,
         CancellationToken cancellationToken)
@@ -59,6 +62,7 @@ public class InvitationsController : ApiControllerBase
     /// The invitation is marked accepted and cannot be reused.
     /// </summary>
     [HttpPost("accept/user")]
+    [EnableRateLimiting("auth")]
     public async Task<IActionResult> AcceptTenantUser(
         AcceptTenantUserInvitationRequest request,
         CancellationToken cancellationToken)

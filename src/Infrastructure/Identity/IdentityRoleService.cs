@@ -1,6 +1,7 @@
 using Application.Common;
 using Application.Interfaces.Tenant;
 using Domain.Entities;
+using Domain.Enums;
 using Infrastructure.Identity.Entities;
 using Infrastructure.Persistence.Contexts;
 using Microsoft.AspNetCore.Identity;
@@ -83,6 +84,7 @@ public class IdentityRoleService : IIdentityRoleService
             Name = roleName,
             NormalizedName = roleName.ToUpperInvariant(),
             TenantId = tenantId,
+            Scope = tenantId == Guid.Empty ? RoleScope.System : RoleScope.Tenant,
             Description = description,
             ConcurrencyStamp = Guid.NewGuid().ToString()
         };
@@ -204,6 +206,11 @@ public class IdentityRoleService : IIdentityRoleService
         var permissions = await _context.Permissions
             .Where(p => names.Contains(p.Name))
             .ToListAsync();
+
+        if (!IsSystemAdmin())
+        {
+            RejectPlatformPermissions(permissions.Select(p => p.Id), permissions);
+        }
 
         var existingSet = (await _context.RolePermissions
             .Where(rp => rp.RoleId == roleId)

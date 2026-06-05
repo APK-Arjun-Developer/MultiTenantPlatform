@@ -7,8 +7,7 @@ public interface IJwtTokenGenerator
         string email,
         string fullName,
         Guid tenantId,
-        Guid? roleId,
-        IList<string> roles);
+        IList<(Guid Id, string Name)> roles);
 
     DateTime ComputeAccessTokenExpiryUtc();
 }

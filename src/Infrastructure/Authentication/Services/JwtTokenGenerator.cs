@@ -22,8 +22,7 @@ public class JwtTokenGenerator : IJwtTokenGenerator
         string email,
         string fullName,
         Guid tenantId,
-        Guid? roleId,
-        IList<string> roles)
+        IList<(Guid Id, string Name)> roles)
     {
         var claims = new List<Claim>
         {
@@ -35,14 +34,11 @@ public class JwtTokenGenerator : IJwtTokenGenerator
             new("full_name", fullName),
         };
 
-        if (roleId.HasValue)
+        // One claim per role — unambiguous for multi-role users.
+        foreach (var (id, name) in roles)
         {
-            claims.Add(new Claim("role_id", roleId.Value.ToString()));
-        }
-
-        foreach (var role in roles)
-        {
-            claims.Add(new Claim(ClaimTypes.Role, role));
+            claims.Add(new Claim("role_ids", id.ToString()));
+            claims.Add(new Claim(ClaimTypes.Role, name));
         }
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtSettings.Key));
