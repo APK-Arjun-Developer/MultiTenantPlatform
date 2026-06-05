@@ -1,16 +1,18 @@
 using Api.Attributes;
 using Application.Common;
 using Application.DTOs.Onboarding;
+using Application.DTOs.Users;
 using Application.Interfaces.Invitations;
 using Application.Interfaces.Onboarding;
+using Application.Interfaces.Users;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Api.Controllers;
 
 /// <summary>
-/// System Admin endpoints for tenant admin onboarding (direct creation + invitation).
-/// All routes require SuperAdmin authentication and TenantsCreate / Onboarding.* permissions.
+/// System Admin endpoints for tenant admin management (CRUD + onboarding + invitation).
+/// All routes require SuperAdmin authentication.
 /// </summary>
 [ApiController]
 [Route("api/v1/tenant-admins")]
@@ -19,13 +21,57 @@ public class TenantAdminsController : ApiControllerBase
 {
     private readonly IOnboardingService _onboardingService;
     private readonly IInvitationService _invitationService;
+    private readonly IUserManagementService _userManagementService;
 
     public TenantAdminsController(
         IOnboardingService onboardingService,
-        IInvitationService invitationService)
+        IInvitationService invitationService,
+        IUserManagementService userManagementService)
     {
         _onboardingService = onboardingService;
         _invitationService = invitationService;
+        _userManagementService = userManagementService;
+    }
+
+    [HttpGet]
+    [HasPermission(PermissionNames.TenantsView)]
+    public async Task<IActionResult> GetAll(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null,
+        [FromQuery] Guid? tenantId = null)
+    {
+        var response = await _userManagementService.GetTenantAdminsAsync(page, pageSize, search, tenantId);
+
+        return OkEnvelope(response, "Tenant admins retrieved.");
+    }
+
+    [HttpGet("{id:guid}")]
+    [HasPermission(PermissionNames.TenantsView)]
+    public async Task<IActionResult> GetById(Guid id)
+    {
+        var response = await _userManagementService.GetTenantAdminByIdAsync(id);
+
+        return OkEnvelope(response, "Tenant admin retrieved.");
+    }
+
+    [HttpPut("{id:guid}")]
+    [HasPermission(PermissionNames.TenantsEdit)]
+    public async Task<IActionResult> Update(Guid id, UpdateTenantAdminRequest request)
+    {
+        request.UserId = id;
+        var response = await _userManagementService.UpdateTenantAdminAsync(request);
+
+        return OkEnvelope(response, "Tenant admin updated.");
+    }
+
+    [HttpDelete("{id:guid}")]
+    [HasPermission(PermissionNames.TenantsDelete)]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        await _userManagementService.DeleteTenantAdminAsync(id);
+
+        return OkEnvelope("Tenant admin deleted.");
     }
 
     /// <summary>
@@ -71,6 +117,19 @@ public class TenantAdminsController : ApiControllerBase
         await _onboardingService.ResendTenantAdminSetupEmailAsync(userId, cancellationToken);
 
         return OkEnvelope("Setup email resent.");
+    }
+
+    [HttpGet("invitations")]
+    [HasPermission(PermissionNames.TenantsView)]
+    public async Task<IActionResult> GetInvitations(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? status = null,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _invitationService.GetTenantAdminInvitationsAsync(page, pageSize, status, cancellationToken);
+
+        return OkEnvelope(response, "Tenant admin invitations retrieved.");
     }
 
     /// <summary>Revoke a pending tenant admin invitation.</summary>

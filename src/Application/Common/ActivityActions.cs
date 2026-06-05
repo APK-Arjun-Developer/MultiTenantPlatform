@@ -7,6 +7,8 @@ public static class ActivityActions
         public const string Login = "Login";
         public const string Logout = "Logout";
         public const string Refresh = "Refresh";
+        public const string ForgotPassword = "ForgotPassword";
+        public const string ResetPassword = "ResetPassword";
     }
 
     public static class Users

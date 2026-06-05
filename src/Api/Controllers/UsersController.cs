@@ -33,11 +33,23 @@ public class UsersController : ApiControllerBase
     [HasPermission(PermissionNames.UsersView)]
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 20)
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortOrder = null)
     {
-        var response = await _userManagementService.GetUsersAsync(page, pageSize);
+        var response = await _userManagementService.GetUsersAsync(page, pageSize, search, sortBy, sortOrder);
 
         return OkEnvelope(response, "Users retrieved.");
+    }
+
+    [HttpGet("{id:guid}")]
+    [HasPermission(PermissionNames.UsersView)]
+    public async Task<IActionResult> GetById(Guid id)
+    {
+        var response = await _userManagementService.GetByIdAsync(id);
+
+        return OkEnvelope(response, "User retrieved.");
     }
 
     [HttpGet("current")]
@@ -56,6 +68,15 @@ public class UsersController : ApiControllerBase
         var response = await _userManagementService.CreateUserAsync(request);
 
         return OkEnvelope(response, "User created.");
+    }
+
+    [HttpPost("current/change-password")]
+    [HasPermission(PermissionNames.UsersEdit)]
+    public async Task<IActionResult> ChangePassword(ChangePasswordRequest request)
+    {
+        await _userManagementService.ChangePasswordAsync(request);
+
+        return OkEnvelope("Password changed successfully.");
     }
 
     [HttpPut("current")]
@@ -130,6 +151,19 @@ public class UsersController : ApiControllerBase
         await _onboardingService.ResendTenantUserSetupEmailAsync(userId, cancellationToken);
 
         return OkEnvelope("Setup email resent.");
+    }
+
+    [HttpGet("invitations")]
+    [HasPermission(PermissionNames.OnboardingInvite)]
+    public async Task<IActionResult> GetInvitations(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? status = null,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _invitationService.GetUserInvitationsAsync(page, pageSize, status, cancellationToken);
+
+        return OkEnvelope(response, "Invitations retrieved.");
     }
 
     /// <summary>Revoke a pending tenant user invitation.</summary>

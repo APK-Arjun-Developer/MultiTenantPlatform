@@ -7,7 +7,9 @@ public interface IUserManagementService
 {
     Task<UserResponse> CreateUserAsync(CreateUserRequest request);
 
-    Task<PagedResponse<UserResponse>> GetUsersAsync(int page, int pageSize);
+    Task<PagedResponse<UserResponse>> GetUsersAsync(int page, int pageSize, string? search = null, string? sortBy = null, string? sortOrder = null);
+
+    Task<UserResponse> GetByIdAsync(Guid id);
 
     Task<UserResponse> GetCurrentUserAsync();
 
@@ -16,4 +18,16 @@ public interface IUserManagementService
     Task<UserResponse> UpdateCurrentUserAsync(UpdateCurrentUserRequest request);
 
     Task DeleteUserAsync(DeleteUserRequest request);
+
+    Task ChangePasswordAsync(ChangePasswordRequest request);
+
+    // ── Tenant Admin management (System Admin scope) ──────────────────────────
+
+    Task<PagedResponse<UserResponse>> GetTenantAdminsAsync(int page, int pageSize, string? search = null, Guid? tenantId = null);
+
+    Task<UserResponse> GetTenantAdminByIdAsync(Guid id);
+
+    Task<UserResponse> UpdateTenantAdminAsync(UpdateTenantAdminRequest request);
+
+    Task DeleteTenantAdminAsync(Guid id);
 }

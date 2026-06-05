@@ -38,7 +38,11 @@ public class ProductService : TenantScopedService, IProductService
         _cacheOptions = cacheOptions.Value;
     }
 
-    public async Task<PagedResponse<ProductResponse>> GetAllAsync(int page, int pageSize)
+    public async Task<PagedResponse<ProductResponse>> GetAllAsync(
+        int page, int pageSize,
+        string? search = null,
+        string? sortBy = null,
+        string? sortOrder = null)
     {
         var tenantId = RequireTenantId();
 
@@ -46,10 +50,22 @@ public class ProductService : TenantScopedService, IProductService
 
         var query = _context.Products
             .AsNoTracking()
-            .Where(p => p.TenantId == tenantId)
-            .OrderBy(p => p.Name);
+            .Where(p => p.TenantId == tenantId);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            query = query.Where(p => p.Name.Contains(search));
+        }
 
         var totalCount = await query.CountAsync();
+
+        query = (sortBy?.ToLowerInvariant(), sortOrder?.ToLowerInvariant()) switch
+        {
+            ("price", "desc") => query.OrderByDescending(p => p.Price),
+            ("price", _)      => query.OrderBy(p => p.Price),
+            ("name", "desc")  => query.OrderByDescending(p => p.Name),
+            _                 => query.OrderBy(p => p.Name),
+        };
 
         var products = await query
             .Skip((page - 1) * pageSize)
@@ -63,6 +79,18 @@ public class ProductService : TenantScopedService, IProductService
             PageSize = pageSize,
             TotalCount = totalCount,
         };
+    }
+
+    public async Task<ProductResponse> GetByIdAsync(Guid id)
+    {
+        var tenantId = RequireTenantId();
+
+        var product = await _context.Products
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.TenantId == tenantId && p.Id == id)
+            ?? throw new NotFoundException($"Product not found.");
+
+        return MapToResponse(product);
     }
 
     public async Task<ProductResponse> GetByNameAsync(string name)

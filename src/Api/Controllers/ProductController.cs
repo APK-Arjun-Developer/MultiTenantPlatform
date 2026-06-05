@@ -21,11 +21,25 @@ public class ProductController : ApiControllerBase
 
     [HttpGet]
     [HasPermission(PermissionNames.ProductsView)]
-    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+    public async Task<IActionResult> GetAll(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortOrder = null)
     {
-        var response = await _productService.GetAllAsync(page, pageSize);
+        var response = await _productService.GetAllAsync(page, pageSize, search, sortBy, sortOrder);
 
         return OkEnvelope(response, "Products retrieved.");
+    }
+
+    [HttpGet("{id:guid}")]
+    [HasPermission(PermissionNames.ProductsView)]
+    public async Task<IActionResult> GetById(Guid id)
+    {
+        var response = await _productService.GetByIdAsync(id);
+
+        return OkEnvelope(response, "Product retrieved.");
     }
 
     [HttpGet("by-name")]

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Application.Common;
 using Application.DTOs.ActivityLogs;
+using Application.DTOs.Common;
 using Application.DTOs.Invitations;
 using Application.DTOs.Onboarding;
 using Application.Exceptions;
@@ -50,6 +51,50 @@ public class InvitationService : TenantScopedService, IInvitationService
         _appBaseUrl = configuration["AppBaseUrl"] ?? "https://app.example.com";
     }
 
+    // ── System Admin: list tenant admin invitations ──────────────────────────
+
+    public async Task<PagedResponse<InvitationListItemResponse>> GetTenantAdminInvitationsAsync(
+        int page, int pageSize,
+        string? status = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsSystemAdmin())
+        {
+            throw new ForbiddenException("Only system administrators can list tenant admin invitations.");
+        }
+
+        (page, pageSize) = Pagination.Normalize(page, pageSize);
+
+        var query = _context.Invitations
+            .AsNoTracking()
+            .Where(i => i.InvitationType == InvitationType.TenantAdmin);
+
+        query = ApplyStatusFilter(query, status);
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        var invitations = await query
+            .OrderByDescending(i => i.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        var tenantIds = invitations.Select(i => i.TenantId).Distinct().ToList();
+
+        var tenantNames = await _context.Tenants
+            .IgnoreQueryFilters()
+            .Where(t => tenantIds.Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => t.Name, cancellationToken);
+
+        return new PagedResponse<InvitationListItemResponse>
+        {
+            Items = invitations.Select(i => MapToListItem(i, tenantNames.GetValueOrDefault(i.TenantId))).ToList(),
+            Page = page,
+            PageSize = pageSize,
+            TotalCount = totalCount,
+        };
+    }
+
     // ── System Admin: invite tenant admin ────────────────────────────────────
 
     public async Task<InviteResponse> InviteTenantAdminAsync(
@@ -89,6 +134,44 @@ public class InvitationService : TenantScopedService, IInvitationService
             tenant.Id);
 
         return BuildInviteResponse(invitation.Record, url);
+    }
+
+    // ── Tenant Admin: list user invitations ──────────────────────────────────
+
+    public async Task<PagedResponse<InvitationListItemResponse>> GetUserInvitationsAsync(
+        int page, int pageSize,
+        string? status = null,
+        CancellationToken cancellationToken = default)
+    {
+        var tenantId = RequireTenantId();
+
+        (page, pageSize) = Pagination.Normalize(page, pageSize);
+
+        var query = _context.Invitations
+            .AsNoTracking()
+            .Where(i => i.TenantId == tenantId && i.InvitationType == InvitationType.TenantUser);
+
+        query = ApplyStatusFilter(query, status);
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        var invitations = await query
+            .OrderByDescending(i => i.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        var tenant = await _context.Tenants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+
+        return new PagedResponse<InvitationListItemResponse>
+        {
+            Items = invitations.Select(i => MapToListItem(i, tenant?.Name)).ToList(),
+            Page = page,
+            PageSize = pageSize,
+            TotalCount = totalCount,
+        };
     }
 
     // ── Tenant Admin: invite tenant user ─────────────────────────────────────
@@ -502,6 +585,44 @@ public class InvitationService : TenantScopedService, IInvitationService
 
     private static ValidateInvitationResponse InvalidInvitationResponse(string message) =>
         new() { IsValid = false, ErrorMessage = message };
+
+    private static IQueryable<Invitation> ApplyStatusFilter(IQueryable<Invitation> query, string? status) =>
+        status?.ToLowerInvariant() switch
+        {
+            "pending"  => query.Where(i => i.AcceptedAt == null && i.RevokedAt == null && i.ExpiresAt > DateTime.UtcNow),
+            "accepted" => query.Where(i => i.AcceptedAt != null),
+            "revoked"  => query.Where(i => i.RevokedAt != null),
+            "expired"  => query.Where(i => i.AcceptedAt == null && i.RevokedAt == null && i.ExpiresAt <= DateTime.UtcNow),
+            _          => query,
+        };
+
+    private static string DeriveStatus(Invitation i)
+    {
+        if (i.IsAccepted) return "Accepted";
+        if (i.IsRevoked)  return "Revoked";
+        if (i.IsExpired)  return "Expired";
+
+        return "Pending";
+    }
+
+    private static InvitationListItemResponse MapToListItem(Invitation i, string? tenantName) =>
+        new()
+        {
+            Id              = i.Id,
+            Email           = i.Email,
+            InvitationType  = i.InvitationType,
+            TenantId        = i.TenantId,
+            TenantName      = tenantName,
+            ExpiresAt       = i.ExpiresAt,
+            AcceptedAt      = i.AcceptedAt,
+            RevokedAt       = i.RevokedAt,
+            IsExpired       = i.IsExpired,
+            IsAccepted      = i.IsAccepted,
+            IsRevoked       = i.IsRevoked,
+            Status          = DeriveStatus(i),
+            CreatedAt       = i.CreatedAt,
+            InvitedByUserId = i.InvitedByUserId,
+        };
 
     private async Task LogAsync(string action, string description, Guid tenantId)
     {

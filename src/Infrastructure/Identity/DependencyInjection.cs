@@ -111,6 +111,7 @@ public static class DependencyInjection
         services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IRefreshTokenService, RefreshTokenService>();
+        services.AddScoped<IPasswordResetService, PasswordResetService>();
 
         services.AddHttpContextAccessor();
         services.AddMemoryCache();

@@ -44,13 +44,21 @@ public class RoleService : TenantScopedService, IRoleService
         _identityRoleService = identityRoleService;
     }
 
-    public async Task<PagedResponse<RoleResponse>> GetRolesAsync(int page, int pageSize)
+    public async Task<PagedResponse<RoleResponse>> GetRolesAsync(
+        int page, int pageSize,
+        string? search = null)
     {
         var tenantId = RequireTenantId();
 
         (page, pageSize) = Pagination.Normalize(page, pageSize);
 
         var query = _roleManager.Roles.Where(r => r.TenantId == tenantId);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            query = query.Where(r => r.Name!.Contains(search));
+        }
+
         var totalCount = await query.CountAsync();
 
         var roles = await query
@@ -68,6 +76,17 @@ public class RoleService : TenantScopedService, IRoleService
             PageSize = pageSize,
             TotalCount = totalCount,
         };
+    }
+
+    public async Task<RoleResponse> GetByNameAsync(string name)
+    {
+        var tenantId = RequireTenantId();
+
+        var role = await _roleManager.Roles
+            .FirstOrDefaultAsync(r => r.TenantId == tenantId && r.Name == name)
+            ?? throw new NotFoundException($"Role '{name}' not found.");
+
+        return await MapRoleAsync(role);
     }
 
     public async Task<RoleResponse> GetCurrentRoleAsync()

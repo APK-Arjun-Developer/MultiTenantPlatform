@@ -5,7 +5,9 @@ namespace Application.Interfaces.Tenant;
 
 public interface ITenantService
 {
-    Task<PagedResponse<TenantResponse>> GetTenantsAsync(int page, int pageSize);
+    Task<PagedResponse<TenantResponse>> GetTenantsAsync(int page, int pageSize, string? search = null, string? sortBy = null, string? sortOrder = null);
+
+    Task<TenantResponse> GetByIdAsync(Guid id);
 
     Task<TenantResponse> GetCurrentAsync();
 

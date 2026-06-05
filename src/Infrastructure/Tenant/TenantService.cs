@@ -46,7 +46,11 @@ public class TenantService : TenantScopedService, ITenantService
         _identityRoleService = identityRoleService;
     }
 
-    public async Task<PagedResponse<TenantResponse>> GetTenantsAsync(int page, int pageSize)
+    public async Task<PagedResponse<TenantResponse>> GetTenantsAsync(
+        int page, int pageSize,
+        string? search = null,
+        string? sortBy = null,
+        string? sortOrder = null)
     {
         (page, pageSize) = Pagination.Normalize(page, pageSize);
 
@@ -56,10 +60,23 @@ public class TenantService : TenantScopedService, ITenantService
                 .IgnoreQueryFilters()
                 .Where(t => t.DeletedAt == null);
 
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                query = query.Where(t =>
+                    t.Name.Contains(search) || t.Slug.Contains(search));
+            }
+
             var totalCount = await query.CountAsync();
 
+            query = (sortBy?.ToLowerInvariant(), sortOrder?.ToLowerInvariant()) switch
+            {
+                ("slug", "desc") => query.OrderByDescending(t => t.Slug),
+                ("slug", _)      => query.OrderBy(t => t.Slug),
+                ("name", "desc") => query.OrderByDescending(t => t.Name),
+                _                => query.OrderBy(t => t.Name),
+            };
+
             var tenants = await query
-                .OrderBy(t => t.Name)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
@@ -92,6 +109,21 @@ public class TenantService : TenantScopedService, ITenantService
             PageSize = pageSize,
             TotalCount = 1,
         };
+    }
+
+    public async Task<TenantResponse> GetByIdAsync(Guid id)
+    {
+        if (!IsSystemAdmin())
+        {
+            var tenantId = RequireTenantId();
+
+            if (tenantId != id)
+            {
+                throw new ForbiddenException("You can only access your own tenant.");
+            }
+        }
+
+        return await GetTenantByIdCachedAsync(id);
     }
 
     public async Task<TenantResponse> GetCurrentAsync()

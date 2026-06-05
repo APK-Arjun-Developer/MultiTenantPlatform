@@ -107,7 +107,11 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         return await MapToUserResponseAsync(user, includeTenantDetails: false);
     }
 
-    public async Task<PagedResponse<UserResponse>> GetUsersAsync(int page, int pageSize)
+    public async Task<PagedResponse<UserResponse>> GetUsersAsync(
+        int page, int pageSize,
+        string? search = null,
+        string? sortBy = null,
+        string? sortOrder = null)
     {
         var currentUserId = RequireUserId();
 
@@ -128,10 +132,23 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             query = query.Where(u => u.TenantId == tenantId);
         }
 
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            query = query.Where(u =>
+                u.FullName.Contains(search) || u.Email!.Contains(search));
+        }
+
         var totalCount = await query.CountAsync();
 
+        query = (sortBy?.ToLowerInvariant(), sortOrder?.ToLowerInvariant()) switch
+        {
+            ("fullname", "desc") => query.OrderByDescending(u => u.FullName),
+            ("fullname", _)      => query.OrderBy(u => u.FullName),
+            ("email", "desc")    => query.OrderByDescending(u => u.Email),
+            _                    => query.OrderBy(u => u.Email),
+        };
+
         var users = await query
-            .OrderBy(u => u.Email)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
@@ -193,6 +210,47 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             PageSize = pageSize,
             TotalCount = totalCount,
         };
+    }
+
+    public async Task<UserResponse> GetByIdAsync(Guid id)
+    {
+        var isAdmin = IsSystemAdmin();
+
+        ApplicationUser? user;
+
+        if (isAdmin)
+        {
+            user = await _userManager.Users
+                .FirstOrDefaultAsync(u => u.Id == id && u.TenantId != Guid.Empty)
+                ?? throw new NotFoundException("User not found.");
+        }
+        else
+        {
+            var tenantId = RequireTenantId();
+
+            user = await _userManager.Users
+                .FirstOrDefaultAsync(u => u.Id == id && u.TenantId == tenantId)
+                ?? throw new NotFoundException("User not found.");
+        }
+
+        UserTenantDetails? tenantDetails = null;
+
+        if (isAdmin)
+        {
+            var tenant = await _context.Tenants
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(t => t.Id == user.TenantId && t.DeletedAt == null);
+
+            if (tenant != null)
+            {
+                var tenantAddress = await AddressHelper.GetTenantAddressAsync(_context, tenant.Id);
+                tenantDetails = MapTenantDetails(tenant, tenantAddress);
+            }
+        }
+
+        var address = await AddressHelper.GetUserAddressAsync(_context, user.Id, isAdmin);
+
+        return await MapToUserResponseAsync(user, includeTenantDetails: isAdmin, tenantDetails, address);
     }
 
     public async Task<UserResponse> GetCurrentUserAsync()
@@ -310,6 +368,38 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         return await GetCurrentUserAsync();
     }
 
+    public async Task ChangePasswordAsync(ChangePasswordRequest request)
+    {
+        if (request.NewPassword != request.ConfirmPassword)
+        {
+            throw new InvalidOperationException("New password and confirmation do not match.");
+        }
+
+        var user = await GetCurrentUserEntityAsync();
+
+        var isValid = await _userManager.CheckPasswordAsync(user, request.CurrentPassword);
+
+        if (!isValid)
+        {
+            throw new InvalidOperationException("Current password is incorrect.");
+        }
+
+        var result = await _userManager.ChangePasswordAsync(
+            user, request.CurrentPassword, request.NewPassword);
+
+        if (!result.Succeeded)
+        {
+            throw new InvalidOperationException(
+                string.Join(", ", result.Errors.Select(e => e.Description)));
+        }
+
+        user.PasswordSetAt = DateTime.UtcNow;
+        user.UpdatedAt = DateTime.UtcNow;
+        await _userManager.UpdateAsync(user);
+
+        await LogActivityAsync(ActivityActions.Users.Updated, "Changed own password.");
+    }
+
     public async Task DeleteUserAsync(DeleteUserRequest request)
     {
         var currentUserId = RequireUserId();
@@ -333,6 +423,214 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         }
 
         await LogActivityAsync(ActivityActions.Users.Deleted, $"Deleted user '{user.Email}'.");
+
+        _cache.InvalidateTenantDashboard(user.TenantId);
+    }
+
+    // ── Tenant Admin management (System Admin scope) ──────────────────────────
+
+    public async Task<PagedResponse<UserResponse>> GetTenantAdminsAsync(
+        int page, int pageSize,
+        string? search = null,
+        Guid? tenantId = null)
+    {
+        if (!IsSystemAdmin())
+        {
+            throw new ForbiddenException("Only system administrators can list tenant admins.");
+        }
+
+        (page, pageSize) = Pagination.Normalize(page, pageSize);
+
+        var tenantAdminRoleName = RoleNames.TenantAdmin;
+
+        var roleIds = await _context.Roles
+            .AsNoTracking()
+            .Where(r => r.Name == tenantAdminRoleName && r.TenantId != Guid.Empty)
+            .Select(r => r.Id)
+            .ToListAsync();
+
+        var adminUserIds = await _context.Set<IdentityUserRole<Guid>>()
+            .AsNoTracking()
+            .Where(ur => roleIds.Contains(ur.RoleId))
+            .Select(ur => ur.UserId)
+            .Distinct()
+            .ToListAsync();
+
+        IQueryable<ApplicationUser> query = _userManager.Users
+            .Where(u => adminUserIds.Contains(u.Id));
+
+        if (tenantId.HasValue)
+        {
+            query = query.Where(u => u.TenantId == tenantId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            query = query.Where(u =>
+                u.FullName.Contains(search) || u.Email!.Contains(search));
+        }
+
+        var totalCount = await query.CountAsync();
+
+        var users = await query
+            .OrderBy(u => u.Email)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        var userIds = users.Select(u => u.Id).ToList();
+        var tenantIds = users.Select(u => u.TenantId).Distinct().ToList();
+
+        var userRoles = await _context.Set<IdentityUserRole<Guid>>()
+            .AsNoTracking()
+            .Where(ur => userIds.Contains(ur.UserId))
+            .Join(_context.Roles.AsNoTracking(), ur => ur.RoleId, r => r.Id,
+                (ur, r) => new { ur.UserId, r.Name })
+            .ToListAsync();
+
+        var rolesByUser = userRoles
+            .GroupBy(x => x.UserId)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.Name!).ToList());
+
+        var tenantsById = await _context.Tenants
+            .IgnoreQueryFilters()
+            .Where(t => tenantIds.Contains(t.Id) && t.DeletedAt == null)
+            .ToDictionaryAsync(t => t.Id);
+
+        var tenantAddressesById = await AddressHelper.GetTenantAddressesAsync(_context, tenantIds);
+        var userAddresses = await AddressHelper.GetUserAddressesAsync(_context, userIds, ignoreTenantFilter: true);
+
+        var responses = users.Select(user =>
+        {
+            tenantsById.TryGetValue(user.TenantId, out var tenant);
+            tenantAddressesById.TryGetValue(user.TenantId, out var tenantAddress);
+            userAddresses.TryGetValue(user.Id, out var userAddress);
+
+            var tenantDetails = tenant != null ? MapTenantDetails(tenant, tenantAddress) : null;
+
+            return MapToUserResponse(
+                user,
+                rolesByUser.GetValueOrDefault(user.Id, []),
+                includeTenantDetails: true,
+                tenantDetails,
+                userAddress);
+        }).ToList();
+
+        return new PagedResponse<UserResponse>
+        {
+            Items = responses,
+            Page = page,
+            PageSize = pageSize,
+            TotalCount = totalCount,
+        };
+    }
+
+    public async Task<UserResponse> GetTenantAdminByIdAsync(Guid id)
+    {
+        if (!IsSystemAdmin())
+        {
+            throw new ForbiddenException("Only system administrators can view tenant admin details.");
+        }
+
+        var user = await _userManager.Users
+            .FirstOrDefaultAsync(u => u.Id == id && u.TenantId != Guid.Empty)
+            ?? throw new NotFoundException("Tenant admin not found.");
+
+        var tenant = await _context.Tenants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == user.TenantId && t.DeletedAt == null);
+
+        UserTenantDetails? tenantDetails = null;
+
+        if (tenant != null)
+        {
+            var tenantAddress = await AddressHelper.GetTenantAddressAsync(_context, tenant.Id);
+            tenantDetails = MapTenantDetails(tenant, tenantAddress);
+        }
+
+        var address = await AddressHelper.GetUserAddressAsync(_context, user.Id, ignoreTenantFilter: true);
+
+        return await MapToUserResponseAsync(user, includeTenantDetails: true, tenantDetails, address);
+    }
+
+    public async Task<UserResponse> UpdateTenantAdminAsync(UpdateTenantAdminRequest request)
+    {
+        if (!IsSystemAdmin())
+        {
+            throw new ForbiddenException("Only system administrators can update tenant admins.");
+        }
+
+        var user = await _userManager.Users
+            .FirstOrDefaultAsync(u => u.Id == request.UserId && u.TenantId != Guid.Empty)
+            ?? throw new NotFoundException("Tenant admin not found.");
+
+        user.FullName = request.FullName;
+        user.UpdatedAt = DateTime.UtcNow;
+
+        await ApplyProfileFileUpdateAsync(user, request.ProfileFileId, request.ClearProfileImage);
+
+        await AddressHelper.ApplyUserAddressUpdateAsync(
+            _context, user, request.Address, request.ClearAddress);
+
+        if (!string.IsNullOrWhiteSpace(request.RoleName))
+        {
+            if (request.RoleName == RoleNames.SuperAdmin)
+            {
+                throw new ForbiddenException("Cannot assign the SuperAdmin role.");
+            }
+
+            var role = await _identityRoleService.FindRoleByNameAsync(user.TenantId, request.RoleName)
+                ?? throw new NotFoundException($"Role '{request.RoleName}' was not found for this tenant.");
+
+            var existingAssignments = await _context.Set<IdentityUserRole<Guid>>()
+                .Where(ur => ur.UserId == user.Id)
+                .ToListAsync();
+
+            _context.Set<IdentityUserRole<Guid>>().RemoveRange(existingAssignments);
+
+            await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
+        }
+
+        await _userManager.UpdateAsync(user);
+
+        await LogActivityAsync(ActivityActions.Users.Updated, $"Updated tenant admin '{user.Email}'.");
+
+        _cache.InvalidateTenantDashboard(user.TenantId);
+
+        var address = await AddressHelper.GetUserAddressAsync(_context, user.Id, ignoreTenantFilter: true);
+
+        return await MapToUserResponseAsync(user, includeTenantDetails: true, address: address);
+    }
+
+    public async Task DeleteTenantAdminAsync(Guid id)
+    {
+        if (!IsSystemAdmin())
+        {
+            throw new ForbiddenException("Only system administrators can delete tenant admins.");
+        }
+
+        var currentUserId = RequireUserId();
+
+        var user = await _userManager.Users
+            .FirstOrDefaultAsync(u => u.Id == id && u.TenantId != Guid.Empty)
+            ?? throw new NotFoundException("Tenant admin not found.");
+
+        if (user.Id == currentUserId)
+        {
+            throw new ConflictException("You cannot delete your own account.");
+        }
+
+        user.DeletedAt = DateTime.UtcNow;
+
+        var result = await _userManager.UpdateAsync(user);
+
+        if (!result.Succeeded)
+        {
+            throw new InvalidOperationException(
+                string.Join(", ", result.Errors.Select(e => e.Description)));
+        }
+
+        await LogActivityAsync(ActivityActions.Users.Deleted, $"Deleted tenant admin '{user.Email}'.");
 
         _cache.InvalidateTenantDashboard(user.TenantId);
     }

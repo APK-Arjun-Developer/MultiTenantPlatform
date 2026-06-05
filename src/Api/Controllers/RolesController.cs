@@ -21,11 +21,23 @@ public class RolesController : ApiControllerBase
 
     [HttpGet]
     [HasPermission(PermissionNames.RolesView)]
-    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+    public async Task<IActionResult> GetAll(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null)
     {
-        var response = await _roleService.GetRolesAsync(page, pageSize);
+        var response = await _roleService.GetRolesAsync(page, pageSize, search);
 
         return OkEnvelope(response, "Roles retrieved.");
+    }
+
+    [HttpGet("{name}")]
+    [HasPermission(PermissionNames.RolesView)]
+    public async Task<IActionResult> GetByName(string name)
+    {
+        var response = await _roleService.GetByNameAsync(name);
+
+        return OkEnvelope(response, "Role retrieved.");
     }
 
     [HttpGet("current")]

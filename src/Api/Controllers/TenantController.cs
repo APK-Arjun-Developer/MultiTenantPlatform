@@ -23,11 +23,23 @@ public class TenantController : ApiControllerBase
     [HasPermission(PermissionNames.TenantsView)]
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 20)
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortOrder = null)
     {
-        var response = await _tenantService.GetTenantsAsync(page, pageSize);
+        var response = await _tenantService.GetTenantsAsync(page, pageSize, search, sortBy, sortOrder);
 
         return OkEnvelope(response, "Tenants retrieved.");
+    }
+
+    [HttpGet("{id:guid}")]
+    [HasPermission(PermissionNames.TenantsView)]
+    public async Task<IActionResult> GetById(Guid id)
+    {
+        var response = await _tenantService.GetByIdAsync(id);
+
+        return OkEnvelope(response, "Tenant retrieved.");
     }
 
     [HttpGet("current")]

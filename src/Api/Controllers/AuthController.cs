@@ -10,10 +10,12 @@ namespace Api.Controllers;
 public class AuthController : ApiControllerBase
 {
     private readonly IAuthService _authService;
+    private readonly IPasswordResetService _passwordResetService;
 
-    public AuthController(IAuthService authService)
+    public AuthController(IAuthService authService, IPasswordResetService passwordResetService)
     {
         _authService = authService;
+        _passwordResetService = passwordResetService;
     }
 
     [HttpPost("login")]
@@ -40,6 +42,40 @@ public class AuthController : ApiControllerBase
         await _authService.LogoutAsync(request, GetClientIp());
 
         return OkEnvelope("Logged out.");
+    }
+
+    [HttpPost("forgot-password")]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> ForgotPassword(
+        ForgotPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        await _passwordResetService.SendResetEmailAsync(request, cancellationToken);
+
+        // Always return success to prevent email enumeration attacks.
+        return OkEnvelope("If an account with that email exists, a reset link has been sent.");
+    }
+
+    [HttpGet("reset-password/validate")]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> ValidateResetToken(
+        [FromQuery] string token,
+        CancellationToken cancellationToken)
+    {
+        var response = await _passwordResetService.ValidateTokenAsync(token, cancellationToken);
+
+        return OkEnvelope(response, "Token validated.");
+    }
+
+    [HttpPost("reset-password")]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> ResetPassword(
+        ResetPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        await _passwordResetService.ResetPasswordAsync(request, cancellationToken);
+
+        return OkEnvelope("Password has been reset successfully.");
     }
 
     private string GetClientIp()
