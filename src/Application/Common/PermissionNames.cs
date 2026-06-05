@@ -29,6 +29,13 @@ public static class PermissionNames
     public const string TenantsEdit = "Tenants.Edit";
     public const string TenantsDelete = "Tenants.Delete";
 
+    public const string OnboardingCreate = "Onboarding.Create";
+    public const string OnboardingInvite = "Onboarding.Invite";
+    public const string OnboardingResend = "Onboarding.Resend";
+    public const string OnboardingRevoke = "Onboarding.Revoke";
+    public const string OnboardingActivate = "Onboarding.Activate";
+    public const string OnboardingDeactivate = "Onboarding.Deactivate";
+
     public static readonly IReadOnlyList<string> All =
     [
         UsersCreate,
@@ -51,7 +58,13 @@ public static class PermissionNames
         TenantsCreate,
         TenantsView,
         TenantsEdit,
-        TenantsDelete
+        TenantsDelete,
+        OnboardingCreate,
+        OnboardingInvite,
+        OnboardingResend,
+        OnboardingRevoke,
+        OnboardingActivate,
+        OnboardingDeactivate,
     ];
 
     public static readonly IReadOnlyList<string> TenantPermissions =

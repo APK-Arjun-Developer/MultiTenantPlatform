@@ -84,6 +84,7 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             NormalizedEmail = request.Email.ToUpperInvariant(),
             NormalizedUserName = request.Email.ToUpperInvariant(),
             EmailConfirmed = true,
+            IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
 

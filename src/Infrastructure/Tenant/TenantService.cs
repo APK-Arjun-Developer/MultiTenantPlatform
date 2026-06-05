@@ -281,6 +281,7 @@ public class TenantService : TenantScopedService, ITenantService
                 NormalizedEmail = request.User.Email.ToUpperInvariant(),
                 NormalizedUserName = request.User.Email.ToUpperInvariant(),
                 EmailConfirmed = true,
+                IsActive = true,
                 CreatedAt = DateTime.UtcNow
             };
 

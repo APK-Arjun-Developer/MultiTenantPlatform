@@ -45,6 +45,11 @@ public class AuthService : IAuthService
             throw new InvalidOperationException("Invalid credentials.");
         }
 
+        if (!user.IsActive)
+        {
+            throw new InvalidOperationException("Account is not active. Please complete your account setup.");
+        }
+
         var validPassword =
             await _userManager.CheckPasswordAsync(
                 user,
@@ -54,6 +59,9 @@ public class AuthService : IAuthService
         {
             throw new InvalidOperationException("Invalid credentials.");
         }
+
+        user.LastLoginAt = DateTime.UtcNow;
+        await _userManager.UpdateAsync(user);
 
         var roles = await _userManager.GetRolesAsync(user);
         var roleId = await GetPrimaryRoleIdAsync(user);

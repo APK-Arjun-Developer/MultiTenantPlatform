@@ -9,4 +9,5 @@ public static class ActivityModules
     public const string Products = "Products";
     public const string Files = "Files";
     public const string Reports = "Reports";
+    public const string Onboarding = "Onboarding";
 }
