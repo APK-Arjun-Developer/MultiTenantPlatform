@@ -25,6 +25,24 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version
+        id: version
+        shell: pwsh
+        run: |
+          git fetch --tags --quiet
+          $latest = git tag --sort=-v:refname | Where-Object { $_ -match '^v\d+\.\d+\.\d+$' } | Select-Object -First 1
+          if (-not $latest) {
+            $newVersion = "1.0.0"
+          } else {
+            $parts = $latest.TrimStart('v') -split '\.'
+            $newVersion = "$([int]$parts[0]).$([int]$parts[1]).$([int]$parts[2] + 1)"
+          }
+          Write-Host "Next version: $newVersion (tag: v$newVersion)"
+          "version=$newVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "tag=v$newVersion"    | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Validate required GitHub secrets
         shell: pwsh
@@ -82,6 +100,7 @@ jobs:
           --output ./publish
           --runtime win-x86
           --no-restore
+          -p:Version=${{ steps.version.outputs.version }}
 
       - name: Write production appsettings from GitHub secrets
         shell: pwsh
@@ -248,3 +267,12 @@ jobs:
             -MaxAttempts 10 `
             -InitialDelaySeconds 45 `
             -RetryDelaySeconds 15
+
+      - name: Tag release
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag ${{ steps.version.outputs.tag }}
+          git push origin ${{ steps.version.outputs.tag }}
+          Write-Host "Tagged ${{ steps.version.outputs.tag }}"
