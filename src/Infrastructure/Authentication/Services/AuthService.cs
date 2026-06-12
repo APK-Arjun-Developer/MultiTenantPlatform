@@ -93,7 +93,8 @@ public class AuthService : IAuthService
             RefreshToken = refreshToken.Token,
             ExpiresAt = _jwtTokenGenerator.ComputeAccessTokenExpiryUtc(),
             Email = user.Email!,
-            FullName = user.FullName
+            FullName = user.FullName,
+            Roles = roles.Select(r => r.Name).ToList()
         };
     }
 
@@ -142,7 +143,8 @@ public class AuthService : IAuthService
             RefreshToken = newRefreshToken.Token,
             ExpiresAt = _jwtTokenGenerator.ComputeAccessTokenExpiryUtc(),
             Email = user.Email!,
-            FullName = user.FullName
+            FullName = user.FullName,
+            Roles = roles.Select(r => r.Name).ToList()
         };
     }
 

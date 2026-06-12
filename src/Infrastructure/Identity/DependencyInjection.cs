@@ -139,6 +139,19 @@ public static class DependencyInjection
                         Encoding.UTF8.GetBytes(jwtSettings.Key)),
                     ClockSkew = TimeSpan.FromSeconds(30),
                 };
+
+                // Cookie-first token extraction: read HttpOnly cookie, fall back to
+                // Authorization: Bearer header if cookie is absent.
+                options.Events = new JwtBearerEvents
+                {
+                    OnMessageReceived = ctx =>
+                    {
+                        if (ctx.Request.Cookies.TryGetValue("access_token", out var cookieToken))
+                            ctx.Token = cookieToken;
+
+                        return Task.CompletedTask;
+                    }
+                };
             });
 
         services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
