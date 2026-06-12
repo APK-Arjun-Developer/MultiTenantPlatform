@@ -19,9 +19,10 @@ public class HealthController : ApiControllerBase
     [HttpGet("health")]
     public IActionResult Get()
     {
-        var appVersion = Assembly.GetEntryAssembly()
+        var raw = Assembly.GetEntryAssembly()
             ?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
             ?.InformationalVersion ?? "unknown";
+        var appVersion = raw.Contains('+') ? raw[..raw.IndexOf('+')] : raw;
 
         return OkEnvelope(
             new

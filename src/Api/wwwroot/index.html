@@ -107,7 +107,7 @@
         document.getElementById("status").textContent = healthy ? "Online" : "Unavailable";
         if (j && j.data && j.data.appVersion) {
           document.getElementById("version").textContent =
-            j.data.appVersion + " (API v1)";
+            j.data.appVersion;
         }
       })
       .catch(function () {
