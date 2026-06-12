@@ -81,7 +81,7 @@
     <dl>
       <div class="row">
         <dt>Version</dt>
-        <dd>1.0.0 (API v1)</dd>
+        <dd id="version">…</dd>
       </div>
       <div class="row">
         <dt>Runtime</dt>
@@ -103,10 +103,12 @@
     fetch(window.location.origin + "/api/v1/health")
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
-        document.getElementById("status").textContent =
-          j && j.data && j.data.status === "healthy"
-            ? "Online"
-            : "Unavailable";
+        var healthy = j && j.data && j.data.status === "healthy";
+        document.getElementById("status").textContent = healthy ? "Online" : "Unavailable";
+        if (j && j.data && j.data.appVersion) {
+          document.getElementById("version").textContent =
+            j.data.appVersion + " (API v1)";
+        }
       })
       .catch(function () {
         document.getElementById("status").textContent = "Unavailable";

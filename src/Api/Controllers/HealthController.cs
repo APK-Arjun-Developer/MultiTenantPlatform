@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -18,11 +19,16 @@ public class HealthController : ApiControllerBase
     [HttpGet("health")]
     public IActionResult Get()
     {
+        var appVersion = Assembly.GetEntryAssembly()
+            ?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion ?? "unknown";
+
         return OkEnvelope(
             new
             {
                 status = "healthy",
                 version = "v1",
+                appVersion,
                 environment = _environment.EnvironmentName,
                 timestampUtc = DateTime.UtcNow,
             },
