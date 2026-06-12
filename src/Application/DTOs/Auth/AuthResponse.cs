@@ -11,4 +11,6 @@ public class AuthResponse
     public string Email { get; set; } = default!;
 
     public string FullName { get; set; } = default!;
+
+    public IList<string> Roles { get; set; } = [];
 }

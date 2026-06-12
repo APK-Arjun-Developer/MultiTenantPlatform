@@ -23,7 +23,7 @@ public class AuthController : ApiControllerBase
     public async Task<IActionResult> Login(LoginRequest request)
     {
         var response = await _authService.LoginAsync(request, GetClientIp());
-
+        SetAccessTokenCookie(response.AccessToken, response.ExpiresAt);
         return OkEnvelope(response, "Login successful.");
     }
 
@@ -32,7 +32,7 @@ public class AuthController : ApiControllerBase
     public async Task<IActionResult> Refresh(RefreshTokenRequest request)
     {
         var response = await _authService.RefreshTokenAsync(request, GetClientIp());
-
+        SetAccessTokenCookie(response.AccessToken, response.ExpiresAt);
         return OkEnvelope(response, "Token refreshed.");
     }
 
@@ -40,7 +40,7 @@ public class AuthController : ApiControllerBase
     public async Task<IActionResult> Logout(LogoutRequest request)
     {
         await _authService.LogoutAsync(request, GetClientIp());
-
+        Response.Cookies.Delete("access_token");
         return OkEnvelope("Logged out.");
     }
 
@@ -76,6 +76,17 @@ public class AuthController : ApiControllerBase
         await _passwordResetService.ResetPasswordAsync(request, cancellationToken);
 
         return OkEnvelope("Password has been reset successfully.");
+    }
+
+    private void SetAccessTokenCookie(string token, DateTime expiresAt)
+    {
+        Response.Cookies.Append("access_token", token, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = HttpContext.Request.IsHttps,
+            SameSite = SameSiteMode.Strict,
+            Expires = expiresAt,
+        });
     }
 
     private string GetClientIp()
