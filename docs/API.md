@@ -217,9 +217,9 @@ Constants: `Application.Common.PermissionNames`.
 | Environment | URL | Access |
 |-------------|-----|--------|
 | Development | `/swagger` | Open |
-| Production | `/swagger` | Sign in at `/swagger/login` (`admin@system.com` + admin password) |
+| Production | `/swagger` | Open |
 
-Use **Authorize** with `Bearer {accessToken}` from login. Swagger auto-auth script persists tokens in Development.
+Use **Authorize** with `Bearer {accessToken}` from login. Swagger auto-auth script persists tokens automatically.
 
 ---
 

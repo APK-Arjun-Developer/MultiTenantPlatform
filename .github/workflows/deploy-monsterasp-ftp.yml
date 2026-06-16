@@ -154,9 +154,6 @@ jobs:
             }
             Swagger = @{
               EnabledInProduction = $true
-              AdminUsername       = "admin@system.com"
-              AdminPassword       = $env:ADMIN_PASSWORD
-              SessionHours        = 8
             }
             AllowedOrigins = $origins
             AppBaseUrl     = $env:APP_BASE_URL

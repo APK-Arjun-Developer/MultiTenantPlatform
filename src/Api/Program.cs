@@ -5,7 +5,6 @@ using Infrastructure.Identity;
 using Api.Contracts;
 using Api.Extensions;
 using Api.Middleware;
-using Api.Options;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -175,9 +174,6 @@ builder.Services.AddSwaggerGen(options =>
         [new Microsoft.OpenApi.OpenApiSecuritySchemeReference(bearerScheme, document)] = [],
     });
 });
-
-builder.Services.Configure<SwaggerAccessOptions>(
-    builder.Configuration.GetSection(SwaggerAccessOptions.SectionName));
 
 // ── Forwarded Headers (for correct client IP behind proxy) ────────────────────
 builder.Services.Configure<ForwardedHeadersOptions>(options =>

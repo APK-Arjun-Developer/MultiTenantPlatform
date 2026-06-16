@@ -10,6 +10,7 @@
       --text: #e7ecf3;
       --muted: #8b9cb3;
       --accent: #3b82f6;
+      --success: #22c55e;
       --border: #2d3a4f;
     }
     * { box-sizing: border-box; }
@@ -67,7 +68,14 @@
       font-size: 0.95rem;
     }
     .status {
+      color: var(--success);
+    }
+    a {
       color: var(--accent);
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
     }
   </style>
 </head>
@@ -90,6 +98,10 @@
       <div class="row">
         <dt>API base</dt>
         <dd><span id="api-base">/api/v1</span></dd>
+      </div>
+      <div class="row">
+        <dt>API docs</dt>
+        <dd><a id="swagger-link" href="/swagger">Swagger</a></dd>
       </div>
       <div class="row">
         <dt>Status</dt>

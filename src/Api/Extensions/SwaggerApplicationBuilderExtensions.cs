@@ -1,6 +1,3 @@
-using Api.Middleware;
-using Api.Options;
-
 namespace Api.Extensions;
 
 public static class SwaggerApplicationBuilderExtensions
@@ -12,16 +9,11 @@ public static class SwaggerApplicationBuilderExtensions
             return true;
         }
 
-        return configuration.GetValue($"{SwaggerAccessOptions.SectionName}:EnabledInProduction", false);
+        return configuration.GetValue("Swagger:EnabledInProduction", false);
     }
 
     public static void UseSwaggerDocumentation(this WebApplication app)
     {
-        if (!app.Environment.IsDevelopment())
-        {
-            app.UseMiddleware<SwaggerGateMiddleware>();
-        }
-
         if (app.Environment.IsDevelopment())
         {
             app.MapOpenApi();

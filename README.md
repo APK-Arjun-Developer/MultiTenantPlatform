@@ -62,7 +62,7 @@ dotnet run --project src/Api
 
 Open:
 
-- Swagger: `https://localhost:<port>/swagger` (Development, no login)
+- Swagger: `https://localhost:<port>/swagger` (open)
 - Health: `GET /api/v1/health`
 - API base: `/api/v1`
 
@@ -89,7 +89,7 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for production deploy.
 
 - Deploy: push to **`master`** or run **Deploy to MonsterASP (FTPS)** workflow.
 - Required GitHub secrets: `FTP_*`, `PRODUCTION_CONNECTION_STRING`, `JWT_KEY`, `ADMIN_PASSWORD`, recommended `SITE_URL`.
-- Swagger: `https://<your-site>/swagger` — sign in with `admin@system.com` + `ADMIN_PASSWORD`.
+- Swagger: `https://<your-site>/swagger` — open (set `Swagger:EnabledInProduction` to `false` to hide it).
 - Fresh database: delete and recreate the database in the MonsterASP control panel (or drop all tables in SSMS), then redeploy.
 
 ## Highlights

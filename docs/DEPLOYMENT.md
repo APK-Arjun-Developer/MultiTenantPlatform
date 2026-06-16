@@ -88,7 +88,7 @@ Open **Settings → Secrets and variables → Actions → New repository secret*
 | `SITE_URL` | No | **Recommended.** Public site URL for smoke test, e.g. `https://site1234.monsterasp.net` |
 | `PRODUCTION_CONNECTION_STRING` | Yes | MonsterASP MSSQL connection string |
 | `JWT_KEY` | Yes | Random string, **≥ 32 characters** |
-| `ADMIN_PASSWORD` | Yes | SuperAdmin + Swagger login password |
+| `ADMIN_PASSWORD` | Yes | SuperAdmin (`admin@system.com`) password |
 | `JWT_ISSUER` | No | Defaults to `MultiTenantPlatform` |
 | `JWT_AUDIENCE` | No | Defaults to `MultiTenantPlatformUsers` |
 | `ALLOWED_ORIGINS` | No | Comma-separated CORS origins. If empty, deploy uses `SITE_URL` as the allowed origin. |
@@ -105,7 +105,7 @@ Never commit real connection strings or JWT keys. The workflow **overwrites** `a
 | `ApplySeedsOnStartup` | `true` |
 | `ConnectionStrings:DefaultConnection` | From `PRODUCTION_CONNECTION_STRING` |
 | `Seeding:AdminPassword` | From `ADMIN_PASSWORD` |
-| Swagger | `/swagger` behind login (`admin@system.com` + `ADMIN_PASSWORD`) |
+| Swagger | `/swagger` open (toggle via `Swagger:EnabledInProduction`) |
 
 ---
 
@@ -144,7 +144,7 @@ Smoke test: `GET /api/v1/health` on `SITE_URL`.
 | `ApplyMigrationsOnStartup` | `true` | `true` |
 | `ApplySeedsOnStartup` | `true` | `true` |
 | `Seeding:AdminPassword` | `appsettings.Development.json` or user secrets | `ADMIN_PASSWORD` GitHub secret |
-| Swagger | Open at `/swagger` | Login at `/swagger/login` |
+| Swagger | Open at `/swagger` | Open at `/swagger` (`EnabledInProduction`) |
 | CORS | `AllowedOrigins` in Development config | `ALLOWED_ORIGINS` secret (optional) |
 
 Both environments only apply **pending** migrations and seeds — safe on every restart.

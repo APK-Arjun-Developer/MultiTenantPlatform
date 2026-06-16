@@ -27,7 +27,7 @@ A **multi-tenant SaaS backend** on **.NET 10** with:
 | Auth | JWT Bearer + ASP.NET Core Identity |
 | Validation | FluentValidation |
 | Logging | Serilog + request middleware |
-| API docs | Swagger (Development open; Production login-gated) |
+| API docs | Swagger (open in Development and Production) |
 | Deploy | GitHub Actions → MonsterASP.NET FTPS (`win-x86`, InProcess) |
 
 ---
@@ -229,9 +229,9 @@ Errors mapped by `ExceptionHandlingMiddleware` to the same envelope.
 | Environment | URL | Access |
 |-------------|-----|--------|
 | Development | `/swagger` | Open |
-| Production | `/swagger` | Login page (`admin@system.com` + `Seeding:AdminPassword` / `ADMIN_PASSWORD` secret) |
+| Production | `/swagger` | Open (toggle via `Swagger:EnabledInProduction`) |
 
-Use **Authorize** in Swagger UI with `Bearer {accessToken}` from `POST /auth/login`.
+Use **Authorize** in Swagger UI with `Bearer {accessToken}` from `POST /auth/login`. The API itself still enforces JWT auth and tenant isolation on every endpoint — only the documentation page is public.
 
 ---
 
