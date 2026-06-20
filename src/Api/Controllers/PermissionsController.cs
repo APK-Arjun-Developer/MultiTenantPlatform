@@ -1,6 +1,7 @@
 using Api.Attributes;
 using Application.Common;
 using Application.Interfaces.Permissions;
+using Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -18,11 +19,18 @@ public class PermissionsController : ApiControllerBase
         _permissionService = permissionService;
     }
 
+    /// <summary>
+    /// Returns the permission catalog visible to the caller.
+    /// Use <c>scope</c> to narrow results: TenantUser, TenantAdmin, or System.
+    /// System Admin sees all scopes; Tenant Admin sees TenantAdmin + TenantUser.
+    /// </summary>
     [HttpGet]
     [HasPermission(PermissionNames.RolesView)]
-    public async Task<IActionResult> GetAll([FromQuery] bool grouped = false)
+    public async Task<IActionResult> GetAll(
+        [FromQuery] SystemRole? scope = null,
+        [FromQuery] bool grouped = false)
     {
-        var response = await _permissionService.GetCatalogAsync(grouped);
+        var response = await _permissionService.GetCatalogAsync(scope, grouped);
 
         return OkEnvelope(response, "Permissions retrieved.");
     }

@@ -14,15 +14,18 @@ public class AuthController : ApiControllerBase
 {
     private readonly IAuthService _authService;
     private readonly IPasswordResetService _passwordResetService;
+    private readonly IEmailVerificationService _emailVerificationService;
     private readonly JwtSettings _jwtSettings;
 
     public AuthController(
         IAuthService authService,
         IPasswordResetService passwordResetService,
+        IEmailVerificationService emailVerificationService,
         IOptions<JwtSettings> jwtSettings)
     {
         _authService = authService;
         _passwordResetService = passwordResetService;
+        _emailVerificationService = emailVerificationService;
         _jwtSettings = jwtSettings.Value;
     }
 
@@ -68,6 +71,26 @@ public class AuthController : ApiControllerBase
         Response.Cookies.Delete("access_token");
         Response.Cookies.Delete("refresh_token");
         return OkEnvelope("Logged out.");
+    }
+
+    [HttpPost("verify-email")]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> VerifyEmail(
+        VerifyEmailOtpRequest request,
+        CancellationToken cancellationToken)
+    {
+        await _emailVerificationService.VerifyOtpAsync(request, cancellationToken);
+        return OkEnvelope("Email address verified successfully.");
+    }
+
+    [HttpPost("resend-verification")]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> ResendVerification(
+        ResendEmailOtpRequest request,
+        CancellationToken cancellationToken)
+    {
+        await _emailVerificationService.SendOtpAsync(request, cancellationToken);
+        return OkEnvelope("If an unverified account with that email exists, a new code has been sent.");
     }
 
     [HttpPost("forgot-password")]

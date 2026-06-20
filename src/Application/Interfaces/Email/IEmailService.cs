@@ -50,4 +50,12 @@ public interface IEmailService
         string fullName,
         string resetUrl,
         CancellationToken cancellationToken = default);
+
+    // ── Email verification ────────────────────────────────────────────────────
+
+    Task SendEmailVerificationOtpAsync(
+        string toEmail,
+        string fullName,
+        string otp,
+        CancellationToken cancellationToken = default);
 }

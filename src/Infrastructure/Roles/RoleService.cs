@@ -48,11 +48,16 @@ public class RoleService : TenantScopedService, IRoleService
         int page, int pageSize,
         string? search = null)
     {
-        var tenantId = RequireTenantId();
-
         (page, pageSize) = Pagination.Normalize(page, pageSize);
 
-        var query = _roleManager.Roles.Where(r => r.TenantId == tenantId);
+        IQueryable<ApplicationRole> query;
+        if (IsSystemAdmin())
+            query = _roleManager.Roles;
+        else
+        {
+            var tenantId = RequireTenantId();
+            query = _roleManager.Roles.Where(r => r.TenantId == tenantId);
+        }
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -80,11 +85,12 @@ public class RoleService : TenantScopedService, IRoleService
 
     public async Task<RoleResponse> GetByNameAsync(string name)
     {
-        var tenantId = RequireTenantId();
+        var role = IsSystemAdmin()
+            ? await _roleManager.Roles.FirstOrDefaultAsync(r => r.Name == name)
+            : await _roleManager.Roles.FirstOrDefaultAsync(r => r.TenantId == RequireTenantId() && r.Name == name);
 
-        var role = await _roleManager.Roles
-            .FirstOrDefaultAsync(r => r.TenantId == tenantId && r.Name == name)
-            ?? throw new NotFoundException($"Role '{name}' not found.");
+        if (role is null)
+            throw new NotFoundException($"Role '{name}' not found.");
 
         return await MapRoleAsync(role);
     }
@@ -95,18 +101,19 @@ public class RoleService : TenantScopedService, IRoleService
             ?? throw new InvalidOperationException(
                 "Role context is required. Ensure role_id is present in the JWT.");
 
-        var tenantId = RequireTenantId();
+        var role = IsSystemAdmin()
+            ? await _roleManager.Roles.FirstOrDefaultAsync(r => r.Id == roleId)
+            : await _roleManager.Roles.FirstOrDefaultAsync(r => r.Id == roleId && r.TenantId == RequireTenantId());
 
-        var role = await _roleManager.Roles
-            .FirstOrDefaultAsync(r => r.Id == roleId && r.TenantId == tenantId)
-            ?? throw new NotFoundException("Role not found.");
+        if (role is null)
+            throw new NotFoundException("Role not found.");
 
         return await MapRoleAsync(role);
     }
 
     public async Task<RoleResponse> CreateRoleAsync(CreateRoleRequest request)
     {
-        var tenantId = RequireTenantId();
+        var tenantId = IsSystemAdmin() ? Guid.Empty : RequireTenantId();
 
         if (request.Name == RoleNames.SuperAdmin)
         {
@@ -116,6 +123,11 @@ public class RoleService : TenantScopedService, IRoleService
         if (await _identityRoleService.RoleExistsAsync(tenantId, request.Name))
         {
             throw new ConflictException($"Role '{request.Name}' already exists for this tenant.");
+        }
+
+        if (!IsSystemAdmin())
+        {
+            await EnforceTenantUserScopeAsync(request.Permissions);
         }
 
         var role = await _identityRoleService.CreateRoleAsync(tenantId, request.Name, request.Description);
@@ -133,15 +145,21 @@ public class RoleService : TenantScopedService, IRoleService
 
     public async Task<RoleResponse> UpdateRoleAsync(UpdateRoleRequest request)
     {
-        var tenantId = RequireTenantId();
+        var role = IsSystemAdmin()
+            ? await _roleManager.Roles.FirstOrDefaultAsync(r => r.Name == request.Name)
+            : await _roleManager.Roles.FirstOrDefaultAsync(r => r.TenantId == RequireTenantId() && r.Name == request.Name);
 
-        var role = await _roleManager.Roles
-            .FirstOrDefaultAsync(r => r.TenantId == tenantId && r.Name == request.Name)
-            ?? throw new NotFoundException("Role not found.");
+        if (role is null)
+            throw new NotFoundException("Role not found.");
 
         if (role.Name == RoleNames.SuperAdmin)
         {
             throw new ForbiddenException("Cannot modify the SuperAdmin role.");
+        }
+
+        if (!IsSystemAdmin() && role.Name is not RoleNames.TenantAdmin and not RoleNames.TenantUser)
+        {
+            await EnforceTenantUserScopeAsync(request.Permissions);
         }
 
         role.Description = request.Description;
@@ -159,15 +177,16 @@ public class RoleService : TenantScopedService, IRoleService
 
     public async Task DeleteRoleAsync(DeleteRoleRequest request)
     {
-        var tenantId = RequireTenantId();
+        var role = IsSystemAdmin()
+            ? await _roleManager.Roles.FirstOrDefaultAsync(r => r.Name == request.Name)
+            : await _roleManager.Roles.FirstOrDefaultAsync(r => r.TenantId == RequireTenantId() && r.Name == request.Name);
 
-        var role = await _roleManager.Roles
-            .FirstOrDefaultAsync(r => r.TenantId == tenantId && r.Name == request.Name)
-            ?? throw new NotFoundException("Role not found.");
+        if (role is null)
+            throw new NotFoundException("Role not found.");
 
-        if (role.Name == RoleNames.SuperAdmin)
+        if (role.Name is RoleNames.SuperAdmin or RoleNames.TenantAdmin or RoleNames.TenantUser)
         {
-            throw new ForbiddenException("Cannot delete the SuperAdmin role.");
+            throw new ForbiddenException($"Cannot delete the default '{role.Name}' role.");
         }
 
         var assignedUsers = await _context.Set<IdentityUserRole<Guid>>()
@@ -246,6 +265,26 @@ public class RoleService : TenantScopedService, IRoleService
                 PermissionNames = perms.Select(p => p.Name).ToList(),
             };
         }).ToList();
+    }
+
+    private async Task EnforceTenantUserScopeAsync(IEnumerable<Guid> permissionIds)
+    {
+        var ids = permissionIds.ToList();
+        if (ids.Count == 0) return;
+
+        var allowed = PermissionNames.TenantUserPermissions.ToHashSet(StringComparer.Ordinal);
+
+        var disallowed = await _context.Permissions
+            .Where(p => ids.Contains(p.Id) && !allowed.Contains(p.Name))
+            .Select(p => p.Name)
+            .ToListAsync();
+
+        if (disallowed.Count > 0)
+        {
+            throw new ForbiddenException(
+                $"Custom roles may only include TenantUser-scoped permissions. " +
+                $"Disallowed: {string.Join(", ", disallowed)}");
+        }
     }
 
     private async Task<RoleResponse> MapRoleAsync(ApplicationRole role)

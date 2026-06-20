@@ -111,9 +111,10 @@ public class AccountSetupService : IAccountSetupService
                 string.Join(", ", result.Errors.Select(e => e.Description)));
         }
 
-        // Mark token used + activate account in one SaveChanges.
+        // Mark token used + activate + confirm email in one SaveChanges.
         tokenRecord.UsedAt = DateTime.UtcNow;
         user.IsActive = true;
+        user.EmailConfirmed = true;
         user.PasswordSetAt = DateTime.UtcNow;
         user.UpdatedAt = DateTime.UtcNow;
 

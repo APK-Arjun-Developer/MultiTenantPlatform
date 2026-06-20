@@ -94,6 +94,7 @@ public sealed class SuperAdminSeed : IDataSeed
             NormalizedEmail = adminEmail.ToUpperInvariant(),
             NormalizedUserName = adminEmail.ToUpperInvariant(),
             EmailConfirmed = true,
+            IsActive = true,
             CreatedAt = DateTime.UtcNow,
         };
 

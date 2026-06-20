@@ -15,10 +15,7 @@ public class OnboardTenantRequestValidator : AbstractValidator<OnboardTenantRequ
             .NotNull()
             .SetValidator(new OnboardUserDetailsValidator());
 
-        RuleFor(x => x.Roles)
-            .NotEmpty()
-            .WithMessage("At least one role is required.");
-
+        // Roles are optional — TenantAdmin and TenantUser are always auto-created.
         RuleForEach(x => x.Roles)
             .SetValidator(new OnboardRoleDetailsValidator());
     }

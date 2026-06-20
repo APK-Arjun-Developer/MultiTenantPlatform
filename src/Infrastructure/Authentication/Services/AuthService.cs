@@ -49,7 +49,12 @@ public class AuthService : IAuthService
 
         if (!user.IsActive)
         {
-            throw new InvalidOperationException("Account is not active. Please complete your account setup.");
+            throw new InvalidOperationException("Your account has been deactivated. Please contact your administrator.");
+        }
+
+        if (!user.EmailConfirmed)
+        {
+            throw new InvalidOperationException("Your email address has not been verified. Please check your inbox for the verification code.");
         }
 
         var validPassword =

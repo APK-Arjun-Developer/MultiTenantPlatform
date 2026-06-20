@@ -4,6 +4,7 @@ using Application.DTOs.Common;
 using Application.DTOs.Tenant;
 using Application.Exceptions;
 using Domain.Entities;
+using Domain.Enums;
 using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Caching;
 using Application.Interfaces.Tenant;
@@ -255,11 +256,6 @@ public class TenantService : TenantScopedService, ITenantService
             throw new ConflictException("Tenant slug already exists.");
         }
 
-        if (request.Roles.Count == 0)
-        {
-            throw new InvalidOperationException("At least one role is required.");
-        }
-
         await using var transaction = await _context.Database.BeginTransactionAsync();
 
         try
@@ -276,6 +272,11 @@ public class TenantService : TenantScopedService, ITenantService
             _context.Tenants.Add(tenant);
             await _context.SaveChangesAsync();
 
+            // Always provision the two default roles for every new tenant.
+            var adminRole = await _identityRoleService.EnsureTenantAdminRoleAsync(tenant.Id);
+            await _identityRoleService.EnsureTenantUserRoleAsync(tenant.Id);
+
+            // Create any additional custom roles supplied by the caller (optional).
             var createdRoles = new List<CreatedRoleSummary>();
 
             foreach (var roleDetails in request.Roles)
@@ -306,6 +307,7 @@ public class TenantService : TenantScopedService, ITenantService
             {
                 Id = Guid.NewGuid(),
                 TenantId = tenant.Id,
+                SystemRole = SystemRole.TenantAdmin,
                 FullName = request.User.FullName,
                 Email = request.User.Email,
                 UserName = request.User.Email,
@@ -324,7 +326,8 @@ public class TenantService : TenantScopedService, ITenantService
                     string.Join(", ", createResult.Errors.Select(e => e.Description)));
             }
 
-            await _identityRoleService.AddUserToRoleAsync(adminUser.Id, createdRoles[0].Id);
+            // Always assign the initial admin user to the default TenantAdmin role.
+            await _identityRoleService.AddUserToRoleAsync(adminUser.Id, adminRole.Id);
 
             await transaction.CommitAsync();
 

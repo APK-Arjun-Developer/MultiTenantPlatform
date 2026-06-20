@@ -3,6 +3,7 @@ using Application.DTOs.Permissions;
 using Application.Interfaces.Caching;
 using Application.Interfaces.Permissions;
 using Application.Interfaces.Tenant;
+using Domain.Enums;
 using Infrastructure.Caching;
 using Infrastructure.Common;
 using Infrastructure.Persistence.Contexts;
@@ -29,18 +30,28 @@ public class PermissionService : TenantScopedService, IPermissionService
         _cacheOptions = cacheOptions.Value;
     }
 
-    public async Task<PermissionsCatalogResponse> GetCatalogAsync(bool groupByModule = false)
+    public async Task<PermissionsCatalogResponse> GetCatalogAsync(SystemRole? scopeFilter = null, bool groupByModule = false)
     {
         var cacheKey = IsSystemAdmin()
             ? CacheKeys.PermissionCatalogSystem
             : CacheKeys.PermissionCatalogTenant;
 
-        var response = await _cache.GetOrCreateAsync(
+        // Load the full catalog for this caller type; scope filtering happens in memory.
+        var catalog = await _cache.GetOrCreateAsync(
             cacheKey,
             async _ => await LoadCatalogAsync(),
             TimeSpan.FromMinutes(_cacheOptions.PermissionCatalogMinutes));
 
-        return CloneForGrouping(response, groupByModule);
+        // Tenant Admin callers cannot request SystemAdmin-scoped permissions.
+        var effectiveFilter = (!IsSystemAdmin() && scopeFilter == SystemRole.SystemAdmin)
+            ? (SystemRole?)null
+            : scopeFilter;
+
+        var items = effectiveFilter.HasValue
+            ? catalog.Items.Where(p => p.Scope == effectiveFilter.Value.ToString()).ToList()
+            : (IReadOnlyList<PermissionResponse>)catalog.Items;
+
+        return BuildResponse(items, groupByModule);
     }
 
     private async Task<PermissionsCatalogResponse> LoadCatalogAsync()
@@ -53,34 +64,39 @@ public class PermissionService : TenantScopedService, IPermissionService
             query = query.Where(p => allowed.Contains(p.Name));
         }
 
-        var items = await query
+        var rows = await query
             .OrderBy(p => p.Module)
             .ThenBy(p => p.Name)
-            .Select(p => new PermissionResponse
-            {
-                Id = p.Id,
-                Name = p.Name,
-                Module = p.Module,
-                Description = p.Description,
-            })
+            .Select(p => new { p.Id, p.Name, p.Module, p.Description })
             .ToListAsync();
+
+        var items = rows.Select(p => new PermissionResponse
+        {
+            Id = p.Id,
+            Name = p.Name,
+            Module = p.Module,
+            Description = p.Description,
+            Scope = PermissionNames.Scopes.TryGetValue(p.Name, out var scope)
+                ? scope.ToString()
+                : SystemRole.TenantUser.ToString(),
+        }).ToList();
 
         return new PermissionsCatalogResponse { Items = items };
     }
 
-    private static PermissionsCatalogResponse CloneForGrouping(
-        PermissionsCatalogResponse source,
+    private static PermissionsCatalogResponse BuildResponse(
+        IReadOnlyList<PermissionResponse> items,
         bool groupByModule)
     {
         if (!groupByModule)
         {
-            return new PermissionsCatalogResponse { Items = source.Items };
+            return new PermissionsCatalogResponse { Items = items };
         }
 
         return new PermissionsCatalogResponse
         {
-            Items = source.Items,
-            ByModule = source.Items
+            Items = items,
+            ByModule = items
                 .GroupBy(p => p.Module)
                 .Select(g => new PermissionModuleGroupResponse
                 {

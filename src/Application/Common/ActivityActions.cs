@@ -9,6 +9,8 @@ public static class ActivityActions
         public const string Refresh = "Refresh";
         public const string ForgotPassword = "ForgotPassword";
         public const string ResetPassword = "ResetPassword";
+        public const string EmailVerified = "EmailVerified";
+        public const string VerificationOtpResent = "VerificationOtpResent";
     }
 
     public static class Users

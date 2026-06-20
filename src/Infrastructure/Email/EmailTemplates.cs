@@ -149,6 +149,26 @@ internal static class EmailTemplates
 <div class=""divider""></div>
 <p style=""font-size:13px;color:#6b7280;"">If you did not expect this, please contact your administrator immediately.</p>");
 
+    internal static string EmailVerificationOtp(string fullName, string otp) =>
+        Layout(
+            title: "Verify your email address",
+            preheader: $"Hi {fullName}, here is your email verification code.",
+            bodyContent: $@"
+<h2>Verify your email address</h2>
+<p>Hi <strong>{Encode(fullName)}</strong>,</p>
+<p>Use the verification code below to confirm your email address. Enter it in the app to complete verification.</p>
+<div class=""btn-wrap"">
+  <div style=""display:inline-block;background:#f3f4f6;border:2px dashed #1a56db;border-radius:8px;padding:16px 40px;"">
+    <span style=""font-size:36px;font-weight:700;letter-spacing:10px;color:#1a56db;font-family:monospace;"">{Encode(otp)}</span>
+  </div>
+</div>
+<div class=""note"">
+  <strong>This code expires in 15 minutes.</strong><br />
+  If you did not request this code, you can safely ignore this email.
+</div>
+<div class=""divider""></div>
+<p style=""font-size:13px;color:#6b7280;"">Never share this code with anyone. Our team will never ask for it.</p>");
+
     internal static string PasswordReset(string fullName, string resetUrl) =>
         Layout(
             title: "Reset your password",

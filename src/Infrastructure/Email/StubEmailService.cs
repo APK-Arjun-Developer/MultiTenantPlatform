@@ -86,4 +86,14 @@ public sealed class StubEmailService : IEmailService
             toEmail, fullName, resetUrl);
         return Task.CompletedTask;
     }
+
+    public Task SendEmailVerificationOtpAsync(
+        string toEmail, string fullName, string otp,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "[STUB EMAIL] EmailVerificationOtp → {Email} ({FullName}): OTP={Otp}",
+            toEmail, fullName, otp);
+        return Task.CompletedTask;
+    }
 }

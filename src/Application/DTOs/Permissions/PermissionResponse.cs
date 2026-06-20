@@ -9,4 +9,9 @@ public class PermissionResponse
     public string Module { get; set; } = default!;
 
     public string Description { get; set; } = default!;
+
+    /// <summary>
+    /// TenantUser | TenantAdmin | System
+    /// </summary>
+    public string Scope { get; set; } = default!;
 }

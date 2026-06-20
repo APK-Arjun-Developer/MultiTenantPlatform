@@ -75,8 +75,9 @@ public class OnboardingService : TenantScopedService, IOnboardingService
 
         try
         {
-            // Always provision the TenantAdmin role for this tenant with full permissions.
-            var adminRole = await EnsureTenantAdminRoleAsync(tenant.Id, cancellationToken);
+            // Always provision the default roles for this tenant.
+            var adminRole = await _identityRoleService.EnsureTenantAdminRoleAsync(tenant.Id, cancellationToken);
+            await _identityRoleService.EnsureTenantUserRoleAsync(tenant.Id, cancellationToken);
 
             // Resolve any caller-supplied extra roles (optional).
             var extraRoles = request.RoleNames.Count > 0
@@ -221,6 +222,10 @@ public class OnboardingService : TenantScopedService, IOnboardingService
 
         await EnsureEmailNotTakenAsync(request.Email, tenantId, cancellationToken);
 
+        // Ensure default roles exist (idempotent — safe even if already present).
+        await _identityRoleService.EnsureTenantAdminRoleAsync(tenantId, cancellationToken);
+        await _identityRoleService.EnsureTenantUserRoleAsync(tenantId, cancellationToken);
+
         var roles = await ResolveRolesByNameAsync(tenantId, request.RoleNames, cancellationToken);
 
         await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
@@ -309,7 +314,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
             UserName = email,
             NormalizedEmail = email.ToUpperInvariant(),
             NormalizedUserName = email.ToUpperInvariant(),
-            EmailConfirmed = true,
+            EmailConfirmed = false,
             IsActive = false,
             CreatedAt = DateTime.UtcNow,
         };
@@ -380,44 +385,6 @@ public class OnboardingService : TenantScopedService, IOnboardingService
         {
             throw new ConflictException($"A user with email '{email}' already exists in this tenant.");
         }
-    }
-
-    // Creates the TenantAdmin role for the tenant if absent (or restores it if soft-deleted),
-    // then idempotently assigns every tenant-scoped permission to it.
-    private async Task<ApplicationRole> EnsureTenantAdminRoleAsync(
-        Guid tenantId,
-        CancellationToken cancellationToken)
-    {
-        var role = await _identityRoleService.CreateRoleAsync(
-            tenantId,
-            RoleNames.TenantAdmin,
-            "Tenant administrator — full access to all tenant resources.");
-
-        var tenantPermissionNames = PermissionNames.TenantPermissions.ToHashSet(StringComparer.Ordinal);
-
-        var allPermissions = await _context.Permissions
-            .AsNoTracking()
-            .Where(p => tenantPermissionNames.Contains(p.Name))
-            .ToListAsync(cancellationToken);
-
-        var existingIds = (await _context.RolePermissions
-            .Where(rp => rp.RoleId == role.Id)
-            .Select(rp => rp.PermissionId)
-            .ToListAsync(cancellationToken))
-            .ToHashSet();
-
-        foreach (var permission in allPermissions.Where(p => !existingIds.Contains(p.Id)))
-        {
-            _context.RolePermissions.Add(new RolePermission
-            {
-                RoleId = role.Id,
-                PermissionId = permission.Id,
-            });
-        }
-
-        await _context.SaveChangesAsync(cancellationToken);
-
-        return role;
     }
 
     private async Task<List<ApplicationRole>> ResolveRolesByNameAsync(

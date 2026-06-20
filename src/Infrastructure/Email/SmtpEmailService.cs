@@ -125,6 +125,16 @@ public sealed class SmtpEmailService : IEmailService
             emailType: "PasswordReset",
             cancellationToken);
 
+    public Task SendEmailVerificationOtpAsync(
+        string toEmail, string fullName, string otp,
+        CancellationToken cancellationToken = default) =>
+        SendAsync(
+            toEmail,
+            "Your email verification code",
+            EmailTemplates.EmailVerificationOtp(fullName, otp),
+            emailType: "EmailVerificationOtp",
+            cancellationToken);
+
     // ── Core send ─────────────────────────────────────────────────────────────
 
     private async Task SendAsync(
