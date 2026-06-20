@@ -2,6 +2,8 @@ using Application.Common;
 using Application.DTOs.ActivityLogs;
 using Application.DTOs.Common;
 using Application.DTOs.Users;
+using Application.Interfaces.Authentication;
+using Application.Options;
 using Domain.Enums;
 using Application.Exceptions;
 using Application.Interfaces.ActivityLogs;
@@ -16,6 +18,7 @@ using Infrastructure.Persistence;
 using Infrastructure.Persistence.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Users;
 
@@ -27,6 +30,8 @@ public class UserManagementService : TenantScopedService, IUserManagementService
     private readonly IActivityLogService _activityLogService;
     private readonly IAppCache _cache;
     private readonly IIdentityRoleService _identityRoleService;
+    private readonly IEmailVerificationService _emailVerificationService;
+    private readonly FeatureOptions _features;
 
     public UserManagementService(
         ApplicationDbContext context,
@@ -35,7 +40,9 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         ICurrentTenantService currentTenantService,
         IActivityLogService activityLogService,
         IAppCache cache,
-        IIdentityRoleService identityRoleService)
+        IIdentityRoleService identityRoleService,
+        IEmailVerificationService emailVerificationService,
+        IOptions<FeatureOptions> features)
         : base(currentTenantService)
     {
         _context = context;
@@ -44,6 +51,8 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         _activityLogService = activityLogService;
         _cache = cache;
         _identityRoleService = identityRoleService;
+        _emailVerificationService = emailVerificationService;
+        _features = features.Value;
     }
 
     public async Task<UserResponse> CreateUserAsync(CreateUserRequest request)
@@ -57,13 +66,13 @@ public class UserManagementService : TenantScopedService, IUserManagementService
                 "Tenant users cannot be created in the platform scope.");
         }
 
-        if (request.RoleName == RoleNames.SuperAdmin)
-        {
-            throw new ForbiddenException("Cannot assign the SuperAdmin role.");
-        }
+        var roles = await _context.Roles
+            .Where(r => request.RoleIds.Contains(r.Id) && r.TenantId == tenantId)
+            .ToListAsync();
 
-        var role = await _identityRoleService.FindRoleByNameAsync(tenantId, request.RoleName)
-            ?? throw new NotFoundException($"Role '{request.RoleName}' was not found for this tenant.");
+        var notFound = request.RoleIds.Except(roles.Select(r => r.Id)).ToList();
+        if (notFound.Count > 0)
+            throw new NotFoundException($"Role(s) not found for this tenant: {string.Join(", ", notFound)}");
 
         var emailExists = await _userManager.Users
             .AnyAsync(u =>
@@ -75,19 +84,19 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             throw new ConflictException("User email already exists.");
         }
 
+        var emailConfirmed = !_features.RequireEmailVerification;
+
         var user = new ApplicationUser
         {
             Id = Guid.NewGuid(),
             TenantId = tenantId,
-            SystemRole = request.RoleName == RoleNames.TenantAdmin
-                ? SystemRole.TenantAdmin
-                : SystemRole.TenantUser,
+            SystemRole = SystemRole.TenantUser,
             FullName = request.FullName,
             Email = request.Email,
             UserName = request.Email,
             NormalizedEmail = request.Email.ToUpperInvariant(),
             NormalizedUserName = request.Email.ToUpperInvariant(),
-            EmailConfirmed = true,
+            EmailConfirmed = emailConfirmed,
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         };
@@ -100,11 +109,19 @@ public class UserManagementService : TenantScopedService, IUserManagementService
                 string.Join(", ", result.Errors.Select(e => e.Description)));
         }
 
-        await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
+        foreach (var role in roles)
+        {
+            await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
+        }
+
+        if (_features.RequireEmailVerification)
+        {
+            await _emailVerificationService.SendVerificationOtpAsync(user.Email!, tenantId);
+        }
 
         await LogActivityAsync(
             ActivityActions.Users.Created,
-            $"Created user '{user.Email}' with role '{request.RoleName}'.");
+            $"Created user '{user.Email}'.");
 
         _cache.InvalidateTenantDashboard(tenantId);
 
@@ -122,19 +139,10 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         (page, pageSize) = Pagination.Normalize(page, pageSize);
 
         var isAdmin = IsSystemAdmin();
+        var tenantId = RequireTenantId();
 
         IQueryable<ApplicationUser> query = _userManager.Users
-            .Where(u => u.Id != currentUserId);
-
-        if (isAdmin)
-        {
-            query = query.Where(u => u.TenantId != Guid.Empty);
-        }
-        else
-        {
-            var tenantId = RequireTenantId();
-            query = query.Where(u => u.TenantId == tenantId);
-        }
+            .Where(u => u.Id != currentUserId && u.TenantId == tenantId);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -219,23 +227,11 @@ public class UserManagementService : TenantScopedService, IUserManagementService
     public async Task<UserResponse> GetByIdAsync(Guid id)
     {
         var isAdmin = IsSystemAdmin();
+        var tenantId = RequireTenantId();
 
-        ApplicationUser? user;
-
-        if (isAdmin)
-        {
-            user = await _userManager.Users
-                .FirstOrDefaultAsync(u => u.Id == id && u.TenantId != Guid.Empty)
-                ?? throw new NotFoundException("User not found.");
-        }
-        else
-        {
-            var tenantId = RequireTenantId();
-
-            user = await _userManager.Users
-                .FirstOrDefaultAsync(u => u.Id == id && u.TenantId == tenantId)
-                ?? throw new NotFoundException("User not found.");
-        }
+        var user = await _userManager.Users
+            .FirstOrDefaultAsync(u => u.Id == id && u.TenantId == tenantId)
+            ?? throw new NotFoundException("User not found.");
 
         UserTenantDetails? tenantDetails = null;
 
@@ -310,15 +306,11 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(request.RoleName))
+        if (request.RoleId.HasValue)
         {
-            if (request.RoleName == RoleNames.SuperAdmin)
-            {
-                throw new ForbiddenException("Cannot assign the SuperAdmin role.");
-            }
-
-            var role = await _identityRoleService.FindRoleByNameAsync(user.TenantId, request.RoleName)
-                ?? throw new NotFoundException($"Role '{request.RoleName}' was not found for this tenant.");
+            var role = await _context.Roles
+                .FirstOrDefaultAsync(r => r.Id == request.RoleId.Value && r.TenantId == user.TenantId)
+                ?? throw new NotFoundException($"Role '{request.RoleId}' was not found for this tenant.");
 
             var existingAssignments = await _context.Set<IdentityUserRole<Guid>>()
                 .Where(ur => ur.UserId == user.Id)
@@ -327,10 +319,6 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             _context.Set<IdentityUserRole<Guid>>().RemoveRange(existingAssignments);
 
             await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
-
-            user.SystemRole = request.RoleName == RoleNames.TenantAdmin
-                ? SystemRole.TenantAdmin
-                : SystemRole.TenantUser;
         }
 
         // UserManager.UpdateAsync internally calls SaveChangesAsync — no second call needed.
@@ -418,6 +406,11 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         if (user.Id == currentUserId)
         {
             throw new ConflictException("You cannot delete your own account.");
+        }
+
+        if (!IsSystemAdmin() && user.SystemRole == SystemRole.TenantAdmin)
+        {
+            throw new ForbiddenException("Tenant administrators cannot delete other tenant admin accounts.");
         }
 
         user.DeletedAt = DateTime.UtcNow;
@@ -565,15 +558,11 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         await AddressHelper.ApplyUserAddressUpdateAsync(
             _context, user, request.Address, request.ClearAddress);
 
-        if (!string.IsNullOrWhiteSpace(request.RoleName))
+        if (request.RoleId.HasValue)
         {
-            if (request.RoleName == RoleNames.SuperAdmin)
-            {
-                throw new ForbiddenException("Cannot assign the SuperAdmin role.");
-            }
-
-            var role = await _identityRoleService.FindRoleByNameAsync(user.TenantId, request.RoleName)
-                ?? throw new NotFoundException($"Role '{request.RoleName}' was not found for this tenant.");
+            var role = await _context.Roles
+                .FirstOrDefaultAsync(r => r.Id == request.RoleId.Value && r.TenantId == user.TenantId)
+                ?? throw new NotFoundException($"Role '{request.RoleId}' was not found for this tenant.");
 
             var existingAssignments = await _context.Set<IdentityUserRole<Guid>>()
                 .Where(ur => ur.UserId == user.Id)
@@ -582,10 +571,6 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             _context.Set<IdentityUserRole<Guid>>().RemoveRange(existingAssignments);
 
             await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
-
-            user.SystemRole = request.RoleName == RoleNames.TenantAdmin
-                ? SystemRole.TenantAdmin
-                : SystemRole.TenantUser;
         }
 
         await _userManager.UpdateAsync(user);
@@ -652,15 +637,6 @@ public class UserManagementService : TenantScopedService, IUserManagementService
     private async Task<ApplicationUser?> FindManagedUserAsync(string email)
     {
         var normalizedEmail = email.ToUpperInvariant();
-
-        if (IsSystemAdmin())
-        {
-            return await _userManager.Users
-                .FirstOrDefaultAsync(u =>
-                    u.NormalizedEmail == normalizedEmail &&
-                    u.TenantId != Guid.Empty);
-        }
-
         var tenantId = RequireTenantId();
 
         return await _userManager.Users

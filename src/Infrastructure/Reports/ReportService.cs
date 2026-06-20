@@ -67,8 +67,8 @@ public class ReportService : IReportService
         {
             UserCount = await _userManager.Users.CountAsync(u => u.TenantId == tenantId),
             RoleCount = await _context.Roles.CountAsync(r => r.TenantId == tenantId),
-            ProductCount = await _context.Products.CountAsync(),
-            ActivityLogCount = await _context.ActivityLogs.CountAsync(),
+            ProductCount = await _context.Products.CountAsync(p => p.TenantId == tenantId),
+            ActivityLogCount = await _context.ActivityLogs.CountAsync(a => a.TenantId == tenantId),
             GeneratedAtUtc = DateTime.UtcNow,
         };
     }

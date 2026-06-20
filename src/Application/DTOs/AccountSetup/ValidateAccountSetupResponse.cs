@@ -8,5 +8,7 @@ public class ValidateAccountSetupResponse
 
     public string? FullName { get; set; }
 
+    public string? TenantSlug { get; set; }
+
     public string? ErrorMessage { get; set; }
 }

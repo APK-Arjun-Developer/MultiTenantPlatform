@@ -21,8 +21,4 @@ public interface IIdentityRoleService
     Task AssignPermissionsToRoleAsync(Guid roleId, IEnumerable<string> permissionNames);
 
     Task AddUserToRoleAsync(Guid userId, Guid roleId);
-
-    Task<ApplicationRole> EnsureTenantAdminRoleAsync(Guid tenantId, CancellationToken ct = default);
-
-    Task<ApplicationRole> EnsureTenantUserRoleAsync(Guid tenantId, CancellationToken ct = default);
 }

@@ -2,6 +2,7 @@ using Application.Common;
 using Application.Interfaces.Authorization;
 using Application.Interfaces.Caching;
 using Application.Interfaces.Tenant;
+using Domain.Enums;
 using Infrastructure.Caching;
 using Infrastructure.Identity.Entities;
 using Infrastructure.Persistence.Contexts;
@@ -18,7 +19,6 @@ public class CurrentUserPermissionService : ICurrentUserPermissionService
 
     private readonly ApplicationDbContext _context;
     private readonly ICurrentTenantService _currentTenantService;
-    private readonly UserManager<ApplicationUser> _userManager;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IAppCache _cache;
     private readonly IRolePermissionLookup _rolePermissionLookup;
@@ -27,7 +27,6 @@ public class CurrentUserPermissionService : ICurrentUserPermissionService
     public CurrentUserPermissionService(
         ApplicationDbContext context,
         ICurrentTenantService currentTenantService,
-        UserManager<ApplicationUser> userManager,
         IHttpContextAccessor httpContextAccessor,
         IAppCache cache,
         IRolePermissionLookup rolePermissionLookup,
@@ -35,7 +34,6 @@ public class CurrentUserPermissionService : ICurrentUserPermissionService
     {
         _context = context;
         _currentTenantService = currentTenantService;
-        _userManager = userManager;
         _httpContextAccessor = httpContextAccessor;
         _cache = cache;
         _rolePermissionLookup = rolePermissionLookup;
@@ -66,7 +64,13 @@ public class CurrentUserPermissionService : ICurrentUserPermissionService
 
         var userId = _currentTenantService.UserId.Value;
 
-        if (httpContext?.User.IsInRole(RoleNames.SuperAdmin) == true)
+        // Resolve system role from JWT claim — no DB lookup required.
+        var systemRoleClaim = httpContext?.User.FindFirst("system_role")?.Value;
+        var userSystemRole = int.TryParse(systemRoleClaim, out var srInt)
+            ? (SystemRole)srInt
+            : SystemRole.TenantUser;
+
+        if (userSystemRole == SystemRole.SystemAdmin)
         {
             var allPermissions = await _cache.GetOrCreateAsync(
                 CacheKeys.PermissionNamesSystem,
@@ -77,10 +81,22 @@ public class CurrentUserPermissionService : ICurrentUserPermissionService
                 TimeSpan.FromMinutes(_cacheOptions.PermissionCatalogMinutes));
 
             CachePermissions(httpContext, allPermissions);
-
             return allPermissions;
         }
 
+        if (userSystemRole == SystemRole.TenantAdmin)
+        {
+            // TenantAdmin always gets the full tenant-level permission set.
+            // Permissions come from SystemRole, not from role table lookups.
+            IReadOnlyList<string> tenantPerms = PermissionNames.TenantPermissions
+                .OrderBy(p => p)
+                .ToList();
+
+            CachePermissions(httpContext, tenantPerms);
+            return tenantPerms;
+        }
+
+        // TenantUser: permissions come from assigned custom roles only.
         var tenantId = _currentTenantService.TenantId ?? Guid.Empty;
 
         var roleIds = await _context.Set<IdentityUserRole<Guid>>()
@@ -96,7 +112,6 @@ public class CurrentUserPermissionService : ICurrentUserPermissionService
         if (roleIds.Count == 0)
         {
             CachePermissions(httpContext, []);
-
             return [];
         }
 
@@ -111,6 +126,11 @@ public class CurrentUserPermissionService : ICurrentUserPermissionService
                 permissionSet.Add(name);
             }
         }
+
+        // Permission Ceiling: strip any permission requiring a higher system role.
+        permissionSet.RemoveWhere(p =>
+            PermissionNames.Scopes.TryGetValue(p, out var required) &&
+            required < userSystemRole);
 
         var permissions = permissionSet.OrderBy(p => p).ToList();
 

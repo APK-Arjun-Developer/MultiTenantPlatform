@@ -3,6 +3,7 @@ using Application.DTOs.ActivityLogs;
 using Application.DTOs.Auth;
 using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Authentication;
+using Domain.Enums;
 using Infrastructure.Identity.Entities;
 using Infrastructure.Persistence.Contexts;
 using Microsoft.AspNetCore.Identity;
@@ -77,6 +78,7 @@ public class AuthService : IAuthService
             user.Email!,
             user.FullName,
             user.TenantId,
+            user.SystemRole,
             roles);
 
         var refreshToken = await _refreshTokenService.CreateAsync(
@@ -132,6 +134,7 @@ public class AuthService : IAuthService
             user.Email!,
             user.FullName,
             user.TenantId,
+            user.SystemRole,
             roles);
 
         await _activityLogService.LogAsync(new LogActivityRequest
@@ -242,10 +245,19 @@ public class AuthService : IAuthService
 
     private async Task<IList<(Guid Id, string Name)>> GetUserRolesWithIdsAsync(ApplicationUser user)
     {
+        // Exclude built-in system role names — those are represented by the system_role JWT claim,
+        // not by Roles table entries. Only custom tenant-defined roles belong in the token.
+        var builtIn = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            RoleNames.SystemAdmin,
+            RoleNames.TenantAdmin,
+            RoleNames.TenantUser,
+        };
+
         return await _context.Set<IdentityUserRole<Guid>>()
             .Where(ur => ur.UserId == user.Id)
             .Join(
-                _context.Roles.Where(r => r.TenantId == user.TenantId),
+                _context.Roles.Where(r => r.TenantId == user.TenantId && !builtIn.Contains(r.Name!)),
                 ur => ur.RoleId,
                 r => r.Id,
                 (_, r) => new ValueTuple<Guid, string>(r.Id, r.Name!))

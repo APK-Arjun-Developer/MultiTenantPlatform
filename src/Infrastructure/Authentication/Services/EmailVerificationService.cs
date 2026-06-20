@@ -52,6 +52,29 @@ public class EmailVerificationService : IEmailVerificationService
             return;
         }
 
+        await IssueAndSendOtpAsync(user, cancellationToken);
+    }
+
+    public async Task SendVerificationOtpAsync(
+        string email,
+        Guid tenantId,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await _userManager.Users
+            .FirstOrDefaultAsync(
+                u => u.NormalizedEmail == email.ToUpperInvariant() && u.TenantId == tenantId,
+                cancellationToken);
+
+        if (user == null || user.EmailConfirmed)
+        {
+            return;
+        }
+
+        await IssueAndSendOtpAsync(user, cancellationToken);
+    }
+
+    private async Task IssueAndSendOtpAsync(ApplicationUser user, CancellationToken cancellationToken)
+    {
         var otp = GenerateOtp();
         var otpHash = HashOtp(otp);
         var now = DateTime.UtcNow;

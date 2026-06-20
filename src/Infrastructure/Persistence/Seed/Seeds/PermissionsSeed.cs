@@ -1,5 +1,6 @@
 using Application.Common;
 using Domain.Entities;
+using Domain.Enums;
 using Infrastructure.Persistence.Contexts;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,31 +8,44 @@ namespace Infrastructure.Persistence.Seed.Seeds;
 
 public sealed class PermissionsSeed : IDataSeed
 {
-    public const string Id = "20260603000002_Permissions";
+    public const string Id = "20260603000001_Permissions";
 
-    private static readonly (string Name, string Module, string Description)[] PermissionDefinitions =
+    private static readonly (string Name, string Module, string Description, SystemRole RequiredSystemRole)[] Definitions =
     [
-        (PermissionNames.UsersCreate, "Users", "Create users"),
-        (PermissionNames.UsersView, "Users", "View users"),
-        (PermissionNames.UsersEdit, "Users", "Edit users"),
-        (PermissionNames.UsersDelete, "Users", "Delete users"),
-        (PermissionNames.RolesCreate, "Roles", "Create roles"),
-        (PermissionNames.RolesView, "Roles", "View roles"),
-        (PermissionNames.RolesEdit, "Roles", "Edit roles"),
-        (PermissionNames.RolesDelete, "Roles", "Delete roles"),
-        (PermissionNames.ProductsCreate, "Products", "Create products"),
-        (PermissionNames.ProductsView, "Products", "View products"),
-        (PermissionNames.ProductsEdit, "Products", "Edit products"),
-        (PermissionNames.ProductsDelete, "Products", "Delete products"),
-        (PermissionNames.ReportsView, "Reports", "View reports"),
-        (PermissionNames.ReportsExport, "Reports", "Export reports"),
-        (PermissionNames.FilesView, "Files", "View files"),
-        (PermissionNames.FilesUpload, "Files", "Upload files"),
-        (PermissionNames.FilesDelete, "Files", "Delete files"),
-        (PermissionNames.TenantsCreate, "Tenants", "Create tenants"),
-        (PermissionNames.TenantsView, "Tenants", "View tenants"),
-        (PermissionNames.TenantsEdit, "Tenants", "Edit tenants"),
-        (PermissionNames.TenantsDelete, "Tenants", "Delete tenants"),
+        // TenantUser — basic operational permissions
+        (PermissionNames.ProfileView,    "Profile",   "View own profile",                       SystemRole.TenantUser),
+        (PermissionNames.ProfileEdit,    "Profile",   "Edit own profile and change password",   SystemRole.TenantUser),
+        (PermissionNames.ProductsCreate, "Products",  "Create products",                        SystemRole.TenantUser),
+        (PermissionNames.ProductsView,   "Products",  "View products",                          SystemRole.TenantUser),
+        (PermissionNames.ProductsEdit,   "Products",  "Edit products",                          SystemRole.TenantUser),
+        (PermissionNames.ProductsDelete, "Products",  "Delete products",                        SystemRole.TenantUser),
+        (PermissionNames.ReportsView,    "Reports",   "View reports",                           SystemRole.TenantUser),
+        (PermissionNames.ReportsExport,  "Reports",   "Export reports",                         SystemRole.TenantUser),
+        (PermissionNames.FilesView,      "Files",     "View files",                             SystemRole.TenantUser),
+        (PermissionNames.FilesUpload,    "Files",     "Upload files",                           SystemRole.TenantUser),
+
+        // TenantAdmin — tenant management permissions
+        (PermissionNames.UsersCreate,          "Users",      "Create users",                            SystemRole.TenantAdmin),
+        (PermissionNames.UsersView,            "Users",      "View users",                              SystemRole.TenantAdmin),
+        (PermissionNames.UsersEdit,            "Users",      "Edit users",                              SystemRole.TenantAdmin),
+        (PermissionNames.UsersDelete,          "Users",      "Delete users",                            SystemRole.TenantAdmin),
+        (PermissionNames.RolesCreate,          "Roles",      "Create roles",                            SystemRole.TenantAdmin),
+        (PermissionNames.RolesView,            "Roles",      "View roles",                              SystemRole.TenantAdmin),
+        (PermissionNames.RolesEdit,            "Roles",      "Edit roles",                              SystemRole.TenantAdmin),
+        (PermissionNames.RolesDelete,          "Roles",      "Delete roles",                            SystemRole.TenantAdmin),
+        (PermissionNames.FilesDelete,          "Files",      "Delete files",                            SystemRole.TenantAdmin),
+        (PermissionNames.OnboardingCreate,     "Onboarding", "Create users via direct onboarding flow", SystemRole.TenantAdmin),
+        (PermissionNames.OnboardingInvite,     "Onboarding", "Send invitation emails to new users",     SystemRole.TenantAdmin),
+        (PermissionNames.OnboardingResend,     "Onboarding", "Resend onboarding or setup emails",       SystemRole.TenantAdmin),
+        (PermissionNames.OnboardingRevoke,     "Onboarding", "Revoke pending invitations",              SystemRole.TenantAdmin),
+        (PermissionNames.OnboardingActivate,   "Onboarding", "Activate user accounts",                  SystemRole.TenantAdmin),
+        (PermissionNames.OnboardingDeactivate, "Onboarding", "Deactivate user accounts",                SystemRole.TenantAdmin),
+
+        // SystemAdmin — platform-level permissions
+        (PermissionNames.TenantsCreate, "Tenants", "Create tenants", SystemRole.SystemAdmin),
+        (PermissionNames.TenantsView,   "Tenants", "View tenants",   SystemRole.SystemAdmin),
+        (PermissionNames.TenantsEdit,   "Tenants", "Edit tenants",   SystemRole.SystemAdmin),
+        (PermissionNames.TenantsDelete, "Tenants", "Delete tenants", SystemRole.SystemAdmin),
     ];
 
     private readonly ApplicationDbContext _context;
@@ -43,17 +57,17 @@ public sealed class PermissionsSeed : IDataSeed
 
     public string SeedId => Id;
 
-    public string Description => "RBAC permission catalog.";
+    public string Description => "Full RBAC permission catalog with system role scopes.";
 
     public async Task ApplyAsync(CancellationToken cancellationToken = default)
     {
-        var existingNames = await _context.Permissions
+        var existing = await _context.Permissions
             .Select(p => p.Name)
             .ToListAsync(cancellationToken);
 
-        var existingSet = existingNames.ToHashSet(StringComparer.Ordinal);
+        var existingSet = existing.ToHashSet(StringComparer.Ordinal);
 
-        foreach (var (name, module, description) in PermissionDefinitions)
+        foreach (var (name, module, description, requiredSystemRole) in Definitions)
         {
             if (existingSet.Contains(name))
             {
@@ -66,6 +80,7 @@ public sealed class PermissionsSeed : IDataSeed
                 Name = name,
                 Module = module,
                 Description = description,
+                RequiredSystemRole = requiredSystemRole,
                 CreatedAt = DateTime.UtcNow,
             });
         }

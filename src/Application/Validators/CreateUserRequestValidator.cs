@@ -22,7 +22,8 @@ public class CreateUserRequestValidator : AbstractValidator<CreateUserRequest>
             .Matches("[a-z]").WithMessage("Password must contain at least one lowercase letter.")
             .Matches("[0-9]").WithMessage("Password must contain at least one digit.");
 
-        RuleFor(x => x.RoleName)
-            .NotEmpty();
+        RuleFor(x => x.RoleIds)
+            .NotEmpty().WithMessage("At least one role is required.")
+            .Must(ids => ids.All(id => id != Guid.Empty)).WithMessage("Role IDs must be valid GUIDs.");
     }
 }

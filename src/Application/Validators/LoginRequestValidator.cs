@@ -20,6 +20,6 @@ public class LoginRequestValidator : AbstractValidator<LoginRequest>
             .When(x => !string.IsNullOrWhiteSpace(x.TenantSlug))
             .WithMessage(
                 "TenantSlug must be lowercase alphanumeric with optional hyphens. " +
-                "Omit TenantSlug for platform SuperAdmin login.");
+                "Omit TenantSlug for platform SystemAdmin login.");
     }
 }

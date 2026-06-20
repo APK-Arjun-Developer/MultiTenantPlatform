@@ -12,5 +12,7 @@ public class ValidateInvitationResponse
 
     public string? TenantName { get; set; }
 
+    public string? TenantSlug { get; set; }
+
     public string? ErrorMessage { get; set; }
 }

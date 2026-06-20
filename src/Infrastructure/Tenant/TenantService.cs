@@ -3,6 +3,8 @@ using Application.DTOs.ActivityLogs;
 using Application.DTOs.Common;
 using Application.DTOs.Tenant;
 using Application.Exceptions;
+using Application.Interfaces.Authentication;
+using Application.Options;
 using Domain.Entities;
 using Domain.Enums;
 using Application.Interfaces.ActivityLogs;
@@ -28,6 +30,8 @@ public class TenantService : TenantScopedService, ITenantService
     private readonly IAppCache _cache;
     private readonly CacheOptions _cacheOptions;
     private readonly IIdentityRoleService _identityRoleService;
+    private readonly IEmailVerificationService _emailVerificationService;
+    private readonly FeatureOptions _features;
 
     public TenantService(
         ApplicationDbContext context,
@@ -36,7 +40,9 @@ public class TenantService : TenantScopedService, ITenantService
         IActivityLogService activityLogService,
         IAppCache cache,
         IOptions<CacheOptions> cacheOptions,
-        IIdentityRoleService identityRoleService)
+        IIdentityRoleService identityRoleService,
+        IEmailVerificationService emailVerificationService,
+        IOptions<FeatureOptions> features)
         : base(currentTenantService)
     {
         _context = context;
@@ -45,6 +51,8 @@ public class TenantService : TenantScopedService, ITenantService
         _cache = cache;
         _cacheOptions = cacheOptions.Value;
         _identityRoleService = identityRoleService;
+        _emailVerificationService = emailVerificationService;
+        _features = features.Value;
     }
 
     public async Task<PagedResponse<TenantResponse>> GetTenantsAsync(
@@ -272,18 +280,14 @@ public class TenantService : TenantScopedService, ITenantService
             _context.Tenants.Add(tenant);
             await _context.SaveChangesAsync();
 
-            // Always provision the two default roles for every new tenant.
-            var adminRole = await _identityRoleService.EnsureTenantAdminRoleAsync(tenant.Id);
-            await _identityRoleService.EnsureTenantUserRoleAsync(tenant.Id);
-
-            // Create any additional custom roles supplied by the caller (optional).
+            // Create any caller-supplied custom roles (optional).
             var createdRoles = new List<CreatedRoleSummary>();
 
             foreach (var roleDetails in request.Roles)
             {
-                if (roleDetails.Name == RoleNames.SuperAdmin)
+                if (roleDetails.Name is RoleNames.SystemAdmin or RoleNames.TenantAdmin or RoleNames.TenantUser)
                 {
-                    throw new ForbiddenException("Cannot create the SuperAdmin role for a tenant.");
+                    throw new ForbiddenException($"Cannot create built-in system role '{roleDetails.Name}' for a tenant.");
                 }
 
                 if (await _identityRoleService.RoleExistsAsync(tenant.Id, roleDetails.Name))
@@ -303,6 +307,7 @@ public class TenantService : TenantScopedService, ITenantService
 
             await _context.SaveChangesAsync();
 
+            // TenantAdmin permissions come from SystemRole — no role table entry or assignment needed.
             var adminUser = new ApplicationUser
             {
                 Id = Guid.NewGuid(),
@@ -313,7 +318,7 @@ public class TenantService : TenantScopedService, ITenantService
                 UserName = request.User.Email,
                 NormalizedEmail = request.User.Email.ToUpperInvariant(),
                 NormalizedUserName = request.User.Email.ToUpperInvariant(),
-                EmailConfirmed = true,
+                EmailConfirmed = !_features.RequireEmailVerification,
                 IsActive = true,
                 CreatedAt = DateTime.UtcNow
             };
@@ -326,10 +331,13 @@ public class TenantService : TenantScopedService, ITenantService
                     string.Join(", ", createResult.Errors.Select(e => e.Description)));
             }
 
-            // Always assign the initial admin user to the default TenantAdmin role.
-            await _identityRoleService.AddUserToRoleAsync(adminUser.Id, adminRole.Id);
-
             await transaction.CommitAsync();
+
+            if (_features.RequireEmailVerification)
+            {
+                await _emailVerificationService.SendVerificationOtpAsync(
+                    adminUser.Email!, tenant.Id);
+            }
 
             _cache.InvalidateTenantCatalog();
             _cache.InvalidateTenant(tenant.Id);

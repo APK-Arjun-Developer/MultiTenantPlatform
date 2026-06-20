@@ -12,7 +12,7 @@ namespace Api.Controllers;
 
 /// <summary>
 /// System Admin endpoints for tenant admin management (CRUD + onboarding + invitation).
-/// All routes require SuperAdmin authentication.
+/// All routes require SystemAdmin authentication.
 /// </summary>
 [ApiController]
 [Route("api/v1/tenant-admins")]

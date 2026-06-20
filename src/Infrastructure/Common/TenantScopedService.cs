@@ -11,21 +11,20 @@ public abstract class TenantScopedService
         CurrentTenantService = currentTenantService;
     }
 
-    protected bool IsSystemAdmin() =>
-        CurrentTenantService.TenantId.HasValue &&
-        CurrentTenantService.TenantId.Value == Guid.Empty;
+    protected bool IsSystemAdmin() => CurrentTenantService.IsSystemAdmin;
 
     protected Guid RequireTenantId()
     {
-        var tenantId = CurrentTenantService.TenantId ?? Guid.Empty;
-
-        if (tenantId == Guid.Empty)
+        if (!CurrentTenantService.TenantId.HasValue || CurrentTenantService.TenantId.Value == Guid.Empty)
         {
-            throw new InvalidOperationException(
-                "Tenant context is required. Ensure tenant_id is present in the JWT.");
+            var message = CurrentTenantService.IsSystemAdmin
+                ? "Tenant context is required. Provide the X-Tenant-Id request header."
+                : "Tenant context is required. Ensure tenant_id is present in the JWT.";
+
+            throw new InvalidOperationException(message);
         }
 
-        return tenantId;
+        return CurrentTenantService.TenantId.Value;
     }
 
     protected Guid RequireUserId()

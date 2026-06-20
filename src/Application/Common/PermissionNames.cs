@@ -19,6 +19,9 @@ public static class PermissionNames
     public const string ProductsEdit = "Products.Edit";
     public const string ProductsDelete = "Products.Delete";
 
+    public const string ProfileView = "Profile.View";
+    public const string ProfileEdit = "Profile.Edit";
+
     public const string ReportsView = "Reports.View";
     public const string ReportsExport = "Reports.Export";
 
@@ -48,6 +51,8 @@ public static class PermissionNames
         RolesView,
         RolesEdit,
         RolesDelete,
+        ProfileView,
+        ProfileEdit,
         ProductsCreate,
         ProductsView,
         ProductsEdit,
@@ -75,6 +80,8 @@ public static class PermissionNames
         new Dictionary<string, SystemRole>
         {
             // TenantUser — basic operational permissions
+            [ProfileView]    = SystemRole.TenantUser,
+            [ProfileEdit]    = SystemRole.TenantUser,
             [ProductsCreate] = SystemRole.TenantUser,
             [ProductsView]   = SystemRole.TenantUser,
             [ProductsEdit]   = SystemRole.TenantUser,

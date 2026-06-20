@@ -25,6 +25,11 @@ public class UpdateUserRequestValidator : AbstractValidator<UpdateUserRequest>
             .Matches("[0-9]").WithMessage("Password must contain at least one digit.")
             .When(x => !string.IsNullOrWhiteSpace(x.Password));
 
+        RuleFor(x => x.RoleId)
+            .NotEqual(Guid.Empty)
+            .When(x => x.RoleId.HasValue)
+            .WithMessage("RoleId must be a valid GUID.");
+
         RuleFor(x => x.ProfileFileId)
             .NotEqual(Guid.Empty)
             .When(x => x.ProfileFileId.HasValue);

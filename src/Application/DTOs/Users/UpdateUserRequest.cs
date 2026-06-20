@@ -8,7 +8,8 @@ public class UpdateUserRequest
 
     public string FullName { get; set; } = default!;
 
-    public string? RoleName { get; set; }
+    /// <summary>Optional — replaces all current role assignments when provided.</summary>
+    public Guid? RoleId { get; set; }
 
     public string? Password { get; set; }
 

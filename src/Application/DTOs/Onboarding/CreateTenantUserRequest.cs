@@ -6,5 +6,5 @@ public class CreateTenantUserRequest
 
     public string Email { get; set; } = default!;
 
-    public List<string> RoleNames { get; set; } = [];
+    public List<Guid> RoleIds { get; set; } = [];
 }

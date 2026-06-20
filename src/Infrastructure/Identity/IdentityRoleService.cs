@@ -26,8 +26,8 @@ public class IdentityRoleService : IIdentityRoleService
     }
 
     private bool IsSystemAdmin() =>
-        !_currentTenantService.TenantId.HasValue ||          // null = no HTTP context (seed/background)
-        _currentTenantService.TenantId.Value == Guid.Empty;  // Guid.Empty = System Admin JWT
+        _currentTenantService.IsSystemAdmin ||     // HTTP context with SystemAdmin JWT
+        !_currentTenantService.TenantId.HasValue;  // no HTTP context (seed/background)
 
     private static void RejectPlatformPermissions(IEnumerable<Guid> permissionIds, IEnumerable<Permission> permissions)
     {
@@ -246,35 +246,4 @@ public class IdentityRoleService : IIdentityRoleService
         await _context.SaveChangesAsync();
     }
 
-    public async Task<ApplicationRole> EnsureTenantAdminRoleAsync(Guid tenantId, CancellationToken ct = default)
-    {
-        var role = await CreateRoleAsync(
-            tenantId,
-            RoleNames.TenantAdmin,
-            "Tenant administrator — full access to all tenant resources.");
-
-        await _context.SaveChangesAsync(ct);
-
-        await AssignPermissionsToRoleAsync(role.Id, PermissionNames.TenantPermissions);
-
-        await _context.SaveChangesAsync(ct);
-
-        return role;
-    }
-
-    public async Task<ApplicationRole> EnsureTenantUserRoleAsync(Guid tenantId, CancellationToken ct = default)
-    {
-        var role = await CreateRoleAsync(
-            tenantId,
-            RoleNames.TenantUser,
-            "Standard tenant user — basic access to products, reports, and files.");
-
-        await _context.SaveChangesAsync(ct);
-
-        await AssignPermissionsToRoleAsync(role.Id, PermissionNames.TenantUserPermissions);
-
-        await _context.SaveChangesAsync(ct);
-
-        return role;
-    }
 }

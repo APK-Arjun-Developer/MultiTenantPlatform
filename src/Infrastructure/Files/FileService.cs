@@ -42,10 +42,11 @@ public class FileService : TenantScopedService, IFileService
 
     public async Task<IReadOnlyList<FileResponse>> GetAllAsync()
     {
-        RequireTenantId();
+        var tenantId = RequireTenantId();
 
         var files = await _context.Files
             .AsNoTracking()
+            .Where(f => f.TenantId == tenantId)
             .OrderByDescending(f => f.CreatedAt)
             .ToListAsync();
 
@@ -157,7 +158,9 @@ public class FileService : TenantScopedService, IFileService
 
     private async Task<FileEntity> FindFileAsync(Guid id)
     {
-        return await _context.Files.FirstOrDefaultAsync(f => f.Id == id)
+        var tenantId = RequireTenantId();
+        return await _context.Files
+            .FirstOrDefaultAsync(f => f.Id == id && f.TenantId == tenantId)
             ?? throw new NotFoundException($"File '{id}' was not found.");
     }
 

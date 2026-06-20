@@ -1,8 +1,5 @@
-using Application.Common;
 using Domain.Enums;
-using Infrastructure.Identity;
 using Infrastructure.Identity.Entities;
-using Infrastructure.Persistence.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -13,26 +10,20 @@ public sealed class SuperAdminSeed : IDataSeed
 {
     public const string Id = "20260603000003_SuperAdmin";
 
-    private readonly ApplicationDbContext _context;
     private readonly UserManager<ApplicationUser> _userManager;
-    private readonly IIdentityRoleService _identityRoleService;
     private readonly IConfiguration _configuration;
 
     public SuperAdminSeed(
-        ApplicationDbContext context,
         UserManager<ApplicationUser> userManager,
-        IIdentityRoleService identityRoleService,
         IConfiguration configuration)
     {
-        _context = context;
         _userManager = userManager;
-        _identityRoleService = identityRoleService;
         _configuration = configuration;
     }
 
     public string SeedId => Id;
 
-    public string Description => "SuperAdmin role, permissions, and admin@system.com user.";
+    public string Description => "System administrator account (admin@system.com).";
 
     public async Task ApplyAsync(CancellationToken cancellationToken = default)
     {
@@ -45,37 +36,12 @@ public sealed class SuperAdminSeed : IDataSeed
                 "Set it via environment variable, user secrets, or a secrets manager.");
         }
 
-        const string adminRole = RoleNames.SuperAdmin;
-        var platformTenantId = Guid.Empty;
-
-        var superAdminRole = await _identityRoleService.FindRoleByNameAsync(
-            platformTenantId,
-            adminRole);
-
-        if (superAdminRole == null)
-        {
-            superAdminRole = await _identityRoleService.CreateRoleAsync(
-                platformTenantId,
-                adminRole,
-                "System Super Administrator");
-        }
-        else if (superAdminRole.Scope != RoleScope.System)
-        {
-            superAdminRole.Scope = RoleScope.System;
-        }
-
-        await _identityRoleService.AssignPermissionsToRoleAsync(
-            superAdminRole.Id,
-            PermissionNames.All);
-
-        await _context.SaveChangesAsync(cancellationToken);
-
         const string adminEmail = "admin@system.com";
 
         var existingUser = await _userManager.Users
             .FirstOrDefaultAsync(u =>
                 u.NormalizedEmail == adminEmail.ToUpperInvariant() &&
-                u.TenantId == platformTenantId,
+                u.TenantId == Guid.Empty,
                 cancellationToken);
 
         if (existingUser != null)
@@ -86,7 +52,7 @@ public sealed class SuperAdminSeed : IDataSeed
         var user = new ApplicationUser
         {
             Id = Guid.NewGuid(),
-            TenantId = platformTenantId,
+            TenantId = Guid.Empty,
             SystemRole = SystemRole.SystemAdmin,
             FullName = "System Administrator",
             UserName = adminEmail,
@@ -106,8 +72,5 @@ public sealed class SuperAdminSeed : IDataSeed
                 "Failed to create system admin user: " +
                 string.Join(", ", result.Errors.Select(e => e.Description)));
         }
-
-        await _identityRoleService.AddUserToRoleAsync(user.Id, superAdminRole.Id);
-        await _context.SaveChangesAsync(cancellationToken);
     }
 }

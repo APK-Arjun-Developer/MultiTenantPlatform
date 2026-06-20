@@ -75,29 +75,9 @@ public class OnboardingService : TenantScopedService, IOnboardingService
 
         try
         {
-            // Always provision the default roles for this tenant.
-            var adminRole = await _identityRoleService.EnsureTenantAdminRoleAsync(tenant.Id, cancellationToken);
-            await _identityRoleService.EnsureTenantUserRoleAsync(tenant.Id, cancellationToken);
-
-            // Resolve any caller-supplied extra roles (optional).
-            var extraRoles = request.RoleNames.Count > 0
-                ? await ResolveRolesByNameAsync(tenant.Id, request.RoleNames, cancellationToken)
-                : [];
-
-            // Deduplicate: TenantAdmin is always first; extras skip it if already included.
-            var rolesToAssign = new List<ApplicationRole> { adminRole };
-            foreach (var r in extraRoles.Where(r => r.Id != adminRole.Id))
-            {
-                rolesToAssign.Add(r);
-            }
-
+            // TenantAdmin permissions come from SystemRole — no role table entry needed.
             var user = CreateInactiveUser(request.FullName, request.Email, tenant.Id, SystemRole.TenantAdmin);
             await CreateUserOrThrowAsync(user);
-
-            foreach (var role in rolesToAssign)
-            {
-                await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
-            }
 
             var (rawToken, setupUrl) = await IssueSetupTokenAsync(user, cancellationToken);
 
@@ -119,7 +99,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
                 Email = user.Email!,
                 TenantId = tenant.Id,
                 TenantSlug = tenant.Slug,
-                Roles = rolesToAssign.Select(r => r.Name!).ToList(),
+                Roles = [],
                 IsActive = false,
                 SetupUrl = setupUrl,
             };
@@ -191,6 +171,11 @@ public class OnboardingService : TenantScopedService, IOnboardingService
     {
         var user = await FindManagedUserAsync(userId, cancellationToken);
 
+        if (!IsSystemAdmin() && user.SystemRole == SystemRole.TenantAdmin)
+        {
+            throw new ForbiddenException("Tenant administrators cannot deactivate other tenant admin accounts.");
+        }
+
         if (!user.IsActive)
         {
             throw new ConflictException("User is already inactive.");
@@ -222,19 +207,14 @@ public class OnboardingService : TenantScopedService, IOnboardingService
 
         await EnsureEmailNotTakenAsync(request.Email, tenantId, cancellationToken);
 
-        // Ensure default roles exist (idempotent — safe even if already present).
-        await _identityRoleService.EnsureTenantAdminRoleAsync(tenantId, cancellationToken);
-        await _identityRoleService.EnsureTenantUserRoleAsync(tenantId, cancellationToken);
-
-        var roles = await ResolveRolesByNameAsync(tenantId, request.RoleNames, cancellationToken);
+        var roles = await ResolveRolesByIdAsync(tenantId, request.RoleIds, cancellationToken);
 
         await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
 
         try
         {
-            var systemRole = request.RoleNames.Contains(RoleNames.TenantAdmin, StringComparer.Ordinal)
-                ? SystemRole.TenantAdmin
-                : SystemRole.TenantUser;
+            // This flow only creates TenantUsers.
+            var systemRole = SystemRole.TenantUser;
 
             var user = CreateInactiveUser(request.FullName, request.Email, tenantId, systemRole);
             await CreateUserOrThrowAsync(user);
@@ -263,7 +243,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
                 FullName = user.FullName,
                 Email = user.Email!,
                 TenantId = tenantId,
-                Roles = request.RoleNames,
+                Roles = roles.Select(r => r.Name!).ToList(),
                 IsActive = false,
                 SetupUrl = setupUrl,
             };
@@ -387,24 +367,20 @@ public class OnboardingService : TenantScopedService, IOnboardingService
         }
     }
 
-    private async Task<List<ApplicationRole>> ResolveRolesByNameAsync(
+    private async Task<List<ApplicationRole>> ResolveRolesByIdAsync(
         Guid tenantId,
-        List<string> roleNames,
+        List<Guid> roleIds,
         CancellationToken cancellationToken)
     {
-        var roles = new List<ApplicationRole>();
+        var roles = await _context.Roles
+            .Where(r => roleIds.Contains(r.Id) && r.TenantId == tenantId)
+            .ToListAsync(cancellationToken);
 
-        foreach (var name in roleNames)
+        var notFound = roleIds.Except(roles.Select(r => r.Id)).ToList();
+        if (notFound.Count > 0)
         {
-            if (name == RoleNames.SuperAdmin)
-            {
-                throw new ForbiddenException("Cannot assign the SuperAdmin role.");
-            }
-
-            var role = await _identityRoleService.FindRoleByNameAsync(tenantId, name)
-                ?? throw new NotFoundException($"Role '{name}' was not found for this tenant.");
-
-            roles.Add(role);
+            throw new NotFoundException(
+                $"Role(s) not found for this tenant: {string.Join(", ", notFound)}");
         }
 
         return roles;

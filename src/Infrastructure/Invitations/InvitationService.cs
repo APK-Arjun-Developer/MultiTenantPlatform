@@ -299,6 +299,7 @@ public class InvitationService : TenantScopedService, IInvitationService
             Email = invitation.Email,
             InvitationType = invitation.InvitationType,
             TenantName = tenant?.Name,
+            TenantSlug = tenant?.Slug,
         };
     }
 
@@ -311,16 +312,18 @@ public class InvitationService : TenantScopedService, IInvitationService
         var invitation = await GetValidInvitationAsync(
             request.Token, InvitationType.TenantAdmin, cancellationToken);
 
+        var tenantSlug = await GetTenantSlugAsync(invitation.TenantId, cancellationToken);
+
         await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
 
         try
         {
-            var roleIds = DeserializeRoleIds(invitation.RoleIdsJson);
-
+            // TenantAdmin permissions come from SystemRole — no role table entry needed.
             var user = new ApplicationUser
             {
                 Id = Guid.NewGuid(),
                 TenantId = invitation.TenantId,
+                SystemRole = SystemRole.TenantAdmin,
                 FullName = request.FullName,
                 Email = invitation.Email,
                 UserName = invitation.Email,
@@ -341,18 +344,11 @@ public class InvitationService : TenantScopedService, IInvitationService
                     string.Join(", ", result.Errors.Select(e => e.Description)));
             }
 
-            foreach (var roleId in roleIds)
-            {
-                await _identityRoleService.AddUserToRoleAsync(user.Id, roleId);
-            }
-
             invitation.AcceptedAt = DateTime.UtcNow;
             invitation.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync(cancellationToken);
 
             await tx.CommitAsync(cancellationToken);
-
-            var roles = await _userManager.GetRolesAsync(user);
 
             await LogInternalAsync(
                 user.Id,
@@ -366,7 +362,8 @@ public class InvitationService : TenantScopedService, IInvitationService
                 Email = user.Email!,
                 FullName = user.FullName,
                 TenantId = user.TenantId,
-                Roles = roles.ToList(),
+                TenantSlug = tenantSlug,
+                Roles = [],
                 InvitationType = InvitationType.TenantAdmin,
                 IsActive = true,
             };
@@ -387,6 +384,8 @@ public class InvitationService : TenantScopedService, IInvitationService
         var invitation = await GetValidInvitationAsync(
             request.Token, InvitationType.TenantUser, cancellationToken);
 
+        var tenantSlug = await GetTenantSlugAsync(invitation.TenantId, cancellationToken);
+
         await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
 
         try
@@ -397,6 +396,7 @@ public class InvitationService : TenantScopedService, IInvitationService
             {
                 Id = Guid.NewGuid(),
                 TenantId = invitation.TenantId,
+                SystemRole = SystemRole.TenantUser,
                 FullName = request.FullName,
                 Email = invitation.Email,
                 UserName = invitation.Email,
@@ -417,6 +417,7 @@ public class InvitationService : TenantScopedService, IInvitationService
                     string.Join(", ", result.Errors.Select(e => e.Description)));
             }
 
+            // Assign custom roles only (built-in system roles come from SystemRole, not the table).
             foreach (var roleId in roleIds)
             {
                 await _identityRoleService.AddUserToRoleAsync(user.Id, roleId);
@@ -442,6 +443,7 @@ public class InvitationService : TenantScopedService, IInvitationService
                 Email = user.Email!,
                 FullName = user.FullName,
                 TenantId = user.TenantId,
+                TenantSlug = tenantSlug,
                 Roles = roles.ToList(),
                 InvitationType = InvitationType.TenantUser,
                 IsActive = true,
@@ -571,6 +573,17 @@ public class InvitationService : TenantScopedService, IInvitationService
             throw new ConflictException(
                 $"An active invitation for '{email}' already exists. Revoke it before sending a new one.");
         }
+    }
+
+    private async Task<string?> GetTenantSlugAsync(Guid tenantId, CancellationToken cancellationToken)
+    {
+        if (tenantId == Guid.Empty) return null;
+
+        return await _context.Tenants
+            .IgnoreQueryFilters()
+            .Where(t => t.Id == tenantId && t.DeletedAt == null)
+            .Select(t => t.Slug)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     private static List<Guid> DeserializeRoleIds(string json)

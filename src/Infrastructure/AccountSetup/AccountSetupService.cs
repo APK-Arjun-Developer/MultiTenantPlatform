@@ -73,11 +73,14 @@ public class AccountSetupService : IAccountSetupService
             return InvalidResponse("This account is already set up. Please log in.");
         }
 
+        var tenantSlug = await GetTenantSlugAsync(user.TenantId, cancellationToken);
+
         return new ValidateAccountSetupResponse
         {
             IsValid = true,
             Email = user.Email,
             FullName = user.FullName,
+            TenantSlug = tenantSlug,
         };
     }
 
@@ -129,7 +132,11 @@ public class AccountSetupService : IAccountSetupService
             Description = $"User '{user.Email}' completed account setup.",
         }, cancellationToken);
 
-        var loginUrl = $"{_appBaseUrl}/login";
+        var tenantSlug = await GetTenantSlugAsync(user.TenantId, cancellationToken);
+
+        var loginUrl = tenantSlug != null
+            ? $"{_appBaseUrl}/login?tenant={tenantSlug}"
+            : $"{_appBaseUrl}/login";
 
         try
         {
@@ -146,6 +153,7 @@ public class AccountSetupService : IAccountSetupService
         {
             UserId = user.Id,
             Email = user.Email!,
+            TenantSlug = tenantSlug,
             IsActive = true,
         };
     }
@@ -158,6 +166,17 @@ public class AccountSetupService : IAccountSetupService
 
         return await _context.AccountSetupTokens
             .FirstOrDefaultAsync(t => t.TokenHash == hash, cancellationToken);
+    }
+
+    private async Task<string?> GetTenantSlugAsync(Guid tenantId, CancellationToken cancellationToken)
+    {
+        if (tenantId == Guid.Empty) return null;
+
+        return await _context.Tenants
+            .IgnoreQueryFilters()
+            .Where(t => t.Id == tenantId && t.DeletedAt == null)
+            .Select(t => t.Slug)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     private static ValidateAccountSetupResponse InvalidResponse(string message) =>

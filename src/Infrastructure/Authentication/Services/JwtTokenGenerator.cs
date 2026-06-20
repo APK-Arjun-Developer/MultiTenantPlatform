@@ -1,4 +1,5 @@
 using Application.Interfaces.Authentication;
+using Domain.Enums;
 using Infrastructure.Authentication.JWT;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -22,6 +23,7 @@ public class JwtTokenGenerator : IJwtTokenGenerator
         string email,
         string fullName,
         Guid tenantId,
+        SystemRole systemRole,
         IList<(Guid Id, string Name)> roles)
     {
         var claims = new List<Claim>
@@ -32,6 +34,7 @@ public class JwtTokenGenerator : IJwtTokenGenerator
             new("user_id", userId.ToString()),
             new("tenant_id", tenantId.ToString()),
             new("full_name", fullName),
+            new("system_role", ((int)systemRole).ToString()),
         };
 
         // One claim per role — unambiguous for multi-role users.

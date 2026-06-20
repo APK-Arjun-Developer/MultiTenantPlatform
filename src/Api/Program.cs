@@ -51,6 +51,10 @@ if (!builder.Environment.IsDevelopment())
     }
 }
 
+// ── Feature flags ────────────────────────────────────────────────────────────
+builder.Services.Configure<Application.Options.FeatureOptions>(
+    builder.Configuration.GetSection(Application.Options.FeatureOptions.SectionName));
+
 // ── Persistence & Identity ───────────────────────────────────────────────────
 builder.Services.AddPersistence(builder.Configuration);
 builder.Services.AddIdentityInfrastructure(builder.Configuration);
@@ -64,8 +68,11 @@ builder.Services.AddAuthorizationBuilder()
         policy.RequireClaim("tenant_id", Guid.Empty.ToString()))
     .AddPolicy("TenantAdminOrAbove", policy =>
         policy.RequireAssertion(ctx =>
-            ctx.User.IsInRole(Application.Common.RoleNames.SuperAdmin) ||
-            ctx.User.IsInRole(Application.Common.RoleNames.TenantAdmin)))
+        {
+            var claim = ctx.User.FindFirst("system_role")?.Value;
+            // SystemAdmin=1, TenantAdmin=2 — value <= 2 means TenantAdmin or above.
+            return int.TryParse(claim, out var v) && v <= 2;
+        }))
     .AddPolicy("AuthenticatedTenantUser", policy =>
         policy.RequireAuthenticatedUser()
               .RequireAssertion(ctx =>

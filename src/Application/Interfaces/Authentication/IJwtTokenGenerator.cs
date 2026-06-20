@@ -1,3 +1,5 @@
+using Domain.Enums;
+
 namespace Application.Interfaces.Authentication;
 
 public interface IJwtTokenGenerator
@@ -7,6 +9,7 @@ public interface IJwtTokenGenerator
         string email,
         string fullName,
         Guid tenantId,
+        SystemRole systemRole,
         IList<(Guid Id, string Name)> roles);
 
     DateTime ComputeAccessTokenExpiryUtc();

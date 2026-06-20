@@ -67,7 +67,7 @@ public class PermissionService : TenantScopedService, IPermissionService
         var rows = await query
             .OrderBy(p => p.Module)
             .ThenBy(p => p.Name)
-            .Select(p => new { p.Id, p.Name, p.Module, p.Description })
+            .Select(p => new { p.Id, p.Name, p.Module, p.Description, p.RequiredSystemRole })
             .ToListAsync();
 
         var items = rows.Select(p => new PermissionResponse
@@ -76,9 +76,7 @@ public class PermissionService : TenantScopedService, IPermissionService
             Name = p.Name,
             Module = p.Module,
             Description = p.Description,
-            Scope = PermissionNames.Scopes.TryGetValue(p.Name, out var scope)
-                ? scope.ToString()
-                : SystemRole.TenantUser.ToString(),
+            Scope = p.RequiredSystemRole.ToString(),
         }).ToList();
 
         return new PermissionsCatalogResponse { Items = items };

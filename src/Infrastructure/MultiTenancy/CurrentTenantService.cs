@@ -6,6 +6,8 @@ namespace Infrastructure.MultiTenancy;
 
 public class CurrentTenantService : ICurrentTenantService
 {
+    public bool IsSystemAdmin { get; }
+
     public Guid? TenantId { get; }
 
     public Guid? UserId { get; }
@@ -18,7 +20,8 @@ public class CurrentTenantService : ICurrentTenantService
 
     public CurrentTenantService(IHttpContextAccessor httpContextAccessor)
     {
-        var user = httpContextAccessor.HttpContext?.User;
+        var httpContext = httpContextAccessor.HttpContext;
+        var user = httpContext?.User;
 
         if (user == null)
         {
@@ -28,9 +31,25 @@ public class CurrentTenantService : ICurrentTenantService
 
         var tenantIdClaim = user.FindFirst("tenant_id")?.Value;
 
-        if (Guid.TryParse(tenantIdClaim, out var tenantId))
+        if (Guid.TryParse(tenantIdClaim, out var jwtTenantId))
         {
-            TenantId = tenantId;
+            if (jwtTenantId == Guid.Empty)
+            {
+                // SystemAdmin: identity is platform-level; effective tenant comes from header.
+                IsSystemAdmin = true;
+
+                var headerValue = httpContext?.Request.Headers["X-Tenant-Id"].FirstOrDefault();
+
+                if (Guid.TryParse(headerValue, out var headerTenantId) && headerTenantId != Guid.Empty)
+                {
+                    TenantId = headerTenantId;
+                }
+                // No header → TenantId remains null (cross-tenant / platform-wide context).
+            }
+            else
+            {
+                TenantId = jwtTenantId;
+            }
         }
 
         var userIdClaim =
@@ -42,7 +61,6 @@ public class CurrentTenantService : ICurrentTenantService
             UserId = userId;
         }
 
-        // Read all role_ids claims (one emitted per role at login/refresh).
         RoleIds = user.FindAll("role_ids")
             .Select(c => Guid.TryParse(c.Value, out var id) ? (Guid?)id : null)
             .Where(id => id.HasValue)

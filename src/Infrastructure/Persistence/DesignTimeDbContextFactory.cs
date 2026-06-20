@@ -38,6 +38,7 @@ public class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<Applicatio
 /// </summary>
 file sealed class NullTenantService : Application.Interfaces.Tenant.ICurrentTenantService
 {
+    public bool IsSystemAdmin => false;
     public Guid? TenantId => null;
     public Guid? UserId => null;
     public Guid? RoleId => null;

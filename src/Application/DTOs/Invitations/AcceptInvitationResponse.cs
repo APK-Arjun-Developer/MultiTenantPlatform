@@ -12,6 +12,8 @@ public class AcceptInvitationResponse
 
     public Guid TenantId { get; set; }
 
+    public string? TenantSlug { get; set; }
+
     public IReadOnlyList<string> Roles { get; set; } = [];
 
     public InvitationType InvitationType { get; set; }
