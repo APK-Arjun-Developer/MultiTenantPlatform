@@ -8,12 +8,13 @@ Canonical architecture and workflow summary. For endpoints see [API.md](./API.md
 
 A **multi-tenant SaaS backend** on **.NET 10** with:
 
-- Tenant isolation via `TenantId`, EF global query filters, and middleware
-- **JWT** access tokens + **refresh tokens** (login / refresh / logout)
-- **Permission-based RBAC** checked per request (with `IMemoryCache`)
+- Complete tenant isolation via `TenantId`, EF global query filters, and middleware
+- **JWT** access tokens + **refresh tokens** (HttpOnly cookies)
+- **Hybrid RBAC**: `SystemRole` ceiling authority + custom permission-based roles
 - **ASP.NET Core Identity** for users and roles (`Guid` keys)
+- **Email verification** via OTP (6-digit, 15-minute lifetime); dev mode bypass available
 - **Versioned database seeds** tracked in `SeedHistory` (like EF migrations)
-- No public self-registration — tenants onboarded by platform **SuperAdmin**
+- No public self-registration — tenants onboarded by platform **SystemAdmin**
 
 ---
 
@@ -48,6 +49,177 @@ Services live in **Infrastructure** and register via DI extensions. Data access 
 
 ---
 
+## Authorization model (hybrid two-layer RBAC)
+
+### Layer 1 — SystemRole (ceiling authority)
+
+Every `ApplicationUser` has a `SystemRole` enum stored on the user record and embedded in the JWT as the `system_role` claim:
+
+| Value | Name | Scope |
+|-------|------|-------|
+| `1` | `SystemAdmin` | Platform-wide. Manages all tenants. Never scoped to a single tenant. |
+| `2` | `TenantAdmin` | Scoped to one tenant. Manages users, roles, and onboarding within that tenant. |
+| `3` | `TenantUser` | Scoped to one tenant. Operational access only (products, files, reports, profile). |
+
+`SystemRole` is a **ceiling** — it limits which permissions can ever be granted to a user. A role cannot grant a permission whose `Scope` exceeds the user's `SystemRole`.
+
+`SystemAdmin` and `TenantAdmin` have their authority from `SystemRole` alone and do not need custom roles. Custom roles only exist to assign **TenantUser-scoped** business permissions to TenantUsers.
+
+### Layer 2 — Custom roles and permissions
+
+Custom roles live in the `Roles` table and are always scoped to a single `TenantId`. Each role has a set of `Permissions` (seeded catalog, PascalCase names).
+
+| Permission module | Minimum `SystemRole` | Who can hold it |
+|-------------------|---------------------|-----------------|
+| `Profile.*` | TenantUser | TenantUser, TenantAdmin, SystemAdmin |
+| `Products.*` | TenantUser | TenantUser, TenantAdmin, SystemAdmin |
+| `Reports.*` | TenantUser | TenantUser, TenantAdmin, SystemAdmin |
+| `Files.View`, `Files.Upload` | TenantUser | TenantUser, TenantAdmin, SystemAdmin |
+| `Users.*`, `Roles.*` | TenantAdmin | TenantAdmin, SystemAdmin |
+| `Onboarding.*` | TenantAdmin | TenantAdmin, SystemAdmin |
+| `Files.Delete` | TenantAdmin | TenantAdmin, SystemAdmin |
+| `Tenants.*` | SystemAdmin | SystemAdmin only |
+
+Permission names are defined in `Application.Common.PermissionNames`. The full catalog is available at `GET /api/v1/permissions`.
+
+### Permission check flow
+
+```text
+Request arrives → JWT validated → system_role extracted
+    → if SystemAdmin: granted all permissions
+    → else: load role_ids from JWT → fetch permissions from DB (cached)
+           → check permission ceiling against system_role
+```
+
+Permissions are **never embedded in the JWT** — they are loaded from the database per request (with `IMemoryCache`).
+
+---
+
+## Tenant isolation
+
+### X-Tenant-Id header
+
+- **SystemAdmin**: `tenant_id` in JWT is `Guid.Empty`. To perform any tenant-scoped operation, SystemAdmin **must** supply the `X-Tenant-Id` request header. Without it, tenant-scoped endpoints return HTTP 400.
+- **TenantAdmin / TenantUser**: `tenant_id` is fixed in the JWT. The `X-Tenant-Id` header is accepted but **ignored** — the JWT `tenant_id` is always authoritative for non-SystemAdmin callers. This prevents header-spoofing attacks.
+
+### EF global query filters
+
+All entities implementing `ITenantEntity` + `IAuditableEntity` (i.e., all `BaseEntity` subclasses: `Product`, `FileEntity`, `ActivityLog`, etc.) have a global EF query filter:
+
+```csharp
+(!_currentTenantService.TenantId.HasValue || e.TenantId == _currentTenantService.TenantId)
+&& e.DeletedAt == null
+```
+
+This filter is applied automatically to every LINQ query. Service methods also add explicit `WHERE TenantId = @tenantId` conditions for clarity and defense-in-depth.
+
+`Invitation` does not extend `BaseEntity` and has no global filter; it is protected by explicit service-level checks.
+
+### TenantScopedService
+
+All tenant-scoped services inherit `TenantScopedService` which exposes:
+
+- `RequireTenantId()` — returns the current tenant ID or throws HTTP 400 if it is missing (SystemAdmin without header)
+- `IsSystemAdmin()` — true when `system_role == 1`
+- `RequireUserId()` — returns the current user ID
+
+---
+
+## Authentication
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/api/v1/auth/login` | Access token + refresh token (HttpOnly cookies) |
+| POST | `/api/v1/auth/refresh` | Rotate tokens using `refresh_token` cookie |
+| POST | `/api/v1/auth/logout` | Revoke refresh token; clear cookies |
+| POST | `/api/v1/auth/verify-email` | Verify email address with OTP |
+| POST | `/api/v1/auth/resend-verification` | Re-send email verification OTP |
+| POST | `/api/v1/auth/forgot-password` | Send password reset link |
+| GET | `/api/v1/auth/reset-password/validate` | Validate password reset token |
+| POST | `/api/v1/auth/reset-password` | Complete password reset |
+| GET | `/api/v1/auth/me` | Current user's identity (from JWT) |
+
+Tokens are set as **HttpOnly cookies** (`access_token`, `refresh_token`). The access token is also returned in the response body for clients that cannot use cookies.
+
+### JWT claims
+
+| Claim | Description |
+|-------|-------------|
+| `user_id` | User GUID |
+| `tenant_id` | Tenant GUID (`Guid.Empty` for SystemAdmin) |
+| `system_role` | `1` = SystemAdmin, `2` = TenantAdmin, `3` = TenantUser |
+| `full_name` | Display name |
+| `role_ids` | GUIDs of custom roles assigned to the user |
+| `email` | User email |
+
+Permissions are **not in the JWT** — loaded from DB per request (cached).
+
+### Login rules
+
+- **SystemAdmin**: omit `tenantSlug`. Login finds the user by email where `TenantId == Guid.Empty`.
+- **TenantAdmin / TenantUser**: `tenantSlug` is required. The slug must match an active, non-deleted tenant.
+- Login blocks users with `EmailConfirmed = false` ("Your email address has not been verified").
+- Login blocks users with `IsActive = false`.
+
+---
+
+## Email verification
+
+New user accounts are created with `EmailConfirmed` based on the `Features:RequireEmailVerification` setting:
+
+| Environment | `RequireEmailVerification` | `EmailConfirmed` on creation | Login allowed immediately? |
+|-------------|---------------------------|------------------------------|---------------------------|
+| Development | `false` | `true` | Yes |
+| Production | `true` | `false` | No — OTP required |
+
+When `RequireEmailVerification: true`:
+1. User is created with `EmailConfirmed = false`.
+2. A 6-digit OTP is generated, hashed, stored in `EmailVerificationOtps`, and emailed.
+3. The user calls `POST /auth/verify-email` with `{ email, tenantSlug, otp }`.
+4. On success, `EmailConfirmed` is set to `true`; the user can now log in.
+5. `POST /auth/resend-verification` issues a fresh OTP (invalidates the previous one).
+
+This applies to users created via:
+- `POST /api/v1/tenants` (tenant onboarding — TenantAdmin)
+- `POST /api/v1/users` (direct user creation)
+
+Users created via the account-setup flow (`direct-create` / invitation) go through a separate token-gated flow and their `EmailConfirmed` is set to `true` on account activation.
+
+---
+
+## User creation flows
+
+There are three ways to create users:
+
+### 1. Tenant onboarding (SystemAdmin)
+
+`POST /api/v1/tenants` creates a new tenant and its first TenantAdmin in one transaction.
+
+### 2. Direct creation (TenantAdmin)
+
+`POST /api/v1/users` — creates a TenantUser immediately with the provided password. Email verification applies if enabled.
+
+`POST /api/v1/tenant-admins` (SystemAdmin only) — creates a new TenantAdmin. Sends an account-setup email; the account is inactive until the user sets their password via the setup link.
+
+`POST /api/v1/users/direct-create` — TenantAdmin direct-creates a TenantUser. Sends an account-setup email; user activates via the link.
+
+### 3. Invitation flow
+
+`POST /api/v1/tenant-admins/invite` (SystemAdmin) — invites a prospective TenantAdmin by email.
+
+`POST /api/v1/users/invite` (TenantAdmin) — invites a prospective TenantUser by email.
+
+The invited user receives a tokenized link and registers via:
+- `GET /api/v1/invitations/validate?token=...` — validate before showing the form
+- `POST /api/v1/invitations/accept/tenant-admin` — accept TenantAdmin invitation
+- `POST /api/v1/invitations/accept/user` — accept TenantUser invitation
+
+Account-setup links (direct-create flow):
+- `GET /api/v1/account-setup/validate?token=...` — validate setup token
+- `POST /api/v1/account-setup/set-password` — set password and activate account
+
+---
+
 ## Database workflow
 
 ### Migrations
@@ -73,7 +245,7 @@ dotnet ef migrations add Name `
 | SeedId | Purpose |
 |--------|---------|
 | `20260603000002_Permissions` | RBAC permission catalog |
-| `20260603000003_SuperAdmin` | SuperAdmin role + `admin@system.com` (requires `Seeding:AdminPassword`) |
+| `20260603000003_SuperAdmin` | SystemAdmin role + `admin@system.com` (requires `Seeding:AdminPassword`) |
 
 Add a seed: new class in `Persistence/Seed/Seeds/`, register in `Persistence/DependencyInjection.cs`.
 
@@ -86,61 +258,20 @@ Add a seed: new class in `Persistence/Seed/Seeds/`, register in `Persistence/Dep
 
 ---
 
-## Multi-tenancy
-
-- Tenant-scoped rows carry **`TenantId`** (`ITenantEntity`).
-- EF global filters: soft delete (`DeletedAt == null`) + tenant scope where applicable.
-- **`TenantMiddleware`** validates JWT `tenant_id` after authentication.
-- **SuperAdmin**: `tenant_id = Guid.Empty`. Login omits `tenantSlug`; tenant users require matching `tenantSlug`.
-
----
-
-## Authentication
-
-| Method | Path | Purpose |
-|--------|------|---------|
-| POST | `/api/v1/auth/login` | Access + refresh tokens |
-| POST | `/api/v1/auth/refresh` | Rotate tokens |
-| POST | `/api/v1/auth/logout` | Revoke refresh token |
-
-### JWT claims
-
-| Claim | Description |
-|-------|-------------|
-| `user_id` | User GUID |
-| `tenant_id` | Tenant GUID (`Guid.Empty` for SuperAdmin) |
-| `role_id` | Primary role GUID |
-| `full_name` | Display name |
-| `role` | Role names |
-
-**Permissions are not in the JWT.** Loaded from DB per request (cached).
-
----
-
-## Authorization
-
-- **`[HasPermission("Module.Action")]`** on controllers/actions (PascalCase).
-- `PermissionPolicyProvider` + `PermissionAuthorizationHandler`.
-- SuperAdmin: all permissions from catalog.
-- Tenant users: union of role permissions in current tenant.
-
-Catalog: `GET /api/v1/permissions` (`?grouped=true` optional). Tenant callers do not see `Tenants.*`.
-
----
-
 ## Identity model
 
 | Concept | Implementation |
 |---------|----------------|
-| Users | `ApplicationUser` + `TenantId`, `FullName`, `ProfileFileId`, soft delete |
-| Roles | `ApplicationRole` + `TenantId`, `Description`, soft delete |
+| Users | `ApplicationUser` + `TenantId`, `SystemRole`, `FullName`, `ProfileFileId`, soft delete |
+| Roles | `ApplicationRole` + `TenantId`, `Description` (custom roles only; no built-in role rows) |
 | User ↔ role | Identity `AspNetUserRoles` |
 | Role ↔ permission | `RolePermissions` |
 | Permissions | `Permissions` table (seeded) |
+| Email verification | `EmailVerificationOtps` (UserId, OtpHash, ExpiresAt, UsedAt) |
 | Addresses | `Addresses` table; optional FK to user or tenant |
 | Seed tracking | `SeedHistory` table |
 
-**SuperAdmin** cannot be created/modified/deleted/assigned inside tenant onboarding.
+`SystemAdmin`, `TenantAdmin`, and `TenantUser` exist **only** as the `SystemRole` enum on `ApplicationUser`. There are no corresponding rows in the `Roles` table. The `Roles` table contains only custom tenant-scoped roles.
 
 ---
 
@@ -148,21 +279,7 @@ Catalog: `GET /api/v1/permissions` (`?grouped=true` optional). Tenant callers do
 
 - **User / tenant profile image**: `ProfileFileId` → `Files`; `profileUrl` = `/api/v1/files/{id}/download`
 - **Address**: separate `Addresses` row linked to user or tenant; responses include `line1`, `city`, … and `fullAddress`
-- Update via `PUT /users`, `PUT /users/current`, `PUT /tenants` with `address` / `clearAddress`
-
----
-
-## Tenant onboarding (SuperAdmin)
-
-`POST /api/v1/tenants` requires `Tenants.Create`:
-
-```json
-{
-  "tenant": { "name": "...", "slug": "..." },
-  "user": { "fullName": "...", "email": "...", "password": "..." },
-  "roles": [{ "name": "Admin", "description": "...", "permissions": ["<guid>", "..."] }]
-}
-```
+- Update via `PUT /users`, `PUT /users/current`, or `PUT /tenants` with `address` / `clearAddress`
 
 ---
 
@@ -179,7 +296,7 @@ Catalog: `GET /api/v1/permissions` (`?grouped=true` optional). Tenant callers do
 }
 ```
 
-Errors mapped by `ExceptionHandlingMiddleware` to the same envelope.
+Errors are mapped by `ExceptionHandlingMiddleware` to the same envelope.
 
 ### Pagination
 
@@ -187,11 +304,13 @@ Errors mapped by `ExceptionHandlingMiddleware` to the same envelope.
 
 ### List scoping
 
-| Resource | SuperAdmin | Tenant user |
-|----------|------------|-------------|
-| Users | All tenants (excl. self) + nested tenant | Current tenant only |
-| Tenants | Paginated all | Own tenant only |
-| Roles / products / files / reports | Platform rules | Current tenant |
+| Resource | SystemAdmin (with X-Tenant-Id) | TenantAdmin / TenantUser |
+|----------|-------------------------------|--------------------------|
+| Users | Users of the specified tenant | Own tenant only |
+| Tenants | All tenants (paginated) | Own tenant only |
+| Roles | Roles of the specified tenant | Own tenant only |
+| Products / files / reports | Filtered to specified tenant | Own tenant only |
+| Permissions | Full catalog (incl. `Tenants.*`) | Tenant-safe (no `Tenants.*`) |
 
 ---
 
@@ -202,12 +321,15 @@ Errors mapped by `ExceptionHandlingMiddleware` to the same envelope.
 | Auth | `/api/v1/auth` |
 | Health | `/api/v1/health` (+ `/health` EF probe) |
 | Users | `/api/v1/users`, `/current` |
+| Tenant Admins | `/api/v1/tenant-admins` (SystemAdmin only) |
 | Tenants | `/api/v1/tenants`, `/current` |
 | Roles | `/api/v1/roles`, `/current` |
 | Products | `/api/v1/products` |
 | Permissions | `/api/v1/permissions` |
 | Reports | `/api/v1/reports` |
 | Files | `/api/v1/files` |
+| Invitations | `/api/v1/invitations` (public, token-gated) |
+| Account setup | `/api/v1/account-setup` (public, token-gated) |
 
 ---
 
@@ -224,6 +346,16 @@ Errors mapped by `ExceptionHandlingMiddleware` to the same envelope.
 
 ---
 
+## Feature flags
+
+Defined in `Application.Options.FeatureOptions` (`appsettings.json` section `Features`):
+
+| Flag | Development default | Production default | Purpose |
+|------|--------------------|--------------------|---------|
+| `RequireEmailVerification` | `false` | `true` | Controls whether new users must verify their email via OTP before logging in |
+
+---
+
 ## Swagger
 
 | Environment | URL | Access |
@@ -231,7 +363,7 @@ Errors mapped by `ExceptionHandlingMiddleware` to the same envelope.
 | Development | `/swagger` | Open |
 | Production | `/swagger` | Open (toggle via `Swagger:EnabledInProduction`) |
 
-Use **Authorize** in Swagger UI with `Bearer {accessToken}` from `POST /auth/login`. The API itself still enforces JWT auth and tenant isolation on every endpoint — only the documentation page is public.
+Use **Authorize** in Swagger UI with `Bearer {accessToken}` from `POST /auth/login`.
 
 ---
 
@@ -259,7 +391,8 @@ dotnet run --project src/Api
 ```
 
 - Swagger: `/swagger`
-- SuperAdmin: `admin@system.com` / `Seeding:AdminPassword` from Development config or user secrets
+- SystemAdmin: `admin@system.com` / `Seeding:AdminPassword` from Development config or user secrets
+- Email verification is disabled in Development (`Features:RequireEmailVerification: false`)
 
 ---
 
@@ -277,4 +410,4 @@ dotnet run --project src/Api
 
 - [API.md](./API.md) — endpoints, profiles, addresses, login
 - [DEPLOYMENT.md](./DEPLOYMENT.md) — FTP deploy, secrets, migrations & seeds
-- `src/Application/Common/PermissionNames.cs` — permission constants
+- `src/Application/Common/PermissionNames.cs` — permission constants and scope map

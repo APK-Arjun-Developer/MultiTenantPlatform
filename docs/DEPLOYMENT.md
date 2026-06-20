@@ -44,9 +44,9 @@ Both work like migrations: only missing versions run. Already-applied migrations
 | SeedId | Description |
 |--------|-------------|
 | `20260603000002_Permissions` | RBAC permission catalog |
-| `20260603000003_SuperAdmin` | SuperAdmin role + `admin@system.com` user |
+| `20260603000003_SuperAdmin` | SystemAdmin role + `admin@system.com` user |
 
-**SuperAdmin login:** `admin@system.com` / `ADMIN_PASSWORD` GitHub secret.
+**SystemAdmin login:** `admin@system.com` / `ADMIN_PASSWORD` GitHub secret.
 
 ---
 
@@ -71,7 +71,7 @@ Pending migrations and seeds apply on startup.
 2. **SSMS** — connect to your database and drop all user tables
 3. Redeploy the app — on startup, `InitialCreate` and pending seeds run
 
-Ensure `ADMIN_PASSWORD` is set in GitHub secrets before the SuperAdmin seed runs.
+Ensure `ADMIN_PASSWORD` is set in GitHub secrets before the SystemAdmin seed runs.
 
 ---
 
@@ -88,10 +88,11 @@ Open **Settings → Secrets and variables → Actions → New repository secret*
 | `SITE_URL` | No | **Recommended.** Public site URL for smoke test, e.g. `https://site1234.monsterasp.net` |
 | `PRODUCTION_CONNECTION_STRING` | Yes | MonsterASP MSSQL connection string |
 | `JWT_KEY` | Yes | Random string, **≥ 32 characters** |
-| `ADMIN_PASSWORD` | Yes | SuperAdmin (`admin@system.com`) password |
+| `ADMIN_PASSWORD` | Yes | SystemAdmin (`admin@system.com`) password |
 | `JWT_ISSUER` | No | Defaults to `MultiTenantPlatform` |
 | `JWT_AUDIENCE` | No | Defaults to `MultiTenantPlatformUsers` |
 | `ALLOWED_ORIGINS` | No | Comma-separated CORS origins. If empty, deploy uses `SITE_URL` as the allowed origin. |
+| `APP_BASE_URL` | Yes (prod) | Public HTTPS URL used in emailed links, e.g. `https://site1234.monsterasp.net` |
 
 Never commit real connection strings or JWT keys. The workflow **overwrites** `appsettings.Production.json` at deploy time.
 
@@ -105,7 +106,15 @@ Never commit real connection strings or JWT keys. The workflow **overwrites** `a
 | `ApplySeedsOnStartup` | `true` |
 | `ConnectionStrings:DefaultConnection` | From `PRODUCTION_CONNECTION_STRING` |
 | `Seeding:AdminPassword` | From `ADMIN_PASSWORD` |
+| `Features:RequireEmailVerification` | `true` — new users must verify their email via OTP before logging in |
+| `AppBaseUrl` | From `APP_BASE_URL` — must be an `https://` URL; used in emailed links |
 | Swagger | `/swagger` open (toggle via `Swagger:EnabledInProduction`) |
+
+### Email verification in production
+
+`Features:RequireEmailVerification` is `true` by default in production. When a new user is created (via tenant onboarding or direct user creation), their account has `EmailConfirmed = false`. A 6-digit OTP is emailed automatically. The user must call `POST /api/v1/auth/verify-email` before they can log in.
+
+To disable email verification in production (not recommended), add `"Features": { "RequireEmailVerification": false }` to the deployed `appsettings.Production.json` or inject it as an environment variable `Features__RequireEmailVerification=false`.
 
 ---
 
@@ -144,8 +153,11 @@ Smoke test: `GET /api/v1/health` on `SITE_URL`.
 | `ApplyMigrationsOnStartup` | `true` | `true` |
 | `ApplySeedsOnStartup` | `true` | `true` |
 | `Seeding:AdminPassword` | `appsettings.Development.json` or user secrets | `ADMIN_PASSWORD` GitHub secret |
+| `Features:RequireEmailVerification` | `false` — skip email OTP; all users log in immediately | `true` — users must verify email before first login |
+| `AppBaseUrl` | `http://localhost:5173` | `APP_BASE_URL` GitHub secret (must be `https://`) |
 | Swagger | Open at `/swagger` | Open at `/swagger` (`EnabledInProduction`) |
 | CORS | `AllowedOrigins` in Development config | `ALLOWED_ORIGINS` secret (optional) |
+| Email | Localhost SMTP (e.g. Mailhog on port 1025) | Configured SMTP credentials |
 
 Both environments only apply **pending** migrations and seeds — safe on every restart.
 
@@ -159,5 +171,5 @@ See [MonsterASP FTP deploy docs](https://help.monsterasp.net/books/deploy/page/h
 
 ## Related
 
-- [PROJECT.md](./PROJECT.md) — architecture summary  
+- [PROJECT.md](./PROJECT.md) — architecture summary
 - [API.md](./API.md) — API reference
