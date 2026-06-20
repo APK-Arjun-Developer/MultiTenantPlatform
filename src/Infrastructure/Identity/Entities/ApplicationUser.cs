@@ -1,4 +1,5 @@
 using Domain.Entities;
+using Domain.Enums;
 using Microsoft.AspNetCore.Identity;
 
 namespace Infrastructure.Identity.Entities;
@@ -6,6 +7,8 @@ namespace Infrastructure.Identity.Entities;
 public class ApplicationUser : IdentityUser<Guid>
 {
     public Guid TenantId { get; set; }
+
+    public SystemRole SystemRole { get; set; }
 
     public string FullName { get; set; } = default!;
 

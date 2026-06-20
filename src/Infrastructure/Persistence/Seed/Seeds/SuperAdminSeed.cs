@@ -87,6 +87,7 @@ public sealed class SuperAdminSeed : IDataSeed
         {
             Id = Guid.NewGuid(),
             TenantId = platformTenantId,
+            SystemRole = SystemRole.SystemAdmin,
             FullName = "System Administrator",
             UserName = adminEmail,
             Email = adminEmail,

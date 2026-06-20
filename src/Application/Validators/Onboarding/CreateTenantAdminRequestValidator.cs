@@ -18,9 +18,5 @@ public class CreateTenantAdminRequestValidator : AbstractValidator<CreateTenantA
         RuleFor(x => x.Email)
             .NotEmpty()
             .EmailAddress();
-
-        RuleFor(x => x.RoleNames)
-            .NotEmpty()
-            .WithMessage("At least one role name is required.");
     }
 }

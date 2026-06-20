@@ -1,7 +1,10 @@
 using Application.DTOs.Auth;
 using Application.Interfaces.Authentication;
+using Infrastructure.Authentication.JWT;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Options;
 
 namespace Api.Controllers;
 
@@ -11,11 +14,24 @@ public class AuthController : ApiControllerBase
 {
     private readonly IAuthService _authService;
     private readonly IPasswordResetService _passwordResetService;
+    private readonly JwtSettings _jwtSettings;
 
-    public AuthController(IAuthService authService, IPasswordResetService passwordResetService)
+    public AuthController(
+        IAuthService authService,
+        IPasswordResetService passwordResetService,
+        IOptions<JwtSettings> jwtSettings)
     {
         _authService = authService;
         _passwordResetService = passwordResetService;
+        _jwtSettings = jwtSettings.Value;
+    }
+
+    [HttpGet("me")]
+    [Authorize]
+    public async Task<IActionResult> Me()
+    {
+        var response = await _authService.GetMeAsync(User);
+        return OkEnvelope(response);
     }
 
     [HttpPost("login")]
@@ -24,23 +40,33 @@ public class AuthController : ApiControllerBase
     {
         var response = await _authService.LoginAsync(request, GetClientIp());
         SetAccessTokenCookie(response.AccessToken, response.ExpiresAt);
+        SetRefreshTokenCookie(response.RefreshToken);
         return OkEnvelope(response, "Login successful.");
     }
 
     [HttpPost("refresh")]
     [EnableRateLimiting("auth")]
-    public async Task<IActionResult> Refresh(RefreshTokenRequest request)
+    public async Task<IActionResult> Refresh()
     {
-        var response = await _authService.RefreshTokenAsync(request, GetClientIp());
+        var refreshToken = Request.Cookies["refresh_token"];
+        if (string.IsNullOrWhiteSpace(refreshToken))
+        {
+            return Unauthorized(new { message = "Refresh token cookie is missing." });
+        }
+
+        var response = await _authService.RefreshTokenAsync(refreshToken, GetClientIp());
         SetAccessTokenCookie(response.AccessToken, response.ExpiresAt);
+        SetRefreshTokenCookie(response.RefreshToken);
         return OkEnvelope(response, "Token refreshed.");
     }
 
     [HttpPost("logout")]
-    public async Task<IActionResult> Logout(LogoutRequest request)
+    public async Task<IActionResult> Logout()
     {
-        await _authService.LogoutAsync(request, GetClientIp());
+        var refreshToken = Request.Cookies["refresh_token"];
+        await _authService.LogoutAsync(refreshToken, GetClientIp());
         Response.Cookies.Delete("access_token");
+        Response.Cookies.Delete("refresh_token");
         return OkEnvelope("Logged out.");
     }
 
@@ -86,6 +112,17 @@ public class AuthController : ApiControllerBase
             Secure = HttpContext.Request.IsHttps,
             SameSite = SameSiteMode.Strict,
             Expires = expiresAt,
+        });
+    }
+
+    private void SetRefreshTokenCookie(string token)
+    {
+        Response.Cookies.Append("refresh_token", token, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = HttpContext.Request.IsHttps,
+            SameSite = SameSiteMode.Strict,
+            Expires = DateTimeOffset.UtcNow.AddDays(_jwtSettings.RefreshTokenExpiryDays),
         });
     }
 

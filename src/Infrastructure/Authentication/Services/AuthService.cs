@@ -7,6 +7,8 @@ using Infrastructure.Identity.Entities;
 using Infrastructure.Persistence.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 
 namespace Infrastructure.Authentication.Services;
 
@@ -98,23 +100,23 @@ public class AuthService : IAuthService
         };
     }
 
-    public async Task<AuthResponse> RefreshTokenAsync(RefreshTokenRequest request, string ipAddress)
+    public async Task<AuthResponse> RefreshTokenAsync(string refreshToken, string ipAddress)
     {
-        var refreshToken = await _refreshTokenService.GetByTokenAsync(request.RefreshToken);
+        var storedToken = await _refreshTokenService.GetByTokenAsync(refreshToken);
 
-        if (refreshToken == null)
+        if (storedToken == null)
         {
             throw new InvalidOperationException("Invalid refresh token.");
         }
 
-        var user = await _userManager.FindByIdAsync(refreshToken.UserId.ToString());
+        var user = await _userManager.FindByIdAsync(storedToken.UserId.ToString());
 
         if (user == null)
         {
             throw new InvalidOperationException("User not found.");
         }
 
-        await _refreshTokenService.RevokeAsync(refreshToken, ipAddress);
+        await _refreshTokenService.RevokeAsync(storedToken, ipAddress);
 
         var newRefreshToken = await _refreshTokenService.CreateAsync(user.Id, user.TenantId, ipAddress);
 
@@ -148,21 +150,26 @@ public class AuthService : IAuthService
         };
     }
 
-    public async Task LogoutAsync(LogoutRequest request, string ipAddress)
+    public async Task LogoutAsync(string? refreshToken, string ipAddress)
     {
-        var refreshToken = await _refreshTokenService.GetByTokenAsync(request.RefreshToken);
-
-        if (refreshToken == null)
+        if (string.IsNullOrWhiteSpace(refreshToken))
         {
             return;
         }
 
-        await _refreshTokenService.RevokeAsync(refreshToken, ipAddress);
+        var storedToken = await _refreshTokenService.GetByTokenAsync(refreshToken);
+
+        if (storedToken == null)
+        {
+            return;
+        }
+
+        await _refreshTokenService.RevokeAsync(storedToken, ipAddress);
 
         await _activityLogService.LogAsync(new LogActivityRequest
         {
-            UserId = refreshToken.UserId,
-            TenantId = refreshToken.TenantId,
+            UserId = storedToken.UserId,
+            TenantId = storedToken.TenantId,
             Action = ActivityActions.Auth.Logout,
             Module = ActivityModules.Auth,
             Description = "User logged out.",
@@ -198,6 +205,34 @@ public class AuthService : IAuthService
             .FirstOrDefaultAsync(u =>
                 u.NormalizedEmail == normalizedEmail &&
                 u.TenantId == tenant.Id);
+    }
+
+    public async Task<MeResponse> GetMeAsync(ClaimsPrincipal principal)
+    {
+        var userId = Guid.Parse(principal.FindFirstValue("user_id")!);
+        var email = principal.FindFirstValue(JwtRegisteredClaimNames.Email)!;
+        var fullName = principal.FindFirstValue("full_name")!;
+        var tenantId = Guid.Parse(principal.FindFirstValue("tenant_id")!);
+        var roles = principal.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
+
+        string? tenantSlug = null;
+        if (tenantId != Guid.Empty)
+        {
+            tenantSlug = await _context.Tenants
+                .IgnoreQueryFilters()
+                .Where(t => t.Id == tenantId)
+                .Select(t => t.Slug)
+                .FirstOrDefaultAsync();
+        }
+
+        return new MeResponse
+        {
+            Id = userId,
+            Email = email,
+            FullName = fullName,
+            Roles = roles,
+            TenantSlug = tenantSlug,
+        };
     }
 
     private async Task<IList<(Guid Id, string Name)>> GetUserRolesWithIdsAsync(ApplicationUser user)

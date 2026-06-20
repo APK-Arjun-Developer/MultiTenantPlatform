@@ -34,6 +34,7 @@ public sealed class AppCache : IAppCache
     {
         Remove(CacheKeys.PermissionCatalogSystem);
         Remove(CacheKeys.PermissionCatalogTenant);
+        Remove(CacheKeys.PermissionNamesSystem);
     }
 
     public void InvalidateRole(Guid roleId) =>

@@ -9,4 +9,6 @@ public class JwtSettings
     public string Key { get; set; } = default!;
 
     public int ExpiryMinutes { get; set; }
+
+    public int RefreshTokenExpiryDays { get; set; }
 }

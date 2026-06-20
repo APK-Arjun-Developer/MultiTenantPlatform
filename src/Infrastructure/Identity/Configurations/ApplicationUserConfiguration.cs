@@ -21,6 +21,10 @@ public class ApplicationUserConfiguration
             x.TenantId
         }).IsUnique();
 
+        builder.Property(x => x.SystemRole)
+            .HasConversion<int>()
+            .IsRequired();
+
         builder.Property(x => x.IsActive)
             .HasDefaultValue(true);
 

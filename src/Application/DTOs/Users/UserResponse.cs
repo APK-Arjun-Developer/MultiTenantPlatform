@@ -1,4 +1,5 @@
 using Application.DTOs.Common;
+using Domain.Enums;
 
 namespace Application.DTOs.Users;
 
@@ -11,6 +12,10 @@ public class UserResponse
     public string Email { get; set; } = default!;
 
     public Guid TenantId { get; set; }
+
+    public SystemRole SystemRole { get; set; }
+
+    public bool IsActive { get; set; }
 
     public IReadOnlyList<string> Roles { get; set; } = [];
 

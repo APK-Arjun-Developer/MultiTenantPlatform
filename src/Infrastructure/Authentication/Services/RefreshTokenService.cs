@@ -1,7 +1,9 @@
 using Application.Interfaces.Authentication;
 using Domain.Entities;
+using Infrastructure.Authentication.JWT;
 using Infrastructure.Persistence.Contexts;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using System.Security.Cryptography;
 
 namespace Infrastructure.Authentication.Services;
@@ -9,11 +11,14 @@ namespace Infrastructure.Authentication.Services;
 public class RefreshTokenService : IRefreshTokenService
 {
     private readonly ApplicationDbContext _context;
+    private readonly JwtSettings _jwtSettings;
 
     public RefreshTokenService(
-        ApplicationDbContext context)
+        ApplicationDbContext context,
+        IOptions<JwtSettings> jwtSettings)
     {
         _context = context;
+        _jwtSettings = jwtSettings.Value;
     }
 
     public async Task<RefreshToken> CreateAsync(Guid userId, Guid tenantId, string ipAddress)
@@ -26,7 +31,7 @@ public class RefreshTokenService : IRefreshTokenService
             TenantId = tenantId,
             UserId = userId,
             Token = token,
-            ExpiresAt = DateTime.UtcNow.AddDays(7),
+            ExpiresAt = DateTime.UtcNow.AddDays(_jwtSettings.RefreshTokenExpiryDays),
             CreatedAt = DateTime.UtcNow,
             CreatedByIp = ipAddress
         };

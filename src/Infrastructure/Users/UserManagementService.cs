@@ -2,6 +2,7 @@ using Application.Common;
 using Application.DTOs.ActivityLogs;
 using Application.DTOs.Common;
 using Application.DTOs.Users;
+using Domain.Enums;
 using Application.Exceptions;
 using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Caching;
@@ -78,6 +79,9 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         {
             Id = Guid.NewGuid(),
             TenantId = tenantId,
+            SystemRole = request.RoleName == RoleNames.TenantAdmin
+                ? SystemRole.TenantAdmin
+                : SystemRole.TenantUser,
             FullName = request.FullName,
             Email = request.Email,
             UserName = request.Email,
@@ -323,6 +327,10 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             _context.Set<IdentityUserRole<Guid>>().RemoveRange(existingAssignments);
 
             await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
+
+            user.SystemRole = request.RoleName == RoleNames.TenantAdmin
+                ? SystemRole.TenantAdmin
+                : SystemRole.TenantUser;
         }
 
         // UserManager.UpdateAsync internally calls SaveChangesAsync — no second call needed.
@@ -441,23 +449,8 @@ public class UserManagementService : TenantScopedService, IUserManagementService
 
         (page, pageSize) = Pagination.Normalize(page, pageSize);
 
-        var tenantAdminRoleName = RoleNames.TenantAdmin;
-
-        var roleIds = await _context.Roles
-            .AsNoTracking()
-            .Where(r => r.Name == tenantAdminRoleName && r.TenantId != Guid.Empty)
-            .Select(r => r.Id)
-            .ToListAsync();
-
-        var adminUserIds = await _context.Set<IdentityUserRole<Guid>>()
-            .AsNoTracking()
-            .Where(ur => roleIds.Contains(ur.RoleId))
-            .Select(ur => ur.UserId)
-            .Distinct()
-            .ToListAsync();
-
         IQueryable<ApplicationUser> query = _userManager.Users
-            .Where(u => adminUserIds.Contains(u.Id));
+            .Where(u => u.SystemRole == SystemRole.TenantAdmin);
 
         if (tenantId.HasValue)
         {
@@ -589,6 +582,10 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             _context.Set<IdentityUserRole<Guid>>().RemoveRange(existingAssignments);
 
             await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
+
+            user.SystemRole = request.RoleName == RoleNames.TenantAdmin
+                ? SystemRole.TenantAdmin
+                : SystemRole.TenantUser;
         }
 
         await _userManager.UpdateAsync(user);
@@ -730,6 +727,8 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             FullName = user.FullName,
             Email = user.Email!,
             TenantId = user.TenantId,
+            SystemRole = user.SystemRole,
+            IsActive = user.IsActive,
             Roles = roles,
             ProfileFileId = user.ProfileFileId,
             ProfileUrl = BuildProfileUrl(user.ProfileFileId),

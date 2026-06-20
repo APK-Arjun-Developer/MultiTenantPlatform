@@ -69,7 +69,7 @@ public class CurrentUserPermissionService : ICurrentUserPermissionService
         if (httpContext?.User.IsInRole(RoleNames.SuperAdmin) == true)
         {
             var allPermissions = await _cache.GetOrCreateAsync(
-                CacheKeys.PermissionCatalogSystem,
+                CacheKeys.PermissionNamesSystem,
                 async _ => await _context.Permissions
                     .AsNoTracking()
                     .Select(p => p.Name)

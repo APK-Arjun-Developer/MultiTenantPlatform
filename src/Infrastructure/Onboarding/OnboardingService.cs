@@ -1,6 +1,7 @@
 using Application.Common;
 using Application.DTOs.ActivityLogs;
 using Application.DTOs.Onboarding;
+using Domain.Enums;
 using Application.Exceptions;
 using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Email;
@@ -70,16 +71,29 @@ public class OnboardingService : TenantScopedService, IOnboardingService
 
         await EnsureEmailNotTakenAsync(request.Email, tenant.Id, cancellationToken);
 
-        var roles = await ResolveRolesByNameAsync(tenant.Id, request.RoleNames, cancellationToken);
-
         await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
 
         try
         {
-            var user = CreateInactiveUser(request.FullName, request.Email, tenant.Id);
+            // Always provision the TenantAdmin role for this tenant with full permissions.
+            var adminRole = await EnsureTenantAdminRoleAsync(tenant.Id, cancellationToken);
+
+            // Resolve any caller-supplied extra roles (optional).
+            var extraRoles = request.RoleNames.Count > 0
+                ? await ResolveRolesByNameAsync(tenant.Id, request.RoleNames, cancellationToken)
+                : [];
+
+            // Deduplicate: TenantAdmin is always first; extras skip it if already included.
+            var rolesToAssign = new List<ApplicationRole> { adminRole };
+            foreach (var r in extraRoles.Where(r => r.Id != adminRole.Id))
+            {
+                rolesToAssign.Add(r);
+            }
+
+            var user = CreateInactiveUser(request.FullName, request.Email, tenant.Id, SystemRole.TenantAdmin);
             await CreateUserOrThrowAsync(user);
 
-            foreach (var role in roles)
+            foreach (var role in rolesToAssign)
             {
                 await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
             }
@@ -104,7 +118,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
                 Email = user.Email!,
                 TenantId = tenant.Id,
                 TenantSlug = tenant.Slug,
-                Roles = request.RoleNames,
+                Roles = rolesToAssign.Select(r => r.Name!).ToList(),
                 IsActive = false,
                 SetupUrl = setupUrl,
             };
@@ -213,7 +227,11 @@ public class OnboardingService : TenantScopedService, IOnboardingService
 
         try
         {
-            var user = CreateInactiveUser(request.FullName, request.Email, tenantId);
+            var systemRole = request.RoleNames.Contains(RoleNames.TenantAdmin, StringComparer.Ordinal)
+                ? SystemRole.TenantAdmin
+                : SystemRole.TenantUser;
+
+            var user = CreateInactiveUser(request.FullName, request.Email, tenantId, systemRole);
             await CreateUserOrThrowAsync(user);
 
             foreach (var role in roles)
@@ -280,11 +298,12 @@ public class OnboardingService : TenantScopedService, IOnboardingService
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static ApplicationUser CreateInactiveUser(
-        string fullName, string email, Guid tenantId) =>
+        string fullName, string email, Guid tenantId, SystemRole systemRole) =>
         new()
         {
             Id = Guid.NewGuid(),
             TenantId = tenantId,
+            SystemRole = systemRole,
             FullName = fullName,
             Email = email,
             UserName = email,
@@ -361,6 +380,44 @@ public class OnboardingService : TenantScopedService, IOnboardingService
         {
             throw new ConflictException($"A user with email '{email}' already exists in this tenant.");
         }
+    }
+
+    // Creates the TenantAdmin role for the tenant if absent (or restores it if soft-deleted),
+    // then idempotently assigns every tenant-scoped permission to it.
+    private async Task<ApplicationRole> EnsureTenantAdminRoleAsync(
+        Guid tenantId,
+        CancellationToken cancellationToken)
+    {
+        var role = await _identityRoleService.CreateRoleAsync(
+            tenantId,
+            RoleNames.TenantAdmin,
+            "Tenant administrator — full access to all tenant resources.");
+
+        var tenantPermissionNames = PermissionNames.TenantPermissions.ToHashSet(StringComparer.Ordinal);
+
+        var allPermissions = await _context.Permissions
+            .AsNoTracking()
+            .Where(p => tenantPermissionNames.Contains(p.Name))
+            .ToListAsync(cancellationToken);
+
+        var existingIds = (await _context.RolePermissions
+            .Where(rp => rp.RoleId == role.Id)
+            .Select(rp => rp.PermissionId)
+            .ToListAsync(cancellationToken))
+            .ToHashSet();
+
+        foreach (var permission in allPermissions.Where(p => !existingIds.Contains(p.Id)))
+        {
+            _context.RolePermissions.Add(new RolePermission
+            {
+                RoleId = role.Id,
+                PermissionId = permission.Id,
+            });
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return role;
     }
 
     private async Task<List<ApplicationRole>> ResolveRolesByNameAsync(
