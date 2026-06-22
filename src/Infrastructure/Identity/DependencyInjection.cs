@@ -57,21 +57,22 @@ public static class DependencyInjection
     {
         services.Configure<SmtpSettings>(configuration.GetSection(SmtpSettings.SectionName));
 
-        if (environment.IsDevelopment())
-        {
-            services.AddScoped<IEmailService, StubEmailService>();
-        }
-        else
-        {
-            var host = configuration[$"{SmtpSettings.SectionName}:Host"];
+        var host = configuration[$"{SmtpSettings.SectionName}:Host"];
 
-            if (string.IsNullOrWhiteSpace(host))
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            if (!environment.IsDevelopment())
             {
                 throw new InvalidOperationException(
                     $"Email:Host is required in non-Development environments. " +
                     $"Set it via environment variable Email__Host or a secrets manager.");
             }
 
+            // No SMTP configured in Development — log emails to Serilog instead.
+            services.AddScoped<IEmailService, StubEmailService>();
+        }
+        else
+        {
             services.AddScoped<IEmailService, SmtpEmailService>();
         }
 

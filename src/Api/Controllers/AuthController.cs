@@ -101,8 +101,7 @@ public class AuthController : ApiControllerBase
     {
         await _passwordResetService.SendResetEmailAsync(request, cancellationToken);
 
-        // Always return success to prevent email enumeration attacks.
-        return OkEnvelope("If an account with that email exists, a reset link has been sent.");
+        return OkEnvelope("A password reset link has been sent to your email.");
     }
 
     [HttpGet("reset-password/validate")]

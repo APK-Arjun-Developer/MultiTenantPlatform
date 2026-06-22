@@ -135,7 +135,7 @@ public class AccountSetupService : IAccountSetupService
         var tenantSlug = await GetTenantSlugAsync(user.TenantId, cancellationToken);
 
         var loginUrl = tenantSlug != null
-            ? $"{_appBaseUrl}/login?tenant={tenantSlug}"
+            ? $"{_appBaseUrl}/login?slug={tenantSlug}"
             : $"{_appBaseUrl}/login";
 
         try

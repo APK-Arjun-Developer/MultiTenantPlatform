@@ -339,7 +339,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        var setupUrl = $"{_appBaseUrl}/setup-account?token={rawToken}";
+        var setupUrl = $"{_appBaseUrl}/account-setup?token={rawToken}";
         return (rawToken, setupUrl);
     }
 

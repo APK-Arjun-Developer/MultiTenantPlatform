@@ -49,10 +49,9 @@ public class PasswordResetService : IPasswordResetService
     {
         var user = await FindUserAsync(request.Email, request.TenantSlug, cancellationToken);
 
-        // Always return success — never reveal whether the email exists.
         if (user == null || !user.IsActive)
         {
-            return;
+            throw new NotFoundException("No account with that email address was found.");
         }
 
         // Invalidate any existing unused tokens for this user.

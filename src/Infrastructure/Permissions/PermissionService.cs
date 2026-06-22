@@ -60,7 +60,7 @@ public class PermissionService : TenantScopedService, IPermissionService
 
         if (!IsSystemAdmin())
         {
-            var allowed = PermissionNames.TenantPermissions.ToHashSet(StringComparer.Ordinal);
+            var allowed = PermissionNames.TenantUserPermissions.ToHashSet(StringComparer.Ordinal);
             query = query.Where(p => allowed.Contains(p.Name));
         }
 

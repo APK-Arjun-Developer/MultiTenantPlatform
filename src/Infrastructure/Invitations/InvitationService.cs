@@ -127,7 +127,7 @@ public class InvitationService : TenantScopedService, IInvitationService
             request.RoleIds,
             cancellationToken);
 
-        var url = BuildInvitationUrl(InvitationType.TenantAdmin, invitation.RawToken);
+        var url = BuildInvitationUrl(invitation.RawToken);
 
         await SendEmailSafeAsync(
             () => _emailService.SendTenantAdminInvitationAsync(request.Email, url, tenant.Name, cancellationToken),
@@ -139,7 +139,7 @@ public class InvitationService : TenantScopedService, IInvitationService
             $"Invited '{request.Email}' as tenant admin for '{tenant.Slug}'.",
             tenant.Id);
 
-        return BuildInviteResponse(invitation.Record, url);
+        return BuildInviteResponse(invitation.Record);
     }
 
     // ── Tenant Admin: list user invitations ──────────────────────────────────
@@ -190,6 +190,7 @@ public class InvitationService : TenantScopedService, IInvitationService
 
         await EnsureEmailNotActiveInTenantAsync(request.Email, tenantId, cancellationToken);
         await EnsureNoPendingInvitationAsync(request.Email, tenantId, cancellationToken);
+        await EnsureRolesExistAsync(request.RoleIds, tenantId, cancellationToken);
 
         var invitation = await CreateInvitationAsync(
             tenantId,
@@ -198,7 +199,7 @@ public class InvitationService : TenantScopedService, IInvitationService
             request.RoleIds,
             cancellationToken);
 
-        var url = BuildInvitationUrl(InvitationType.TenantUser, invitation.RawToken);
+        var url = BuildInvitationUrl(invitation.RawToken);
 
         var tenantName = await _context.Tenants
             .IgnoreQueryFilters()
@@ -216,7 +217,7 @@ public class InvitationService : TenantScopedService, IInvitationService
             $"Invited '{request.Email}' as tenant user.",
             tenantId);
 
-        return BuildInviteResponse(invitation.Record, url);
+        return BuildInviteResponse(invitation.Record);
     }
 
     // ── Revoke invitation ────────────────────────────────────────────────────
@@ -354,12 +355,12 @@ public class InvitationService : TenantScopedService, IInvitationService
                 user.Id,
                 invitation.TenantId,
                 ActivityActions.Onboarding.InvitationAccepted,
-                $"User '{user.Email}' accepted tenant admin invitation.");
+                $"User '{invitation.Email}' accepted tenant admin invitation.");
 
             return new AcceptInvitationResponse
             {
                 UserId = user.Id,
-                Email = user.Email!,
+                Email = invitation.Email,
                 FullName = user.FullName,
                 TenantId = user.TenantId,
                 TenantSlug = tenantSlug,
@@ -391,6 +392,8 @@ public class InvitationService : TenantScopedService, IInvitationService
         try
         {
             var roleIds = DeserializeRoleIds(invitation.RoleIdsJson);
+
+            await EnsureRolesExistAsync(roleIds, invitation.TenantId, cancellationToken);
 
             var user = new ApplicationUser
             {
@@ -429,22 +432,27 @@ public class InvitationService : TenantScopedService, IInvitationService
 
             await tx.CommitAsync(cancellationToken);
 
-            var roles = await _userManager.GetRolesAsync(user);
+            var roleNames = roleIds.Count > 0
+                ? await _context.Roles
+                    .Where(r => roleIds.Contains(r.Id))
+                    .Select(r => r.Name!)
+                    .ToListAsync(cancellationToken)
+                : [];
 
             await LogInternalAsync(
                 user.Id,
                 invitation.TenantId,
                 ActivityActions.Onboarding.InvitationAccepted,
-                $"User '{user.Email}' accepted tenant user invitation.");
+                $"User '{invitation.Email}' accepted tenant user invitation.");
 
             return new AcceptInvitationResponse
             {
                 UserId = user.Id,
-                Email = user.Email!,
+                Email = invitation.Email,
                 FullName = user.FullName,
                 TenantId = user.TenantId,
                 TenantSlug = tenantSlug,
-                Roles = roles.ToList(),
+                Roles = roleNames,
                 InvitationType = InvitationType.TenantUser,
                 IsActive = true,
             };
@@ -540,6 +548,26 @@ public class InvitationService : TenantScopedService, IInvitationService
         return invitation;
     }
 
+    private async Task EnsureRolesExistAsync(
+        List<Guid> roleIds,
+        Guid tenantId,
+        CancellationToken cancellationToken)
+    {
+        if (roleIds.Count == 0) return;
+
+        var existing = await _context.Roles
+            .Where(r => roleIds.Contains(r.Id) && r.TenantId == tenantId)
+            .Select(r => r.Id)
+            .ToListAsync(cancellationToken);
+
+        var missing = roleIds.Except(existing).ToList();
+        if (missing.Count > 0)
+        {
+            throw new NotFoundException(
+                $"Role(s) not found for this tenant: {string.Join(", ", missing)}");
+        }
+    }
+
     private async Task EnsureEmailNotActiveInTenantAsync(
         string email,
         Guid tenantId,
@@ -591,23 +619,15 @@ public class InvitationService : TenantScopedService, IInvitationService
         return JsonSerializer.Deserialize<List<Guid>>(json) ?? [];
     }
 
-    private string BuildInvitationUrl(InvitationType type, string rawToken)
-    {
-        var path = type == InvitationType.TenantAdmin
-            ? "register/tenant-admin"
-            : "register/user";
+    private string BuildInvitationUrl(string rawToken) =>
+        $"{_appBaseUrl}/invitation/accept?token={rawToken}";
 
-        return $"{_appBaseUrl}/{path}?token={rawToken}";
-    }
-
-    private static InviteResponse BuildInviteResponse(Invitation record, string url) =>
+    private static InviteResponse BuildInviteResponse(Invitation record) =>
         new()
         {
             InvitationId = record.Id,
-            Email = record.Email,
             InvitationType = record.InvitationType,
             ExpiresAt = record.ExpiresAt,
-            InvitationUrl = url,
         };
 
     private static ValidateInvitationResponse InvalidInvitationResponse(string message) =>

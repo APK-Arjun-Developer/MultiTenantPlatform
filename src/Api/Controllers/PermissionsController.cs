@@ -22,7 +22,7 @@ public class PermissionsController : ApiControllerBase
     /// <summary>
     /// Returns the permission catalog visible to the caller.
     /// Use <c>scope</c> to narrow results: TenantUser, TenantAdmin, or System.
-    /// System Admin sees all scopes; Tenant Admin sees TenantAdmin + TenantUser.
+    /// System Admin sees all scopes; Tenant Admin sees TenantUser scope only (assignable permissions).
     /// </summary>
     [HttpGet]
     [HasPermission(PermissionNames.RolesView)]
