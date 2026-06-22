@@ -4,6 +4,7 @@ using Application.DTOs.Common;
 using Application.DTOs.Tenant;
 using Application.Exceptions;
 using Application.Interfaces.Authentication;
+using Application.Interfaces.Email;
 using Application.Options;
 using Domain.Entities;
 using Domain.Enums;
@@ -14,10 +15,12 @@ using Infrastructure.Caching;
 using Infrastructure.Common;
 using Infrastructure.Identity;
 using Infrastructure.Identity.Entities;
+using Infrastructure.Onboarding;
 using Infrastructure.Persistence;
 using Infrastructure.Persistence.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Tenant;
@@ -30,8 +33,10 @@ public class TenantService : TenantScopedService, ITenantService
     private readonly IAppCache _cache;
     private readonly CacheOptions _cacheOptions;
     private readonly IIdentityRoleService _identityRoleService;
-    private readonly IEmailVerificationService _emailVerificationService;
-    private readonly FeatureOptions _features;
+    private readonly IEmailService _emailService;
+    private readonly string _appBaseUrl;
+
+    private static readonly TimeSpan SetupTokenLifetime = TimeSpan.FromDays(7);
 
     public TenantService(
         ApplicationDbContext context,
@@ -41,8 +46,8 @@ public class TenantService : TenantScopedService, ITenantService
         IAppCache cache,
         IOptions<CacheOptions> cacheOptions,
         IIdentityRoleService identityRoleService,
-        IEmailVerificationService emailVerificationService,
-        IOptions<FeatureOptions> features)
+        IEmailService emailService,
+        IConfiguration configuration)
         : base(currentTenantService)
     {
         _context = context;
@@ -51,8 +56,8 @@ public class TenantService : TenantScopedService, ITenantService
         _cache = cache;
         _cacheOptions = cacheOptions.Value;
         _identityRoleService = identityRoleService;
-        _emailVerificationService = emailVerificationService;
-        _features = features.Value;
+        _emailService = emailService;
+        _appBaseUrl = configuration["AppBaseUrl"] ?? "https://app.example.com";
     }
 
     public async Task<PagedResponse<TenantResponse>> GetTenantsAsync(
@@ -308,6 +313,7 @@ public class TenantService : TenantScopedService, ITenantService
             await _context.SaveChangesAsync();
 
             // TenantAdmin permissions come from SystemRole — no role table entry or assignment needed.
+            // Created inactive; admin sets their own password via the account-setup email link.
             var adminUser = new ApplicationUser
             {
                 Id = Guid.NewGuid(),
@@ -318,12 +324,13 @@ public class TenantService : TenantScopedService, ITenantService
                 UserName = request.User.Email,
                 NormalizedEmail = request.User.Email.ToUpperInvariant(),
                 NormalizedUserName = request.User.Email.ToUpperInvariant(),
-                EmailConfirmed = !_features.RequireEmailVerification,
-                IsActive = true,
+                EmailConfirmed = false,
+                IsActive = false,
                 CreatedAt = DateTime.UtcNow
             };
 
-            var createResult = await _userManager.CreateAsync(adminUser, request.User.Password);
+            var placeholder = $"Placeholder!{Guid.NewGuid():N}";
+            var createResult = await _userManager.CreateAsync(adminUser, placeholder);
 
             if (!createResult.Succeeded)
             {
@@ -331,12 +338,33 @@ public class TenantService : TenantScopedService, ITenantService
                     string.Join(", ", createResult.Errors.Select(e => e.Description)));
             }
 
+            // Issue account-setup token so the admin can set their own password.
+            var (rawToken, tokenHash) = TokenHelper.Generate();
+            var now = DateTime.UtcNow;
+
+            _context.AccountSetupTokens.Add(new AccountSetupToken
+            {
+                Id = Guid.NewGuid(),
+                UserId = adminUser.Id,
+                TenantId = tenant.Id,
+                TokenHash = tokenHash,
+                ExpiresAt = now.Add(SetupTokenLifetime),
+                CreatedAt = now,
+            });
+
+            await _context.SaveChangesAsync();
             await transaction.CommitAsync();
 
-            if (_features.RequireEmailVerification)
+            var setupUrl = $"{_appBaseUrl}/account-setup?token={rawToken}";
+
+            try
             {
-                await _emailVerificationService.SendVerificationOtpAsync(
-                    adminUser.Email!, tenant.Id);
+                await _emailService.SendAccountSetupEmailAsync(
+                    adminUser.Email!, adminUser.FullName, setupUrl);
+            }
+            catch
+            {
+                // Non-fatal — admin can be resent via POST /tenant-admins/{id}/resend
             }
 
             _cache.InvalidateTenantCatalog();

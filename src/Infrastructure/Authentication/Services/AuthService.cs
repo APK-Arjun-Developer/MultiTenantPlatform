@@ -103,7 +103,8 @@ public class AuthService : IAuthService
             ExpiresAt = _jwtTokenGenerator.ComputeAccessTokenExpiryUtc(),
             Email = user.Email!,
             FullName = user.FullName,
-            Roles = roles.Select(r => r.Name).ToList()
+            Roles = roles.Select(r => r.Name).ToList(),
+            SystemRole = user.SystemRole.ToString(),
         };
     }
 
@@ -154,7 +155,8 @@ public class AuthService : IAuthService
             ExpiresAt = _jwtTokenGenerator.ComputeAccessTokenExpiryUtc(),
             Email = user.Email!,
             FullName = user.FullName,
-            Roles = roles.Select(r => r.Name).ToList()
+            Roles = roles.Select(r => r.Name).ToList(),
+            SystemRole = user.SystemRole.ToString(),
         };
     }
 
@@ -222,6 +224,10 @@ public class AuthService : IAuthService
         var fullName = principal.FindFirstValue("full_name")!;
         var tenantId = Guid.Parse(principal.FindFirstValue("tenant_id")!);
         var roles = principal.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
+        var systemRoleClaim = principal.FindFirstValue("system_role");
+        var systemRole = systemRoleClaim != null
+            ? ((Domain.Enums.SystemRole)int.Parse(systemRoleClaim)).ToString()
+            : nameof(Domain.Enums.SystemRole.TenantUser);
 
         string? tenantSlug = null;
         if (tenantId != Guid.Empty)
@@ -239,6 +245,7 @@ public class AuthService : IAuthService
             Email = email,
             FullName = fullName,
             Roles = roles,
+            SystemRole = systemRole,
             TenantSlug = tenantSlug,
         };
     }

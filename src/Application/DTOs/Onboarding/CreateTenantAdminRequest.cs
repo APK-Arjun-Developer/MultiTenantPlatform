@@ -8,7 +8,4 @@ public class CreateTenantAdminRequest
     public string FullName { get; set; } = default!;
 
     public string Email { get; set; } = default!;
-
-    /// <summary>Role names to assign on the tenant.</summary>
-    public List<string> RoleNames { get; set; } = [];
 }

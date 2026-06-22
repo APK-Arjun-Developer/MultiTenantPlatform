@@ -10,5 +10,7 @@ public class MeResponse
 
     public IList<string> Roles { get; set; } = [];
 
+    public string SystemRole { get; set; } = default!;
+
     public string? TenantSlug { get; set; }
 }

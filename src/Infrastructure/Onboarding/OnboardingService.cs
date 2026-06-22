@@ -101,7 +101,6 @@ public class OnboardingService : TenantScopedService, IOnboardingService
                 TenantSlug = tenant.Slug,
                 Roles = [],
                 IsActive = false,
-                SetupUrl = setupUrl,
             };
         }
         catch
@@ -245,7 +244,6 @@ public class OnboardingService : TenantScopedService, IOnboardingService
                 TenantId = tenantId,
                 Roles = roles.Select(r => r.Name!).ToList(),
                 IsActive = false,
-                SetupUrl = setupUrl,
             };
         }
         catch

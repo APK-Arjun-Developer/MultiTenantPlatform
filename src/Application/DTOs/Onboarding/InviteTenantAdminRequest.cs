@@ -6,7 +6,4 @@ public class InviteTenantAdminRequest
     public string TenantSlug { get; set; } = default!;
 
     public string Email { get; set; } = default!;
-
-    /// <summary>Optional predefined role IDs to pre-assign after acceptance.</summary>
-    public List<Guid> RoleIds { get; set; } = [];
 }

@@ -133,10 +133,19 @@ public class PasswordResetService : IPasswordResetService
             return Invalid("Associated account was not found.");
         }
 
+        var tenantSlug = record.TenantId != Guid.Empty
+            ? await _context.Tenants
+                .IgnoreQueryFilters()
+                .Where(t => t.Id == record.TenantId && t.DeletedAt == null)
+                .Select(t => t.Slug)
+                .FirstOrDefaultAsync(cancellationToken)
+            : null;
+
         return new ValidateResetTokenResponse
         {
-            IsValid = true,
-            Email   = user.Email,
+            IsValid    = true,
+            Email      = user.Email,
+            TenantSlug = tenantSlug,
         };
     }
 

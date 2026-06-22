@@ -124,7 +124,7 @@ public class InvitationService : TenantScopedService, IInvitationService
             tenant.Id,
             request.Email,
             InvitationType.TenantAdmin,
-            request.RoleIds,
+            [],
             cancellationToken);
 
         var url = BuildInvitationUrl(invitation.RawToken);

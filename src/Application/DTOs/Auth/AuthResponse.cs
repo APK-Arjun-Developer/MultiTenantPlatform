@@ -13,4 +13,6 @@ public class AuthResponse
     public string FullName { get; set; } = default!;
 
     public IList<string> Roles { get; set; } = [];
+
+    public string SystemRole { get; set; } = default!;
 }

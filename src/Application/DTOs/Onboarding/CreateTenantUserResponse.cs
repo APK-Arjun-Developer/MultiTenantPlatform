@@ -13,6 +13,4 @@ public class CreateTenantUserResponse
     public IReadOnlyList<string> Roles { get; set; } = [];
 
     public bool IsActive { get; set; }
-
-    public string SetupUrl { get; set; } = default!;
 }
