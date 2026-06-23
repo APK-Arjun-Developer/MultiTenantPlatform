@@ -2,23 +2,23 @@ using Application.Common;
 using Application.DTOs.ActivityLogs;
 using Application.DTOs.Common;
 using Application.DTOs.Users;
-using Application.Interfaces.Authentication;
-using Application.Options;
-using Domain.Enums;
 using Application.Exceptions;
 using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Caching;
+using Application.Interfaces.Email;
 using Application.Interfaces.Tenant;
 using Application.Interfaces.Users;
+using Domain.Entities;
+using Domain.Enums;
 using Infrastructure.Common;
 using Infrastructure.Identity;
 using Infrastructure.Identity.Entities;
-using Domain.Entities;
+using Infrastructure.Onboarding;
 using Infrastructure.Persistence;
 using Infrastructure.Persistence.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Configuration;
 
 namespace Infrastructure.Users;
 
@@ -30,8 +30,10 @@ public class UserManagementService : TenantScopedService, IUserManagementService
     private readonly IActivityLogService _activityLogService;
     private readonly IAppCache _cache;
     private readonly IIdentityRoleService _identityRoleService;
-    private readonly IEmailVerificationService _emailVerificationService;
-    private readonly FeatureOptions _features;
+    private readonly IEmailService _emailService;
+    private readonly string _appBaseUrl;
+
+    private static readonly TimeSpan SetupTokenLifetime = TimeSpan.FromDays(7);
 
     public UserManagementService(
         ApplicationDbContext context,
@@ -41,8 +43,8 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         IActivityLogService activityLogService,
         IAppCache cache,
         IIdentityRoleService identityRoleService,
-        IEmailVerificationService emailVerificationService,
-        IOptions<FeatureOptions> features)
+        IEmailService emailService,
+        IConfiguration configuration)
         : base(currentTenantService)
     {
         _context = context;
@@ -51,8 +53,8 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         _activityLogService = activityLogService;
         _cache = cache;
         _identityRoleService = identityRoleService;
-        _emailVerificationService = emailVerificationService;
-        _features = features.Value;
+        _emailService = emailService;
+        _appBaseUrl = configuration["AppBaseUrl"] ?? "https://app.example.com";
     }
 
     public async Task<UserResponse> CreateUserAsync(CreateUserRequest request)
@@ -84,8 +86,7 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             throw new ConflictException("User email already exists.");
         }
 
-        var emailConfirmed = !_features.RequireEmailVerification;
-
+        // Created inactive — user sets their own password via the account-setup email.
         var user = new ApplicationUser
         {
             Id = Guid.NewGuid(),
@@ -96,12 +97,13 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             UserName = request.Email,
             NormalizedEmail = request.Email.ToUpperInvariant(),
             NormalizedUserName = request.Email.ToUpperInvariant(),
-            EmailConfirmed = emailConfirmed,
-            IsActive = true,
+            EmailConfirmed = false,
+            IsActive = false,
             CreatedAt = DateTime.UtcNow
         };
 
-        var result = await _userManager.CreateAsync(user, request.Password);
+        var placeholder = $"Placeholder!{Guid.NewGuid():N}";
+        var result = await _userManager.CreateAsync(user, placeholder);
 
         if (!result.Succeeded)
         {
@@ -114,9 +116,36 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
         }
 
-        if (_features.RequireEmailVerification)
+        // Invalidate any prior unused tokens, then issue a fresh one.
+        var stale = await _context.AccountSetupTokens
+            .Where(t => t.UserId == user.Id && t.UsedAt == null)
+            .ToListAsync();
+
+        _context.AccountSetupTokens.RemoveRange(stale);
+
+        var (rawToken, tokenHash) = TokenHelper.Generate();
+        var now = DateTime.UtcNow;
+
+        _context.AccountSetupTokens.Add(new AccountSetupToken
         {
-            await _emailVerificationService.SendVerificationOtpAsync(user.Email!, tenantId);
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            TenantId = tenantId,
+            TokenHash = tokenHash,
+            ExpiresAt = now.Add(SetupTokenLifetime),
+            CreatedAt = now,
+        });
+
+        await _context.SaveChangesAsync();
+
+        try
+        {
+            var setupUrl = $"{_appBaseUrl}/account-setup?token={rawToken}";
+            await _emailService.SendAccountSetupEmailAsync(user.Email!, user.FullName, setupUrl);
+        }
+        catch
+        {
+            // Non-fatal — can be resent via the resend endpoint
         }
 
         await LogActivityAsync(

@@ -85,9 +85,9 @@ public class TenantService : TenantScopedService, ITenantService
             query = (sortBy?.ToLowerInvariant(), sortOrder?.ToLowerInvariant()) switch
             {
                 ("slug", "desc") => query.OrderByDescending(t => t.Slug),
-                ("slug", _)      => query.OrderBy(t => t.Slug),
+                ("slug", _) => query.OrderBy(t => t.Slug),
                 ("name", "desc") => query.OrderByDescending(t => t.Name),
-                _                => query.OrderBy(t => t.Name),
+                _ => query.OrderBy(t => t.Name),
             };
 
             var tenants = await query
@@ -240,13 +240,6 @@ public class TenantService : TenantScopedService, ITenantService
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(t => t.Slug == request.Slug && t.DeletedAt == null)
             ?? throw new NotFoundException("Tenant not found.");
-
-        var hasUsers = await _userManager.Users.AnyAsync(u => u.TenantId == tenant.Id);
-
-        if (hasUsers)
-        {
-            throw new ConflictException("Cannot delete a tenant that still has users.");
-        }
 
         tenant.MarkDeleted();
 
