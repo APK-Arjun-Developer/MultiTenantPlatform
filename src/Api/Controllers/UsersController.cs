@@ -53,7 +53,6 @@ public class UsersController : ApiControllerBase
     }
 
     [HttpGet("current")]
-    [HasPermission(PermissionNames.ProfileView)]
     public async Task<IActionResult> GetCurrent()
     {
         var response = await _userManagementService.GetCurrentUserAsync();
@@ -71,7 +70,6 @@ public class UsersController : ApiControllerBase
     }
 
     [HttpPost("current/change-password")]
-    [HasPermission(PermissionNames.ProfileEdit)]
     public async Task<IActionResult> ChangePassword(ChangePasswordRequest request)
     {
         await _userManagementService.ChangePasswordAsync(request);
@@ -80,7 +78,6 @@ public class UsersController : ApiControllerBase
     }
 
     [HttpPut("current")]
-    [HasPermission(PermissionNames.ProfileEdit)]
     public async Task<IActionResult> UpdateCurrent(UpdateCurrentUserRequest request)
     {
         var response = await _userManagementService.UpdateCurrentUserAsync(request);

@@ -6,5 +6,9 @@ public interface IReportService
 {
     Task<ReportSummaryResponse> GetSummaryAsync();
 
+    Task<PlatformSummaryResponse> GetPlatformSummaryAsync();
+
     Task<byte[]> ExportSummaryCsvAsync();
+
+    Task<byte[]> ExportPlatformCsvAsync();
 }

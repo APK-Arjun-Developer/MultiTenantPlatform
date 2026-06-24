@@ -1,5 +1,6 @@
 using Application.DTOs.Auth;
 using Application.Interfaces.Authentication;
+using Application.Interfaces.Authorization;
 using Infrastructure.Authentication.JWT;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -15,17 +16,20 @@ public class AuthController : ApiControllerBase
     private readonly IAuthService _authService;
     private readonly IPasswordResetService _passwordResetService;
     private readonly IEmailVerificationService _emailVerificationService;
+    private readonly ICurrentUserPermissionService _permissionService;
     private readonly JwtSettings _jwtSettings;
 
     public AuthController(
         IAuthService authService,
         IPasswordResetService passwordResetService,
         IEmailVerificationService emailVerificationService,
+        ICurrentUserPermissionService permissionService,
         IOptions<JwtSettings> jwtSettings)
     {
         _authService = authService;
         _passwordResetService = passwordResetService;
         _emailVerificationService = emailVerificationService;
+        _permissionService = permissionService;
         _jwtSettings = jwtSettings.Value;
     }
 
@@ -34,6 +38,7 @@ public class AuthController : ApiControllerBase
     public async Task<IActionResult> Me()
     {
         var response = await _authService.GetMeAsync(User);
+        response.Permissions = await _permissionService.GetPermissionsAsync();
         return OkEnvelope(response);
     }
 

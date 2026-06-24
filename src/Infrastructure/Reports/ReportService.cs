@@ -61,6 +61,30 @@ public class ReportService : IReportService
         return Encoding.UTF8.GetBytes(builder.ToString());
     }
 
+    public async Task<byte[]> ExportPlatformCsvAsync()
+    {
+        var summary = await GetPlatformSummaryAsync();
+
+        var builder = new StringBuilder();
+        builder.AppendLine("Metric,Value");
+        builder.AppendLine($"Tenants,{summary.TenantCount}");
+        builder.AppendLine($"TotalUsers,{summary.TotalUserCount}");
+        builder.AppendLine($"TotalProducts,{summary.TotalProductCount}");
+        builder.AppendLine($"TotalActivityLogs,{summary.TotalActivityLogCount}");
+        builder.AppendLine(
+            $"GeneratedAtUtc,{summary.GeneratedAtUtc.ToString("O", CultureInfo.InvariantCulture)}");
+
+        return Encoding.UTF8.GetBytes(builder.ToString());
+    }
+
+    public Task<PlatformSummaryResponse> GetPlatformSummaryAsync()
+    {
+        return _cache.GetOrCreateAsync(
+            CacheKeys.PlatformSummary,
+            _ => LoadPlatformSummaryAsync(),
+            TimeSpan.FromMinutes(_cacheOptions.ReportSummaryMinutes));
+    }
+
     private async Task<ReportSummaryResponse> LoadSummaryAsync(Guid tenantId)
     {
         return new ReportSummaryResponse
@@ -69,6 +93,18 @@ public class ReportService : IReportService
             RoleCount = await _context.Roles.CountAsync(r => r.TenantId == tenantId),
             ProductCount = await _context.Products.CountAsync(p => p.TenantId == tenantId),
             ActivityLogCount = await _context.ActivityLogs.CountAsync(a => a.TenantId == tenantId),
+            GeneratedAtUtc = DateTime.UtcNow,
+        };
+    }
+
+    private async Task<PlatformSummaryResponse> LoadPlatformSummaryAsync()
+    {
+        return new PlatformSummaryResponse
+        {
+            TenantCount = await _context.Tenants.CountAsync(),
+            TotalUserCount = await _userManager.Users.CountAsync(),
+            TotalProductCount = await _context.Products.CountAsync(),
+            TotalActivityLogCount = await _context.ActivityLogs.CountAsync(),
             GeneratedAtUtc = DateTime.UtcNow,
         };
     }

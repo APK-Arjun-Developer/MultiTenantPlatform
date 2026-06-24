@@ -27,6 +27,15 @@ public class ReportsController : ApiControllerBase
         return OkEnvelope(response, "Report summary generated.");
     }
 
+    [HttpGet("platform-summary")]
+    [HasPermission(PermissionNames.TenantsView)]
+    public async Task<IActionResult> GetPlatformSummary()
+    {
+        var response = await _reportService.GetPlatformSummaryAsync();
+
+        return OkEnvelope(response, "Platform summary generated.");
+    }
+
     [HttpGet("export")]
     [HasPermission(PermissionNames.ReportsExport)]
     public async Task<IActionResult> Export()
@@ -37,5 +46,17 @@ public class ReportsController : ApiControllerBase
             csv,
             "text/csv",
             $"tenant-report-{DateTime.UtcNow:yyyyMMddHHmmss}.csv");
+    }
+
+    [HttpGet("platform-export")]
+    [HasPermission(PermissionNames.TenantsView)]
+    public async Task<IActionResult> ExportPlatform()
+    {
+        var csv = await _reportService.ExportPlatformCsvAsync();
+
+        return File(
+            csv,
+            "text/csv",
+            $"platform-report-{DateTime.UtcNow:yyyyMMddHHmmss}.csv");
     }
 }

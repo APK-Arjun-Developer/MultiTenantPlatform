@@ -19,4 +19,6 @@ public static class CacheKeys
     public static string Products(Guid tenantId) => $"products:tenant:{tenantId:N}";
 
     public static string ReportSummary(Guid tenantId) => $"reports:summary:{tenantId:N}";
+
+    public const string PlatformSummary = "reports:platform-summary";
 }
