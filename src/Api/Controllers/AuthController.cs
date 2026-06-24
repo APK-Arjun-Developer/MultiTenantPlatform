@@ -69,6 +69,7 @@ public class AuthController : ApiControllerBase
     }
 
     [HttpPost("logout")]
+    [Authorize]
     public async Task<IActionResult> Logout()
     {
         var refreshToken = Request.Cookies["refresh_token"];

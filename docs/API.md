@@ -64,7 +64,19 @@ Uses the `refresh_token` cookie. Revokes the token and clears both cookies.
 
 Requires: `Authorization: Bearer {token}`
 
-Returns user ID, full name, roles, and tenant slug from the current JWT.
+Returns user ID, full name, roles, tenant slug, and the caller's effective **permissions** list from the current JWT. Permissions are computed server-side (not stored in the token) and included here so the client has them available immediately after auth without a separate round-trip.
+
+```json
+{
+  "id": "...",
+  "email": "user@acme.com",
+  "fullName": "Jane Smith",
+  "roles": ["SalesRep"],
+  "systemRole": "TenantUser",
+  "tenantSlug": "acme",
+  "permissions": ["Products.View", "Products.Create", "Reports.View"]
+}
+```
 
 ### JWT claims
 
@@ -212,13 +224,13 @@ Requires `X-Tenant-Id` header for SystemAdmin. TenantAdmin/TenantUser are scoped
 |--------|------|------------|-------|
 | GET | `/users` | `Users.View` | List users in current tenant (excl. self) |
 | GET | `/users/{id}` | `Users.View` | Get user by ID |
-| GET | `/users/current` | `Profile.View` | Own profile |
+| GET | `/users/current` | Authenticated | Own profile (self-service; no permission required) |
 | POST | `/users` | `Users.Create` | Create TenantUser with immediate password |
 | POST | `/users/direct-create` | `Onboarding.Create` | Create TenantUser; sends account-setup email |
 | POST | `/users/invite` | `Onboarding.Invite` | Invite prospective TenantUser by email |
 | PUT | `/users` | `Users.Edit` | Update user by email in body |
-| PUT | `/users/current` | `Profile.Edit` | Update own profile |
-| POST | `/users/current/change-password` | `Profile.Edit` | Change own password |
+| PUT | `/users/current` | Authenticated | Update own profile (self-service; no permission required) |
+| POST | `/users/current/change-password` | Authenticated | Change own password (self-service; no permission required) |
 | DELETE | `/users` | `Users.Delete` | Soft-delete user by email in body |
 | POST | `/users/{userId}/resend` | `Onboarding.Resend` | Resend setup email for inactive user |
 | GET | `/users/invitations` | `Onboarding.Invite` | List TenantUser invitations (filter by `status`) |
@@ -298,7 +310,7 @@ Requires `X-Tenant-Id` for SystemAdmin. Scoped to current tenant.
 
 | Method | Path | Permission | Notes |
 |--------|------|------------|-------|
-| GET | `/permissions` | Any authenticated | SystemAdmin sees full catalog (incl. `Tenants.*`). TenantAdmin/TenantUser see tenant-safe subset only. |
+| GET | `/permissions` | `Roles.View` | SystemAdmin sees full catalog (incl. `Tenants.*`). TenantAdmin/TenantUser see tenant-safe subset only. |
 
 Optional query param: `?grouped=true` returns permissions grouped by module.
 
@@ -322,12 +334,23 @@ Deleting a file clears any user/tenant `ProfileFileId` referencing it.
 
 ## Reports
 
+### Tenant-scoped (TenantAdmin / TenantUser)
+
 Requires `X-Tenant-Id` for SystemAdmin. Counts are scoped to the current tenant.
 
-| Method | Path | Permission |
-|--------|------|------------|
-| GET | `/reports/summary` | `Reports.View` |
-| GET | `/reports/export` | `Reports.Export` |
+| Method | Path | Permission | Notes |
+|--------|------|------------|-------|
+| GET | `/reports/summary` | `Reports.View` | User, role, product, and activity log counts for the current tenant |
+| GET | `/reports/export` | `Reports.Export` | CSV download of the tenant summary |
+
+### Platform-wide (SystemAdmin only)
+
+No `X-Tenant-Id` required. Counts span all tenants.
+
+| Method | Path | Permission | Notes |
+|--------|------|------------|-------|
+| GET | `/reports/platform-summary` | `Tenants.View` | Total tenants, users, products, and activity logs across the platform |
+| GET | `/reports/platform-export` | `Tenants.View` | CSV download of the platform summary |
 
 ---
 
@@ -337,10 +360,12 @@ Responses include `profileFileId` and `profileUrl` (`/api/v1/files/{id}/download
 
 ### User profile
 
+These endpoints are **self-service** — they require only `[Authorize]` (valid session), not any specific permission. Any authenticated user can access their own profile regardless of their assigned roles.
+
 - `GET /users/current` — own profile (+ optional nested `tenant` with profile/address)
 - `PUT /users/current` — update `fullName`, profile image, address
 - `POST /users/current/change-password` — change own password
-- `PUT /users` — admin update by user ID in body
+- `PUT /users` — admin update by user ID in body (requires `Users.Edit`)
 
 ### Tenant profile
 
@@ -442,6 +467,7 @@ PascalCase with module prefix. Constants: `Application.Common.PermissionNames`.
 | `GET /products` | Products of specified tenant | Current tenant only |
 | `GET /files` | Files of specified tenant | Current tenant only |
 | `GET /reports/summary` | Report for specified tenant | Current tenant only |
+| `GET /reports/platform-summary` | Platform-wide totals (no tenant needed) | N/A — SystemAdmin only |
 | `GET /permissions` | Full catalog (incl. `Tenants.*`) | Tenant-safe subset |
 
 ---
@@ -469,7 +495,7 @@ Use **Authorize** with `Bearer {accessToken}` from login.
 | Products | `GET`, `GET {id}`, `POST`, `PUT`, `DELETE` |
 | Permissions | `GET` |
 | Files | `GET`, `GET {id}`, `GET {id}/download`, `POST`, `DELETE {id}` |
-| Reports | `GET summary`, `GET export` |
+| Reports | `GET summary`, `GET export`, `GET platform-summary`, `GET platform-export` |
 | Invitations | `GET validate`, `POST accept/tenant-admin`, `POST accept/user` |
 | Account setup | `GET validate`, `POST set-password` |
 | Health | `GET /api/v1/health`, `GET /health` |

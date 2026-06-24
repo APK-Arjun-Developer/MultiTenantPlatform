@@ -7,7 +7,7 @@
 | Document | Description |
 |----------|-------------|
 | [docs/PROJECT.md](docs/PROJECT.md) | Architecture, auth model, tenant isolation, data model, migrations & seeds |
-| [docs/API.md](docs/API.md) | v1 endpoints, envelope, login, email verification, invitations, profiles, addresses |
+| [docs/API.md](docs/API.md) | v1 endpoints, envelope, login, email verification, invitations, profiles, addresses, reports |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | GitHub Actions → MonsterASP.NET (FTP) production deploy |
 
 ## How it works (workflow)
@@ -101,7 +101,7 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for production deploy.
 - **Three system roles**: `SystemAdmin` (platform), `TenantAdmin` (manages one tenant), `TenantUser` (operational)
 - **X-Tenant-Id header**: SystemAdmin must supply `X-Tenant-Id` on all tenant-scoped requests; TenantAdmin/TenantUser are always pinned to their JWT `tenant_id`
 - **Email verification**: OTP-based (6-digit, 15 min); skipped in Development via `Features:RequireEmailVerification: false`
-- **Permissions**: PascalCase (`Users.View`); checked per request from DB (cached), never in JWT
+- **Permissions**: PascalCase (`Users.View`); computed per request from DB (cached), never stored in JWT; returned via `GET /auth/me` so clients have them immediately after auth
 - **JWT claims**: `user_id`, `tenant_id`, `system_role`, `full_name`, `role_ids`
 - **Versioned seeds**: `SeedHistory` table; pending seeds only (like migrations)
 - **Profiles**: user & tenant profile images via `Files` FK; `profileUrl` in responses

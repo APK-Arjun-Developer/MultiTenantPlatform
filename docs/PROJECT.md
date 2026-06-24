@@ -91,7 +91,9 @@ Request arrives → JWT validated → system_role extracted
            → check permission ceiling against system_role
 ```
 
-Permissions are **never embedded in the JWT** — they are loaded from the database per request (with `IMemoryCache`).
+Permissions are **not stored in the JWT** — they are computed per request from the database (with `IMemoryCache`).
+
+`GET /api/v1/auth/me` returns the caller's effective `permissions: string[]` alongside identity data. Clients use this response (which `[Authorize]` already blocks until resolved) to gate UI elements without a separate permissions round-trip.
 
 ---
 
@@ -137,7 +139,7 @@ All tenant-scoped services inherit `TenantScopedService` which exposes:
 | POST | `/api/v1/auth/forgot-password` | Send password reset link |
 | GET | `/api/v1/auth/reset-password/validate` | Validate password reset token |
 | POST | `/api/v1/auth/reset-password` | Complete password reset |
-| GET | `/api/v1/auth/me` | Current user's identity (from JWT) |
+| GET | `/api/v1/auth/me` | Current user's identity + effective `permissions[]` computed server-side |
 
 Tokens are set as **HttpOnly cookies** (`access_token`, `refresh_token`). The access token is also returned in the response body for clients that cannot use cookies.
 
@@ -326,7 +328,7 @@ Errors are mapped by `ExceptionHandlingMiddleware` to the same envelope.
 | Roles | `/api/v1/roles`, `/current` |
 | Products | `/api/v1/products` |
 | Permissions | `/api/v1/permissions` |
-| Reports | `/api/v1/reports` |
+| Reports | `/api/v1/reports` (`summary`, `export`, `platform-summary`, `platform-export`) |
 | Files | `/api/v1/files` |
 | Invitations | `/api/v1/invitations` (public, token-gated) |
 | Account setup | `/api/v1/account-setup` (public, token-gated) |
