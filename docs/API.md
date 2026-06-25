@@ -204,7 +204,7 @@ All routes require SystemAdmin. `X-Tenant-Id` is not required for these routes â
 |--------|------|------------|-------|
 | GET | `/tenant-admins` | `Tenants.View` | List all TenantAdmins; filter by `tenantId` query param |
 | GET | `/tenant-admins/{id}` | `Tenants.View` | Get TenantAdmin by ID |
-| POST | `/tenant-admins` | `Onboarding.Create` | Direct-create TenantAdmin; sends account-setup email |
+| POST | `/tenant-admins` | `Onboarding.Create` | Direct-create TenantAdmin; sends account-setup email; optional `address` saved immediately |
 | PUT | `/tenant-admins/{id}` | `Tenants.Edit` | Update TenantAdmin |
 | DELETE | `/tenant-admins/{id}` | `Tenants.Delete` | Delete TenantAdmin |
 | POST | `/tenant-admins/invite` | `Onboarding.Invite` | Invite prospective TenantAdmin by email |
@@ -225,8 +225,8 @@ Requires `X-Tenant-Id` header for SystemAdmin. TenantAdmin/TenantUser are scoped
 | GET | `/users` | `Users.View` | List users in current tenant (excl. self) |
 | GET | `/users/{id}` | `Users.View` | Get user by ID |
 | GET | `/users/current` | Authenticated | Own profile (self-service; no permission required) |
-| POST | `/users` | `Users.Create` | Create TenantUser with immediate password |
-| POST | `/users/direct-create` | `Onboarding.Create` | Create TenantUser; sends account-setup email |
+| POST | `/users` | `Users.Create` | Create TenantUser with immediate password; optional `address` saved immediately |
+| POST | `/users/direct-create` | `Onboarding.Create` | Create TenantUser; sends account-setup email; optional `address` saved immediately |
 | POST | `/users/invite` | `Onboarding.Invite` | Invite prospective TenantUser by email |
 | PUT | `/users` | `Users.Edit` | Update user by email in body |
 | PUT | `/users/current` | Authenticated | Update own profile (self-service; no permission required) |
@@ -276,8 +276,29 @@ No authentication required. Access is controlled by the short-lived invitation t
 | Method | Path | Notes |
 |--------|------|-------|
 | GET | `/invitations/validate?token=...` | Validate before showing registration form. Returns email, type, tenant name, tenant slug. |
-| POST | `/invitations/accept/tenant-admin` | Complete TenantAdmin invitation (provide name, password) |
-| POST | `/invitations/accept/user` | Complete TenantUser invitation (provide name, password, role selection) |
+| POST | `/invitations/accept/tenant-admin` | Complete TenantAdmin invitation (provide name, password, optional address) |
+| POST | `/invitations/accept/user` | Complete TenantUser invitation (provide name, password, optional address) |
+
+Accept request body (both endpoints):
+
+```json
+{
+  "token": "...",
+  "fullName": "Jane Smith",
+  "phone": "+1 555 0100",
+  "password": "SecurePass123!",
+  "confirmPassword": "SecurePass123!",
+  "address": {
+    "line1": "123 Main St",
+    "city": "Austin",
+    "state": "TX",
+    "postalCode": "78701",
+    "country": "US"
+  }
+}
+```
+
+`address` is optional. Omit it to leave the user's address unset.
 
 ---
 
@@ -288,7 +309,27 @@ No authentication required. Used for the direct-create flow (TenantAdmin creates
 | Method | Path | Notes |
 |--------|------|-------|
 | GET | `/account-setup/validate?token=...` | Validate setup token. Returns email and name for pre-filling the form. |
-| POST | `/account-setup/set-password` | Set password and activate the account. Token is consumed (single-use). |
+| POST | `/account-setup/set-password` | Set password, optionally update full name, and optionally set address. Token is consumed (single-use). |
+
+`set-password` request body:
+
+```json
+{
+  "token": "...",
+  "password": "SecurePass123!",
+  "confirmPassword": "SecurePass123!",
+  "fullName": "Jane Smith",
+  "address": {
+    "line1": "123 Main St",
+    "city": "Austin",
+    "state": "TX",
+    "postalCode": "78701",
+    "country": "US"
+  }
+}
+```
+
+`fullName` and `address` are optional. When `fullName` is provided it overwrites the name set during direct-create.
 
 ---
 

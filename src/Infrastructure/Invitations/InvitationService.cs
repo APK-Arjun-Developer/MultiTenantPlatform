@@ -15,6 +15,7 @@ using Infrastructure.Common;
 using Infrastructure.Identity;
 using Infrastructure.Identity.Entities;
 using Infrastructure.Onboarding;
+using Infrastructure.Persistence;
 using Infrastructure.Persistence.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -349,6 +350,12 @@ public class InvitationService : TenantScopedService, IInvitationService
             invitation.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync(cancellationToken);
 
+            if (request.Address != null)
+            {
+                await AddressHelper.ApplyUserAddressUpdateAsync(_context, user, request.Address, false);
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+
             await tx.CommitAsync(cancellationToken);
 
             await LogInternalAsync(
@@ -429,6 +436,12 @@ public class InvitationService : TenantScopedService, IInvitationService
             invitation.AcceptedAt = DateTime.UtcNow;
             invitation.UpdatedAt = DateTime.UtcNow;
             await _context.SaveChangesAsync(cancellationToken);
+
+            if (request.Address != null)
+            {
+                await AddressHelper.ApplyUserAddressUpdateAsync(_context, user, request.Address, false);
+                await _context.SaveChangesAsync(cancellationToken);
+            }
 
             await tx.CommitAsync(cancellationToken);
 

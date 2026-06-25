@@ -281,7 +281,8 @@ Add a seed: new class in `Persistence/Seed/Seeds/`, register in `Persistence/Dep
 
 - **User / tenant profile image**: `ProfileFileId` → `Files`; `profileUrl` = `/api/v1/files/{id}/download`
 - **Address**: separate `Addresses` row linked to user or tenant; responses include `line1`, `city`, … and `fullAddress`
-- Update via `PUT /users`, `PUT /users/current`, or `PUT /tenants` with `address` / `clearAddress`
+- Set at creation: optional `address` field accepted by `POST /tenant-admins`, `POST /users`, `POST /users/direct-create`, `POST /invitations/accept/tenant-admin`, `POST /invitations/accept/user`, `POST /account-setup/set-password`
+- Update after creation via `PUT /users`, `PUT /users/current`, or `PUT /tenants` with `address` / `clearAddress`
 
 ---
 

@@ -124,6 +124,11 @@ public class AuthService : IAuthService
             throw new InvalidOperationException("User not found.");
         }
 
+        if (!user.IsActive)
+        {
+            throw new InvalidOperationException("Your account has been deactivated. Please contact your administrator.");
+        }
+
         await _refreshTokenService.RevokeAsync(storedToken, ipAddress);
 
         var newRefreshToken = await _refreshTokenService.CreateAsync(user.Id, user.TenantId, ipAddress);
@@ -199,10 +204,11 @@ public class AuthService : IAuthService
                     u.TenantId == Guid.Empty);
         }
 
+        var slug = request.TenantSlug.ToLowerInvariant();
         var tenant = await _context.Tenants
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(t =>
-                t.Slug == request.TenantSlug
+                t.Slug == slug
                 && t.DeletedAt == null
                 && t.IsActive);
 

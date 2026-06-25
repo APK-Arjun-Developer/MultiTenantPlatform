@@ -1,25 +1,16 @@
-using Application.DTOs.Invitations;
+using Application.DTOs.Auth;
 using FluentValidation;
 
-namespace Application.Validators.Invitations;
+namespace Application.Validators;
 
-public class AcceptTenantUserInvitationRequestValidator
-    : AbstractValidator<AcceptTenantUserInvitationRequest>
+public class ResetPasswordRequestValidator : AbstractValidator<ResetPasswordRequest>
 {
-    public AcceptTenantUserInvitationRequestValidator()
+    public ResetPasswordRequestValidator()
     {
         RuleFor(x => x.Token)
             .NotEmpty();
 
-        RuleFor(x => x.FullName)
-            .NotEmpty()
-            .MaximumLength(200);
-
-        RuleFor(x => x.Phone)
-            .MaximumLength(30)
-            .When(x => x.Phone != null);
-
-        RuleFor(x => x.Password)
+        RuleFor(x => x.NewPassword)
             .NotEmpty()
             .MinimumLength(8)
             .Matches("[A-Z]").WithMessage("Password must contain at least one uppercase letter.")
@@ -29,6 +20,6 @@ public class AcceptTenantUserInvitationRequestValidator
 
         RuleFor(x => x.ConfirmPassword)
             .NotEmpty()
-            .Equal(x => x.Password).WithMessage("Passwords do not match.");
+            .Equal(x => x.NewPassword).WithMessage("Passwords do not match.");
     }
 }

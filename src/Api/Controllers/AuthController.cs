@@ -1,4 +1,5 @@
 using Application.DTOs.Auth;
+using Application.Exceptions;
 using Application.Interfaces.Authentication;
 using Application.Interfaces.Authorization;
 using Infrastructure.Authentication.JWT;
@@ -105,9 +106,16 @@ public class AuthController : ApiControllerBase
         ForgotPasswordRequest request,
         CancellationToken cancellationToken)
     {
-        await _passwordResetService.SendResetEmailAsync(request, cancellationToken);
+        try
+        {
+            await _passwordResetService.SendResetEmailAsync(request, cancellationToken);
+        }
+        catch (NotFoundException)
+        {
+            // Silently succeed — never reveal whether an account exists for this email.
+        }
 
-        return OkEnvelope("A password reset link has been sent to your email.");
+        return OkEnvelope("If an account with that email address exists, a password reset link has been sent.");
     }
 
     [HttpGet("reset-password/validate")]

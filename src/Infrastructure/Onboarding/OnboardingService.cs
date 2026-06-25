@@ -11,6 +11,7 @@ using Domain.Entities;
 using Infrastructure.Common;
 using Infrastructure.Identity;
 using Infrastructure.Identity.Entities;
+using Infrastructure.Persistence;
 using Infrastructure.Persistence.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -80,6 +81,12 @@ public class OnboardingService : TenantScopedService, IOnboardingService
             await CreateUserOrThrowAsync(user);
 
             var (rawToken, setupUrl) = await IssueSetupTokenAsync(user, cancellationToken);
+
+            if (request.Address != null)
+            {
+                await AddressHelper.ApplyUserAddressUpdateAsync(_context, user, request.Address, false);
+                await _context.SaveChangesAsync(cancellationToken);
+            }
 
             await tx.CommitAsync(cancellationToken);
 
@@ -224,6 +231,12 @@ public class OnboardingService : TenantScopedService, IOnboardingService
             }
 
             var (_, setupUrl) = await IssueSetupTokenAsync(user, cancellationToken);
+
+            if (request.Address != null)
+            {
+                await AddressHelper.ApplyUserAddressUpdateAsync(_context, user, request.Address, false);
+                await _context.SaveChangesAsync(cancellationToken);
+            }
 
             await tx.CommitAsync(cancellationToken);
 

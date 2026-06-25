@@ -1,3 +1,5 @@
+using Application.DTOs.Common;
+
 namespace Application.DTOs.Invitations;
 
 /// <summary>
@@ -15,4 +17,7 @@ public class AcceptTenantUserInvitationRequest
     public string Password { get; set; } = default!;
 
     public string ConfirmPassword { get; set; } = default!;
+
+    /// <summary>Optional personal address to save when accepting the invitation.</summary>
+    public AddressRequest? Address { get; set; }
 }

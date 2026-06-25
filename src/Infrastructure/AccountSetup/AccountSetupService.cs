@@ -7,6 +7,7 @@ using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Email;
 using Infrastructure.Identity.Entities;
 using Infrastructure.Onboarding;
+using Infrastructure.Persistence;
 using Infrastructure.Persistence.Contexts;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -114,14 +115,23 @@ public class AccountSetupService : IAccountSetupService
                 string.Join(", ", result.Errors.Select(e => e.Description)));
         }
 
-        // Mark token used + activate + confirm email in one SaveChanges.
+        // Mark token used + activate + confirm email. Optionally update name.
         tokenRecord.UsedAt = DateTime.UtcNow;
         user.IsActive = true;
         user.EmailConfirmed = true;
         user.PasswordSetAt = DateTime.UtcNow;
         user.UpdatedAt = DateTime.UtcNow;
 
+        if (!string.IsNullOrWhiteSpace(request.FullName))
+            user.FullName = request.FullName.Trim();
+
         await _context.SaveChangesAsync(cancellationToken);
+
+        if (request.Address != null)
+        {
+            await AddressHelper.ApplyUserAddressUpdateAsync(_context, user, request.Address, false);
+            await _context.SaveChangesAsync(cancellationToken);
+        }
 
         await _activityLogService.LogAsync(new LogActivityRequest
         {

@@ -1,6 +1,7 @@
 using Api.Attributes;
 using Application.Common;
 using Application.DTOs.Tenant;
+using System.Security.Claims;
 using Application.Interfaces.Tenant;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -67,6 +68,19 @@ public class TenantController : ApiControllerBase
         var response = await _tenantService.UpdateAsync(request);
 
         return OkEnvelope(response, "Tenant updated.");
+    }
+
+    [HttpPut("current/address")]
+    [Authorize]
+    public async Task<IActionResult> UpdateCurrentAddress(UpdateCurrentTenantAddressRequest request)
+    {
+        var systemRole = User.FindFirstValue("system_role");
+        if (systemRole != "2") // 2 = TenantAdmin
+            return Forbid();
+
+        var response = await _tenantService.UpdateCurrentTenantAddressAsync(request);
+
+        return OkEnvelope(response, "Company address updated.");
     }
 
     [HttpDelete]

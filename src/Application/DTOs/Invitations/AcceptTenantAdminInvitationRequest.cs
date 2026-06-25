@@ -1,3 +1,5 @@
+using Application.DTOs.Common;
+
 namespace Application.DTOs.Invitations;
 
 /// <summary>
@@ -18,6 +20,9 @@ public class AcceptTenantAdminInvitationRequest
 
     /// <summary>Optional company / tenant profile information.</summary>
     public CompanyInfo? Company { get; set; }
+
+    /// <summary>Optional personal address to save when accepting the invitation.</summary>
+    public AddressRequest? Address { get; set; }
 }
 
 public class CompanyInfo

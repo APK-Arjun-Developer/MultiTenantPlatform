@@ -229,6 +229,29 @@ public class TenantService : TenantScopedService, ITenantService
         return MapToResponse(tenant, address);
     }
 
+    public async Task<TenantResponse> UpdateCurrentTenantAddressAsync(UpdateCurrentTenantAddressRequest request)
+    {
+        var tenantId = RequireTenantId();
+
+        var tenant = await _context.Tenants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == tenantId && t.DeletedAt == null)
+            ?? throw new NotFoundException("Tenant not found.");
+
+        await AddressHelper.ApplyTenantAddressUpdateAsync(
+            _context, tenant, request.Address, request.ClearAddress);
+
+        await _context.SaveChangesAsync();
+
+        _cache.InvalidateTenant(tenant.Id);
+
+        await LogActivityAsync(ActivityActions.Tenants.Updated, $"Updated address for tenant '{tenant.Slug}'.");
+
+        var address = await AddressHelper.GetTenantAddressAsync(_context, tenant.Id);
+
+        return MapToResponse(tenant, address);
+    }
+
     public async Task DeleteAsync(DeleteTenantRequest request)
     {
         if (!IsSystemAdmin())
