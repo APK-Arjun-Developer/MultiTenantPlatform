@@ -6,6 +6,7 @@ using Application.Exceptions;
 using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Caching;
 using Application.Interfaces.Email;
+using Application.Interfaces.Files;
 using Application.Interfaces.Tenant;
 using Application.Interfaces.Users;
 using Domain.Entities;
@@ -16,6 +17,7 @@ using Infrastructure.Identity.Entities;
 using Infrastructure.Onboarding;
 using Infrastructure.Persistence;
 using Infrastructure.Persistence.Contexts;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -31,9 +33,18 @@ public class UserManagementService : TenantScopedService, IUserManagementService
     private readonly IAppCache _cache;
     private readonly IIdentityRoleService _identityRoleService;
     private readonly IEmailService _emailService;
+    private readonly IFileService _fileService;
+    private readonly IFileStorageService _fileStorageService;
     private readonly string _appBaseUrl;
 
     private static readonly TimeSpan SetupTokenLifetime = TimeSpan.FromDays(7);
+
+    private static readonly HashSet<string> AvatarExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".jpg", ".jpeg", ".png", ".gif", ".webp"
+    };
+
+    private const long AvatarMaxBytes = 5 * 1024 * 1024; // 5 MB
 
     public UserManagementService(
         ApplicationDbContext context,
@@ -44,6 +55,8 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         IAppCache cache,
         IIdentityRoleService identityRoleService,
         IEmailService emailService,
+        IFileService fileService,
+        IFileStorageService fileStorageService,
         IConfiguration configuration)
         : base(currentTenantService)
     {
@@ -54,6 +67,8 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         _cache = cache;
         _identityRoleService = identityRoleService;
         _emailService = emailService;
+        _fileService = fileService;
+        _fileStorageService = fileStorageService;
         _appBaseUrl = configuration["AppBaseUrl"] ?? "https://app.example.com";
     }
 
@@ -646,6 +661,69 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         _cache.InvalidateTenantDashboard(user.TenantId);
     }
 
+    public async Task<UserResponse> UploadCurrentUserAvatarAsync(IFormFile file)
+    {
+        var extension = Path.GetExtension(file.FileName);
+        if (!AvatarExtensions.Contains(extension))
+            throw new InvalidOperationException("Profile picture must be a JPEG, PNG, GIF, or WebP image.");
+
+        if (file.Length > AvatarMaxBytes)
+            throw new InvalidOperationException("Profile picture must be smaller than 5 MB.");
+
+        var user = await GetCurrentUserEntityAsync();
+        var previousFileId = user.ProfileFileId;
+
+        var uploaded = await _fileService.UploadAsync(file);
+
+        user.ProfileFileId = uploaded.Id;
+        user.UpdatedAt = DateTime.UtcNow;
+        await _userManager.UpdateAsync(user);
+
+        if (previousFileId.HasValue)
+        {
+            try { await _fileService.DeleteAsync(previousFileId.Value); }
+            catch { /* old file already gone — not fatal */ }
+        }
+
+        await LogActivityAsync(ActivityActions.Users.Updated, "Uploaded profile picture.");
+
+        return await GetCurrentUserAsync();
+    }
+
+    public async Task<UserResponse> RemoveCurrentUserAvatarAsync()
+    {
+        var user = await GetCurrentUserEntityAsync();
+
+        if (user.ProfileFileId.HasValue)
+            await _fileService.DeleteAsync(user.ProfileFileId.Value);
+
+        await LogActivityAsync(ActivityActions.Users.Updated, "Removed profile picture.");
+
+        return await GetCurrentUserAsync();
+    }
+
+    public async Task<(Stream Stream, string ContentType, string FileName)?> GetUserAvatarAsync(Guid userId)
+    {
+        var user = await _userManager.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Id == userId);
+
+        if (user?.ProfileFileId == null)
+            return null;
+
+        // IgnoreQueryFilters: SystemAdmin needs to view avatars across tenants.
+        var file = await _context.Files
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(f => f.Id == user.ProfileFileId.Value && f.DeletedAt == null);
+
+        if (file == null)
+            return null;
+
+        var stream = await _fileStorageService.OpenReadAsync(file.RelativePath);
+        return (stream, file.ContentType, file.OriginalName);
+    }
+
     private async Task LogActivityAsync(string action, string description)
     {
         await _activityLogService.LogAsync(new LogActivityRequest
@@ -706,6 +784,9 @@ public class UserManagementService : TenantScopedService, IUserManagementService
     private static string? BuildProfileUrl(Guid? profileFileId) =>
         profileFileId.HasValue ? $"/api/v1/files/{profileFileId.Value}/download" : null;
 
+    private static string? BuildUserAvatarUrl(Guid userId, Guid? profileFileId) =>
+        profileFileId.HasValue ? $"/api/v1/users/{userId}/avatar" : null;
+
     private static UserTenantDetails MapTenantDetails(
         Domain.Entities.Tenant tenant,
         Address? address = null) =>
@@ -736,7 +817,7 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             IsActive = user.IsActive,
             Roles = roles,
             ProfileFileId = user.ProfileFileId,
-            ProfileUrl = BuildProfileUrl(user.ProfileFileId),
+            ProfileUrl = BuildUserAvatarUrl(user.Id, user.ProfileFileId),
             Address = AddressFormatter.ToResponse(address),
             Tenant = includeTenantDetails ? tenantDetails : null
         };

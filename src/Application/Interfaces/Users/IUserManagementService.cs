@@ -1,5 +1,6 @@
 using Application.DTOs.Common;
 using Application.DTOs.Users;
+using Microsoft.AspNetCore.Http;
 
 namespace Application.Interfaces.Users;
 
@@ -20,6 +21,12 @@ public interface IUserManagementService
     Task DeleteUserAsync(DeleteUserRequest request);
 
     Task ChangePasswordAsync(ChangePasswordRequest request);
+
+    Task<UserResponse> UploadCurrentUserAvatarAsync(IFormFile file);
+
+    Task<UserResponse> RemoveCurrentUserAvatarAsync();
+
+    Task<(Stream Stream, string ContentType, string FileName)?> GetUserAvatarAsync(Guid userId);
 
     // ── Tenant Admin management (System Admin scope) ──────────────────────────
 

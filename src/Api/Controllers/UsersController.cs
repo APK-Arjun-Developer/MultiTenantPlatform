@@ -85,6 +85,36 @@ public class UsersController : ApiControllerBase
         return OkEnvelope(response, "Profile updated.");
     }
 
+    [HttpPost("current/avatar")]
+    [RequestSizeLimit(5 * 1024 * 1024)]
+    public async Task<IActionResult> UploadAvatar(IFormFile avatar)
+    {
+        var response = await _userManagementService.UploadCurrentUserAvatarAsync(avatar);
+
+        return OkEnvelope(response, "Profile picture uploaded.");
+    }
+
+    [HttpDelete("current/avatar")]
+    public async Task<IActionResult> RemoveAvatar()
+    {
+        var response = await _userManagementService.RemoveCurrentUserAvatarAsync();
+
+        return OkEnvelope(response, "Profile picture removed.");
+    }
+
+    [HttpGet("{id:guid}/avatar")]
+    public async Task<IActionResult> GetAvatar(Guid id)
+    {
+        var result = await _userManagementService.GetUserAvatarAsync(id);
+
+        if (result == null)
+            return NotFound();
+
+        var (stream, contentType, fileName) = result.Value;
+
+        return File(stream, contentType, fileName);
+    }
+
     [HttpPut]
     [HasPermission(PermissionNames.UsersEdit)]
     public async Task<IActionResult> Update(UpdateUserRequest request)

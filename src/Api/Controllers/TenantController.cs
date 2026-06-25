@@ -1,6 +1,7 @@
 using Api.Attributes;
 using Application.Common;
 using Application.DTOs.Tenant;
+using Domain.Enums;
 using System.Security.Claims;
 using Application.Interfaces.Tenant;
 using Microsoft.AspNetCore.Authorization;
@@ -74,8 +75,8 @@ public class TenantController : ApiControllerBase
     [Authorize]
     public async Task<IActionResult> UpdateCurrentAddress(UpdateCurrentTenantAddressRequest request)
     {
-        var systemRole = User.FindFirstValue("system_role");
-        if (systemRole != "2") // 2 = TenantAdmin
+        var systemRoleClaim = User.FindFirstValue("system_role");
+        if (!int.TryParse(systemRoleClaim, out var roleValue) || (SystemRole)roleValue != SystemRole.TenantAdmin)
             return Forbid();
 
         var response = await _tenantService.UpdateCurrentTenantAddressAsync(request);

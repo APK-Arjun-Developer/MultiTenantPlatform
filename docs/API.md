@@ -191,7 +191,8 @@ All routes require `Tenants.*` permissions (SystemAdmin only).
 | GET | `/tenants/{id}` | `Tenants.View` | SystemAdmin: any tenant. Others: own tenant only. |
 | GET | `/tenants/current` | `Tenants.View` | TenantAdmin/TenantUser only. SystemAdmin gets HTTP 400. |
 | POST | `/tenants` | `Tenants.Create` | Onboard new tenant (see above). SystemAdmin only. |
-| PUT | `/tenants` | `Tenants.Edit` | Update name, slug, active flag, profile image, address. |
+| PUT | `/tenants` | `Tenants.Edit` | Update name, slug, active flag, profile image, address. SystemAdmin only. |
+| PUT | `/tenants/current/address` | Authenticated (TenantAdmin only) | Update own tenant's address. No permission attribute — controller checks `system_role == 2`. |
 | DELETE | `/tenants` | `Tenants.Delete` | Soft-delete tenant. Fails if tenant still has users. |
 
 ---
@@ -230,6 +231,9 @@ Requires `X-Tenant-Id` header for SystemAdmin. TenantAdmin/TenantUser are scoped
 | POST | `/users/invite` | `Onboarding.Invite` | Invite prospective TenantUser by email |
 | PUT | `/users` | `Users.Edit` | Update user by email in body |
 | PUT | `/users/current` | Authenticated | Update own profile (self-service; no permission required) |
+| POST | `/users/current/avatar` | Authenticated | Upload own profile picture (JPEG/PNG/GIF/WebP, max 5 MB). Returns updated `UserDto`. |
+| DELETE | `/users/current/avatar` | Authenticated | Remove own profile picture. |
+| GET | `/users/{id}/avatar` | Authenticated | Stream any user's profile picture image. No permission required — bypasses tenant scope for cross-tenant visibility (e.g., SystemAdmin viewing TenantAdmin avatars). |
 | POST | `/users/current/change-password` | Authenticated | Change own password (self-service; no permission required) |
 | DELETE | `/users` | `Users.Delete` | Soft-delete user by email in body |
 | POST | `/users/{userId}/resend` | `Onboarding.Resend` | Resend setup email for inactive user |
