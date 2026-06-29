@@ -1,8 +1,10 @@
 using Api.Attributes;
 using Application.Common;
+using Application.DTOs.Onboarding;
 using Application.DTOs.Tenant;
 using Domain.Enums;
 using System.Security.Claims;
+using Application.Interfaces.Invitations;
 using Application.Interfaces.Tenant;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -15,10 +17,14 @@ namespace Api.Controllers;
 public class TenantController : ApiControllerBase
 {
     private readonly ITenantService _tenantService;
+    private readonly IInvitationService _invitationService;
 
-    public TenantController(ITenantService tenantService)
+    public TenantController(
+        ITenantService tenantService,
+        IInvitationService invitationService)
     {
         _tenantService = tenantService;
+        _invitationService = invitationService;
     }
 
     [HttpGet]
@@ -91,5 +97,52 @@ public class TenantController : ApiControllerBase
         await _tenantService.DeleteAsync(request);
 
         return OkEnvelope("Tenant deleted.");
+    }
+
+    [HttpGet("invitations")]
+    [HasPermission(PermissionNames.TenantsView)]
+    public async Task<IActionResult> GetInvitations(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? status = null,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _invitationService.GetTenantCreationInvitationsAsync(
+            page, pageSize, status, cancellationToken);
+
+        return OkEnvelope(response, "Tenant creation invitations retrieved.");
+    }
+
+    [HttpPost("invite")]
+    [HasPermission(PermissionNames.TenantsCreate)]
+    public async Task<IActionResult> InviteTenant(
+        InviteTenantRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await _invitationService.InviteTenantAsync(request, cancellationToken);
+
+        return OkEnvelope(response, "Tenant creation invitation sent.");
+    }
+
+    [HttpPost("invitations/{invitationId:guid}/revoke")]
+    [HasPermission(PermissionNames.TenantsCreate)]
+    public async Task<IActionResult> RevokeInvitation(
+        Guid invitationId,
+        CancellationToken cancellationToken)
+    {
+        await _invitationService.RevokeInvitationAsync(invitationId, cancellationToken);
+
+        return OkEnvelope("Invitation revoked.");
+    }
+
+    [HttpPost("invitations/{invitationId:guid}/resend")]
+    [HasPermission(PermissionNames.TenantsCreate)]
+    public async Task<IActionResult> ResendInvitation(
+        Guid invitationId,
+        CancellationToken cancellationToken)
+    {
+        await _invitationService.ResendInvitationAsync(invitationId, cancellationToken);
+
+        return OkEnvelope("Invitation resent.");
     }
 }

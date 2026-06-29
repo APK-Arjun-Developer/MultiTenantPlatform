@@ -1,4 +1,5 @@
 using Application.DTOs.AccountSetup;
+using Application.Validators;
 using FluentValidation;
 
 namespace Application.Validators.AccountSetup;
@@ -21,5 +22,14 @@ public class SetPasswordRequestValidator : AbstractValidator<SetPasswordRequest>
         RuleFor(x => x.ConfirmPassword)
             .NotEmpty()
             .Equal(x => x.Password).WithMessage("Passwords do not match.");
+
+        RuleFor(x => x.Address)
+            .NotNull().WithMessage("Address is required.");
+
+        When(x => x.Address != null, () =>
+        {
+            RuleFor(x => x.Address!)
+                .SetValidator(new AddressRequestValidator());
+        });
     }
 }

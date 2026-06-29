@@ -143,6 +143,76 @@ public class InvitationService : TenantScopedService, IInvitationService
         return BuildInviteResponse(invitation.Record);
     }
 
+    // ── System Admin: list + create new-tenant invitations ───────────────────
+
+    public async Task<PagedResponse<InvitationListItemResponse>> GetTenantCreationInvitationsAsync(
+        int page, int pageSize,
+        string? status = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsSystemAdmin())
+        {
+            throw new ForbiddenException("Only system administrators can list tenant creation invitations.");
+        }
+
+        (page, pageSize) = Pagination.Normalize(page, pageSize);
+
+        var query = _context.Invitations
+            .AsNoTracking()
+            .Where(i => i.InvitationType == InvitationType.NewTenant);
+
+        query = ApplyStatusFilter(query, status);
+
+        var totalCount = await query.CountAsync(cancellationToken);
+
+        var invitations = await query
+            .OrderByDescending(i => i.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+
+        return new PagedResponse<InvitationListItemResponse>
+        {
+            Items = invitations.Select(i => MapToListItem(i, null)).ToList(),
+            Page = page,
+            PageSize = pageSize,
+            TotalCount = totalCount,
+        };
+    }
+
+    public async Task<InviteResponse> InviteTenantAsync(
+        InviteTenantRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!IsSystemAdmin())
+        {
+            throw new ForbiddenException("Only system administrators can send new-tenant invitations.");
+        }
+
+        await EnsureNoPendingNewTenantInvitationAsync(request.Email, cancellationToken);
+
+        var invitation = await CreateInvitationAsync(
+            Guid.Empty,
+            request.Email,
+            InvitationType.NewTenant,
+            [],
+            cancellationToken);
+
+        var url = BuildInvitationUrl(invitation.RawToken);
+
+        await SendEmailSafeAsync(
+            () => _emailService.SendNewTenantInvitationAsync(request.Email, url, cancellationToken),
+            emailType: "NewTenantInvitation",
+            toEmail: request.Email);
+
+        await LogAsync(
+            ActivityActions.Onboarding.TenantAdminInvited,
+            $"Sent new-tenant invitation to '{request.Email}'.",
+            Guid.Empty);
+
+        return BuildInviteResponse(invitation.Record);
+    }
+
     // ── Tenant Admin: list user invitations ──────────────────────────────────
 
     public async Task<PagedResponse<InvitationListItemResponse>> GetUserInvitationsAsync(
@@ -260,6 +330,85 @@ public class InvitationService : TenantScopedService, IInvitationService
         await LogAsync(
             ActivityActions.Onboarding.InvitationRevoked,
             $"Revoked invitation for '{invitation.Email}'.",
+            invitation.TenantId);
+    }
+
+    // ── Resend invitation ────────────────────────────────────────────────────
+
+    public async Task ResendInvitationAsync(
+        Guid invitationId,
+        CancellationToken cancellationToken = default)
+    {
+        var invitation = await _context.Invitations
+            .FirstOrDefaultAsync(i => i.Id == invitationId, cancellationToken)
+            ?? throw new NotFoundException("Invitation not found.");
+
+        if (!IsSystemAdmin())
+        {
+            var tenantId = RequireTenantId();
+
+            if (invitation.TenantId != tenantId)
+            {
+                throw new ForbiddenException("Invitation does not belong to your tenant.");
+            }
+        }
+
+        if (invitation.IsAccepted)
+        {
+            throw new ConflictException("Cannot resend an already accepted invitation.");
+        }
+
+        if (invitation.IsRevoked)
+        {
+            throw new ConflictException("Cannot resend a revoked invitation.");
+        }
+
+        // Regenerate token and extend expiry.
+        var (rawToken, newHash) = TokenHelper.Generate();
+        invitation.TokenHash = newHash;
+        invitation.ExpiresAt = DateTime.UtcNow.Add(InvitationLifetime);
+        invitation.UpdatedAt = DateTime.UtcNow;
+        invitation.UpdatedBy = CurrentTenantService.UserId;
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        var url = BuildInvitationUrl(rawToken);
+
+        var tenantName = invitation.InvitationType != InvitationType.NewTenant
+            ? await _context.Tenants
+                .IgnoreQueryFilters()
+                .Where(t => t.Id == invitation.TenantId && t.DeletedAt == null)
+                .Select(t => t.Name)
+                .FirstOrDefaultAsync(cancellationToken) ?? string.Empty
+            : string.Empty;
+
+        switch (invitation.InvitationType)
+        {
+            case InvitationType.TenantAdmin:
+                await SendEmailSafeAsync(
+                    () => _emailService.SendTenantAdminInvitationAsync(invitation.Email, url, tenantName, cancellationToken),
+                    emailType: "TenantAdminInvitation",
+                    toEmail: invitation.Email);
+                break;
+
+            case InvitationType.TenantUser:
+                await SendEmailSafeAsync(
+                    () => _emailService.SendTenantUserInvitationAsync(invitation.Email, url, tenantName, cancellationToken),
+                    emailType: "TenantUserInvitation",
+                    toEmail: invitation.Email);
+                break;
+
+            case InvitationType.NewTenant:
+                await SendEmailSafeAsync(
+                    () => _emailService.SendNewTenantInvitationAsync(invitation.Email, url, cancellationToken),
+                    emailType: "NewTenantInvitation",
+                    toEmail: invitation.Email);
+                break;
+        }
+
+        await LogAsync(
+            ActivityActions.Onboarding.OnboardingEmailResent,
+            $"Resent invitation to '{invitation.Email}'.",
             invitation.TenantId);
     }
 
@@ -477,6 +626,117 @@ public class InvitationService : TenantScopedService, IInvitationService
         }
     }
 
+    // ── Public: accept new-tenant invitation ─────────────────────────────────
+
+    public async Task<AcceptInvitationResponse> AcceptTenantCreationInvitationAsync(
+        AcceptTenantCreationInvitationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var invitation = await FindInvitationByTokenAsync(request.Token, cancellationToken)
+            ?? throw new NotFoundException("Invitation not found.");
+
+        if (invitation.InvitationType != InvitationType.NewTenant)
+        {
+            throw new InvalidOperationException("Invitation type mismatch.");
+        }
+
+        if (invitation.IsRevoked)  throw new InvalidOperationException("This invitation has been revoked.");
+        if (invitation.IsAccepted) throw new ConflictException("This invitation has already been accepted.");
+        if (invitation.IsExpired)  throw new InvalidOperationException("This invitation has expired.");
+
+        var slugExists = await _context.Tenants
+            .IgnoreQueryFilters()
+            .AnyAsync(t => t.Slug == request.TenantSlug && t.DeletedAt == null, cancellationToken);
+
+        if (slugExists)
+        {
+            throw new ConflictException("Tenant slug already exists. Please choose a different one.");
+        }
+
+        await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
+
+        try
+        {
+            var tenant = new Domain.Entities.Tenant
+            {
+                Id = Guid.NewGuid(),
+                Name = request.TenantName,
+                Slug = request.TenantSlug,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+            };
+
+            _context.Tenants.Add(tenant);
+            await _context.SaveChangesAsync(cancellationToken);
+
+            if (request.TenantAddress != null)
+            {
+                await AddressHelper.ApplyTenantAddressUpdateAsync(_context, tenant, request.TenantAddress, false);
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+
+            var user = new ApplicationUser
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenant.Id,
+                SystemRole = SystemRole.TenantAdmin,
+                FullName = request.FullName,
+                Email = invitation.Email,
+                UserName = invitation.Email,
+                NormalizedEmail = invitation.Email.ToUpperInvariant(),
+                NormalizedUserName = invitation.Email.ToUpperInvariant(),
+                EmailConfirmed = true,
+                PhoneNumber = request.Phone,
+                IsActive = true,
+                PasswordSetAt = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow,
+            };
+
+            var result = await _userManager.CreateAsync(user, request.Password);
+
+            if (!result.Succeeded)
+            {
+                throw new InvalidOperationException(
+                    string.Join(", ", result.Errors.Select(e => e.Description)));
+            }
+
+            invitation.AcceptedAt = DateTime.UtcNow;
+            invitation.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync(cancellationToken);
+
+            if (request.UserAddress != null)
+            {
+                await AddressHelper.ApplyUserAddressUpdateAsync(_context, user, request.UserAddress, false);
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+
+            await tx.CommitAsync(cancellationToken);
+
+            await LogInternalAsync(
+                user.Id,
+                tenant.Id,
+                ActivityActions.Onboarding.InvitationAccepted,
+                $"User '{invitation.Email}' accepted new-tenant invitation and created tenant '{tenant.Slug}'.");
+
+            return new AcceptInvitationResponse
+            {
+                UserId = user.Id,
+                Email = invitation.Email,
+                FullName = user.FullName,
+                TenantId = tenant.Id,
+                TenantSlug = tenant.Slug,
+                Roles = [],
+                InvitationType = InvitationType.NewTenant,
+                IsActive = true,
+            };
+        }
+        catch
+        {
+            await tx.RollbackAsync(cancellationToken);
+            throw;
+        }
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private async Task<(Invitation Record, string RawToken)> CreateInvitationAsync(
@@ -593,6 +853,25 @@ public class InvitationService : TenantScopedService, IInvitationService
         if (exists)
         {
             throw new ConflictException($"A user with email '{email}' already exists in this tenant.");
+        }
+    }
+
+    private async Task EnsureNoPendingNewTenantInvitationAsync(
+        string email,
+        CancellationToken cancellationToken)
+    {
+        var pending = await _context.Invitations.AnyAsync(
+            i => i.Email == email
+                 && i.InvitationType == InvitationType.NewTenant
+                 && i.AcceptedAt == null
+                 && i.RevokedAt == null
+                 && i.ExpiresAt > DateTime.UtcNow,
+            cancellationToken);
+
+        if (pending)
+        {
+            throw new ConflictException(
+                $"An active new-tenant invitation for '{email}' already exists. Revoke it before sending a new one.");
         }
     }
 

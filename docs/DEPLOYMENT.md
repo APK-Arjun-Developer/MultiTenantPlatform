@@ -156,7 +156,8 @@ Smoke test: `GET /api/v1/health` on `SITE_URL`.
 | `Features:RequireEmailVerification` | `false` — skip email OTP; all users log in immediately | `true` — users must verify email before first login |
 | `AppBaseUrl` | `http://localhost:5173` | `APP_BASE_URL` GitHub secret (must be `https://`) |
 | Swagger | Open at `/swagger` | Open at `/swagger` (`EnabledInProduction`) |
-| CORS | `AllowedOrigins` in Development config | `ALLOWED_ORIGINS` secret (optional) |
+| CORS | `AllowedOrigins` in Development config (add host IP, e.g. `http://192.168.x.x:5173`, for LAN access) | `ALLOWED_ORIGINS` secret (optional) |
+| HTTPS redirect | Disabled in Development (`UseHttpsRedirection` skipped) | Enabled (enforced by middleware) |
 | Email | Localhost SMTP (e.g. Mailhog on port 1025) | Configured SMTP credentials |
 
 Both environments only apply **pending** migrations and seeds — safe on every restart.

@@ -95,6 +95,16 @@ public sealed class SmtpEmailService : IEmailService
             emailType: "TenantUserInvitation",
             cancellationToken);
 
+    public Task SendNewTenantInvitationAsync(
+        string toEmail, string invitationUrl,
+        CancellationToken cancellationToken = default) =>
+        SendAsync(
+            toEmail,
+            "You've been invited to create a new tenant",
+            EmailTemplates.NewTenantInvitation(toEmail, invitationUrl),
+            emailType: "NewTenantInvitation",
+            cancellationToken);
+
     public Task SendAccountActivationEmailAsync(
         string toEmail, string fullName, string loginUrl,
         CancellationToken cancellationToken = default) =>

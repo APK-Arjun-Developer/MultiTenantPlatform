@@ -1,3 +1,5 @@
+using Application.DTOs.Common;
+
 namespace Application.DTOs.Tenant;
 
 public class OnboardTenantRequest
@@ -14,6 +16,8 @@ public class OnboardUserDetails
     public string FullName { get; set; } = default!;
 
     public string Email { get; set; } = default!;
+
+    public AddressRequest? Address { get; set; }
 }
 
 public class OnboardTenantDetails
@@ -21,6 +25,8 @@ public class OnboardTenantDetails
     public string Name { get; set; } = default!;
 
     public string Slug { get; set; } = default!;
+
+    public AddressRequest? Address { get; set; }
 }
 
 public class OnboardRoleDetails

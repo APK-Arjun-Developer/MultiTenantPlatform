@@ -204,7 +204,10 @@ var app = builder.Build();
 
 app.UseForwardedHeaders();
 
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 
 // Security headers on every response
 app.Use(async (context, next) =>

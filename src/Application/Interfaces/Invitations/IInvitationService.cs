@@ -16,6 +16,14 @@ public interface IInvitationService
         InviteTenantAdminRequest request,
         CancellationToken cancellationToken = default);
 
+    Task<PagedResponse<InvitationListItemResponse>> GetTenantCreationInvitationsAsync(
+        int page, int pageSize, string? status = null,
+        CancellationToken cancellationToken = default);
+
+    Task<InviteResponse> InviteTenantAsync(
+        InviteTenantRequest request,
+        CancellationToken cancellationToken = default);
+
     // ── Tenant Admin ──────────────────────────────────────────────────────────
 
     Task<PagedResponse<InvitationListItemResponse>> GetUserInvitationsAsync(
@@ -27,6 +35,10 @@ public interface IInvitationService
         CancellationToken cancellationToken = default);
 
     Task RevokeInvitationAsync(
+        Guid invitationId,
+        CancellationToken cancellationToken = default);
+
+    Task ResendInvitationAsync(
         Guid invitationId,
         CancellationToken cancellationToken = default);
 
@@ -42,5 +54,9 @@ public interface IInvitationService
 
     Task<AcceptInvitationResponse> AcceptTenantUserInvitationAsync(
         AcceptTenantUserInvitationRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<AcceptInvitationResponse> AcceptTenantCreationInvitationAsync(
+        AcceptTenantCreationInvitationRequest request,
         CancellationToken cancellationToken = default);
 }

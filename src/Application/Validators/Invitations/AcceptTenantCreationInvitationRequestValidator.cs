@@ -4,10 +4,10 @@ using FluentValidation;
 
 namespace Application.Validators.Invitations;
 
-public class AcceptTenantAdminInvitationRequestValidator
-    : AbstractValidator<AcceptTenantAdminInvitationRequest>
+public class AcceptTenantCreationInvitationRequestValidator
+    : AbstractValidator<AcceptTenantCreationInvitationRequest>
 {
-    public AcceptTenantAdminInvitationRequestValidator()
+    public AcceptTenantCreationInvitationRequestValidator()
     {
         RuleFor(x => x.Token)
             .NotEmpty();
@@ -32,12 +32,31 @@ public class AcceptTenantAdminInvitationRequestValidator
             .NotEmpty()
             .Equal(x => x.Password).WithMessage("Passwords do not match.");
 
-        RuleFor(x => x.Address)
-            .NotNull().WithMessage("Address is required.");
+        RuleFor(x => x.TenantName)
+            .NotEmpty()
+            .MaximumLength(200);
 
-        When(x => x.Address != null, () =>
+        RuleFor(x => x.TenantSlug)
+            .NotEmpty()
+            .MaximumLength(100)
+            .Matches("^[a-z0-9]+(?:-[a-z0-9]+)*$")
+            .WithMessage("Slug must be lowercase alphanumeric with optional hyphens.");
+
+        RuleFor(x => x.TenantAddress)
+            .NotNull().WithMessage("Company address is required.");
+
+        When(x => x.TenantAddress != null, () =>
         {
-            RuleFor(x => x.Address!)
+            RuleFor(x => x.TenantAddress!)
+                .SetValidator(new AddressRequestValidator());
+        });
+
+        RuleFor(x => x.UserAddress)
+            .NotNull().WithMessage("Personal address is required.");
+
+        When(x => x.UserAddress != null, () =>
+        {
+            RuleFor(x => x.UserAddress!)
                 .SetValidator(new AddressRequestValidator());
         });
     }

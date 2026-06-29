@@ -26,6 +26,9 @@ public class UserResponse
     public AddressResponse? Address { get; set; }
 
     public UserTenantDetails? Tenant { get; set; }
+
+    /// <summary>True when the user was created directly and has not completed account setup yet.</summary>
+    public bool HasPendingSetup { get; set; }
 }
 
 public class UserTenantDetails

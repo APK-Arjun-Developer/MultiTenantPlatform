@@ -72,4 +72,21 @@ public class InvitationsController : ApiControllerBase
 
         return OkEnvelope(response, "Invitation accepted. Your account is ready.");
     }
+
+    /// <summary>
+    /// Accept a new-tenant creation invitation.
+    /// The invited user provides tenant details, their profile, and a new password.
+    /// A new tenant and tenant admin account are created atomically.
+    /// </summary>
+    [HttpPost("accept/new-tenant")]
+    [EnableRateLimiting("auth")]
+    public async Task<IActionResult> AcceptNewTenant(
+        AcceptTenantCreationInvitationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await _invitationService.AcceptTenantCreationInvitationAsync(
+            request, cancellationToken);
+
+        return OkEnvelope(response, "Invitation accepted. Your tenant and account are ready.");
+    }
 }

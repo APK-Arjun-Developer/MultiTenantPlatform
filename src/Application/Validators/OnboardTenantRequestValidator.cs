@@ -34,6 +34,15 @@ public class OnboardTenantDetailsValidator : AbstractValidator<OnboardTenantDeta
             .MaximumLength(100)
             .Matches("^[a-z0-9]+(?:-[a-z0-9]+)*$")
             .WithMessage("Slug must be lowercase alphanumeric with optional hyphens.");
+
+        RuleFor(x => x.Address)
+            .NotNull().WithMessage("Company address is required.");
+
+        When(x => x.Address != null, () =>
+        {
+            RuleFor(x => x.Address!)
+                .SetValidator(new AddressRequestValidator());
+        });
     }
 }
 
@@ -48,6 +57,15 @@ public class OnboardUserDetailsValidator : AbstractValidator<OnboardUserDetails>
         RuleFor(x => x.Email)
             .NotEmpty()
             .EmailAddress();
+
+        RuleFor(x => x.Address)
+            .NotNull().WithMessage("Admin address is required.");
+
+        When(x => x.Address != null, () =>
+        {
+            RuleFor(x => x.Address!)
+                .SetValidator(new AddressRequestValidator());
+        });
     }
 }
 

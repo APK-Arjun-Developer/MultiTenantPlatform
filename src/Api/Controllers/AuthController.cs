@@ -146,7 +146,7 @@ public class AuthController : ApiControllerBase
         {
             HttpOnly = true,
             Secure = HttpContext.Request.IsHttps,
-            SameSite = SameSiteMode.Strict,
+            SameSite = SameSiteMode.Lax,
             Expires = expiresAt,
         });
     }
@@ -157,7 +157,7 @@ public class AuthController : ApiControllerBase
         {
             HttpOnly = true,
             Secure = HttpContext.Request.IsHttps,
-            SameSite = SameSiteMode.Strict,
+            SameSite = SameSiteMode.Lax,
             Expires = DateTimeOffset.UtcNow.AddDays(_jwtSettings.RefreshTokenExpiryDays),
         });
     }

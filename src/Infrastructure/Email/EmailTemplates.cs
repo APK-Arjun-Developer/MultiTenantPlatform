@@ -125,6 +125,23 @@ internal static class EmailTemplates
 <div class=""divider""></div>
 <p style=""font-size:13px;color:#6b7280;"">This invitation was sent to <strong>{Encode(toEmail)}</strong>. If you weren't expecting it, you can safely ignore this email.</p>");
 
+    internal static string NewTenantInvitation(string toEmail, string invitationUrl) =>
+        Layout(
+            title: "You've been invited to create a new tenant",
+            preheader: "Complete your registration to set up your new tenant account.",
+            bodyContent: $@"
+<h2>Create your tenant account</h2>
+<p>Hi there,</p>
+<p>You've been invited to set up a new tenant on MultiTenant Platform. Click the button below to complete your registration — you'll be able to choose your tenant name and configure your account.</p>
+<div class=""btn-wrap""><a class=""btn"" href=""{invitationUrl}"">Get started</a></div>
+<div class=""note"">
+  <strong>This invitation expires in 7 days.</strong><br />
+  If the button above doesn't work, copy and paste this URL into your browser:<br />
+  <a href=""{invitationUrl}"" style=""color:#1a56db;word-break:break-all;"">{invitationUrl}</a>
+</div>
+<div class=""divider""></div>
+<p style=""font-size:13px;color:#6b7280;"">This invitation was sent to <strong>{Encode(toEmail)}</strong>. If you weren't expecting it, you can safely ignore this email.</p>");
+
     internal static string AccountActivation(string fullName, string loginUrl) =>
         Layout(
             title: "Your account has been activated",

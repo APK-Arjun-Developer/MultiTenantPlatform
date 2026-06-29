@@ -1,4 +1,5 @@
 using Application.DTOs.Onboarding;
+using Application.Validators;
 using FluentValidation;
 
 namespace Application.Validators.Onboarding;
@@ -18,5 +19,14 @@ public class CreateTenantAdminRequestValidator : AbstractValidator<CreateTenantA
         RuleFor(x => x.Email)
             .NotEmpty()
             .EmailAddress();
+
+        RuleFor(x => x.Address)
+            .NotNull().WithMessage("Address is required.");
+
+        When(x => x.Address != null, () =>
+        {
+            RuleFor(x => x.Address!)
+                .SetValidator(new AddressRequestValidator());
+        });
     }
 }

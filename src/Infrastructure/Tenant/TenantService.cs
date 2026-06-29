@@ -369,6 +369,21 @@ public class TenantService : TenantScopedService, ITenantService
             });
 
             await _context.SaveChangesAsync();
+
+            if (request.Tenant.Address != null)
+            {
+                await AddressHelper.ApplyTenantAddressUpdateAsync(
+                    _context, tenant, request.Tenant.Address, false);
+                await _context.SaveChangesAsync();
+            }
+
+            if (request.User.Address != null)
+            {
+                await AddressHelper.ApplyUserAddressUpdateAsync(
+                    _context, adminUser, request.User.Address, false);
+                await _context.SaveChangesAsync();
+            }
+
             await transaction.CommitAsync();
 
             var setupUrl = $"{_appBaseUrl}/account-setup?token={rawToken}";

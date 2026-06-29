@@ -57,6 +57,16 @@ public sealed class StubEmailService : IEmailService
         return Task.CompletedTask;
     }
 
+    public Task SendNewTenantInvitationAsync(
+        string toEmail, string invitationUrl,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "[STUB EMAIL] NewTenantInvitation → {Email}: {Url}",
+            toEmail, invitationUrl);
+        return Task.CompletedTask;
+    }
+
     public Task SendAccountActivationEmailAsync(
         string toEmail, string fullName, string loginUrl,
         CancellationToken cancellationToken = default)

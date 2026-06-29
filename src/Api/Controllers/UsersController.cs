@@ -205,6 +205,18 @@ public class UsersController : ApiControllerBase
         return OkEnvelope("Invitation revoked.");
     }
 
+    /// <summary>Resend a pending tenant user invitation with a fresh token.</summary>
+    [HttpPost("invitations/{invitationId:guid}/resend")]
+    [HasPermission(PermissionNames.OnboardingResend)]
+    public async Task<IActionResult> ResendInvitation(
+        Guid invitationId,
+        CancellationToken cancellationToken)
+    {
+        await _invitationService.ResendInvitationAsync(invitationId, cancellationToken);
+
+        return OkEnvelope("Invitation resent.");
+    }
+
     /// <summary>Activate a tenant user account.</summary>
     [HttpPost("{userId:guid}/activate")]
     [HasPermission(PermissionNames.OnboardingActivate)]

@@ -241,6 +241,12 @@ public class UserManagementService : TenantScopedService, IUserManagementService
 
         var userAddresses = await AddressHelper.GetUserAddressesAsync(_context, userIds, isAdmin);
 
+        var pendingSetupIds = await _context.AccountSetupTokens
+            .AsNoTracking()
+            .Where(t => userIds.Contains(t.UserId) && t.UsedAt == null)
+            .Select(t => t.UserId)
+            .ToHashSetAsync();
+
         var responses = new List<UserResponse>();
 
         foreach (var user in users)
@@ -256,7 +262,8 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             userAddresses.TryGetValue(user.Id, out var userAddress);
             var roles = rolesByUser.GetValueOrDefault(user.Id, []);
 
-            responses.Add(MapToUserResponse(user, roles, isAdmin, tenantDetails, userAddress));
+            responses.Add(MapToUserResponse(user, roles, isAdmin, tenantDetails, userAddress,
+                hasPendingSetup: pendingSetupIds.Contains(user.Id)));
         }
 
         return new PagedResponse<UserResponse>
@@ -530,6 +537,12 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         var tenantAddressesById = await AddressHelper.GetTenantAddressesAsync(_context, tenantIds);
         var userAddresses = await AddressHelper.GetUserAddressesAsync(_context, userIds, ignoreTenantFilter: true);
 
+        var pendingSetupIds = await _context.AccountSetupTokens
+            .AsNoTracking()
+            .Where(t => userIds.Contains(t.UserId) && t.UsedAt == null)
+            .Select(t => t.UserId)
+            .ToHashSetAsync();
+
         var responses = users.Select(user =>
         {
             tenantsById.TryGetValue(user.TenantId, out var tenant);
@@ -543,7 +556,8 @@ public class UserManagementService : TenantScopedService, IUserManagementService
                 rolesByUser.GetValueOrDefault(user.Id, []),
                 includeTenantDetails: true,
                 tenantDetails,
-                userAddress);
+                userAddress,
+                hasPendingSetup: pendingSetupIds.Contains(user.Id));
         }).ToList();
 
         return new PagedResponse<UserResponse>
@@ -806,7 +820,8 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         List<string> roles,
         bool includeTenantDetails,
         UserTenantDetails? tenantDetails = null,
-        Address? address = null) =>
+        Address? address = null,
+        bool hasPendingSetup = false) =>
         new()
         {
             Id = user.Id,
@@ -819,7 +834,8 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             ProfileFileId = user.ProfileFileId,
             ProfileUrl = BuildUserAvatarUrl(user.Id, user.ProfileFileId),
             Address = AddressFormatter.ToResponse(address),
-            Tenant = includeTenantDetails ? tenantDetails : null
+            Tenant = includeTenantDetails ? tenantDetails : null,
+            HasPendingSetup = hasPendingSetup,
         };
 
     // Used for single-user mapping where role batch load isn't worth it.

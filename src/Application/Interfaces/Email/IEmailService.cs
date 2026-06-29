@@ -30,6 +30,11 @@ public interface IEmailService
         string tenantName,
         CancellationToken cancellationToken = default);
 
+    Task SendNewTenantInvitationAsync(
+        string toEmail,
+        string invitationUrl,
+        CancellationToken cancellationToken = default);
+
     // ── Account lifecycle ─────────────────────────────────────────────────────
 
     Task SendAccountActivationEmailAsync(
