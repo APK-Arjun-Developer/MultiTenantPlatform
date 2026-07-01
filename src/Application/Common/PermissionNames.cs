@@ -14,16 +14,8 @@ public static class PermissionNames
     public const string RolesEdit = "Roles.Edit";
     public const string RolesDelete = "Roles.Delete";
 
-    public const string ProductsCreate = "Products.Create";
-    public const string ProductsView = "Products.View";
-    public const string ProductsEdit = "Products.Edit";
-    public const string ProductsDelete = "Products.Delete";
-
     public const string ProfileView = "Profile.View";
     public const string ProfileEdit = "Profile.Edit";
-
-    public const string ReportsView = "Reports.View";
-    public const string ReportsExport = "Reports.Export";
 
     public const string FilesView = "Files.View";
     public const string FilesUpload = "Files.Upload";
@@ -53,12 +45,6 @@ public static class PermissionNames
         RolesDelete,
         ProfileView,
         ProfileEdit,
-        ProductsCreate,
-        ProductsView,
-        ProductsEdit,
-        ProductsDelete,
-        ReportsView,
-        ReportsExport,
         FilesView,
         FilesUpload,
         FilesDelete,
@@ -82,12 +68,6 @@ public static class PermissionNames
             // TenantUser — basic operational permissions
             [ProfileView]    = SystemRole.TenantUser,
             [ProfileEdit]    = SystemRole.TenantUser,
-            [ProductsCreate] = SystemRole.TenantUser,
-            [ProductsView]   = SystemRole.TenantUser,
-            [ProductsEdit]   = SystemRole.TenantUser,
-            [ProductsDelete] = SystemRole.TenantUser,
-            [ReportsView]    = SystemRole.TenantUser,
-            [ReportsExport]  = SystemRole.TenantUser,
             [FilesView]      = SystemRole.TenantUser,
             [FilesUpload]    = SystemRole.TenantUser,
 

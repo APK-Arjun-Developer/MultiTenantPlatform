@@ -159,9 +159,15 @@ Permissions are **not in the JWT** — loaded from DB per request (cached).
 ### Login rules
 
 - **SystemAdmin**: omit `tenantSlug`. Login finds the user by email where `TenantId == Guid.Empty`.
-- **TenantAdmin / TenantUser**: `tenantSlug` is required. The slug must match an active, non-deleted tenant.
+- **TenantAdmin / TenantUser**: `tenantSlug` is required. The slug must match an active (`IsActive = true`), non-deleted tenant. If the tenant exists but is inactive, login returns `"Your organization account has been deactivated. Please contact support."` (400).
 - Login blocks users with `EmailConfirmed = false` ("Your email address has not been verified").
-- Login blocks users with `IsActive = false`.
+- Login blocks users with `IsActive = false` ("Your account has been deactivated. Please contact your administrator.").
+- **Every authenticated request** also runs active checks via `UserStatusMiddleware` (runs after `UseAuthentication()`, before `TenantMiddleware`):
+  - **User active**: checks `IsActive && DeletedAt == null` (cached 5 min per user; invalidated on deactivate/delete).
+  - **Tenant active**: for non-SystemAdmin users, also checks tenant `IsActive && DeletedAt == null` (cached 5 min per tenant; invalidated on tenant update/delete).
+  - Failures return `401` with `errors.code = "user_inactive"` or `"tenant_inactive"` and a human-readable `message`.
+  - Token refresh also checks user/tenant active state; inactive refresh returns `400` with same messages.
+- **Client behaviour**: `baseQueryWithReauth` detects `code = "user_inactive" | "tenant_inactive"`, shows a toast with the server message, and dispatches logout immediately (no refresh attempt).
 
 ---
 

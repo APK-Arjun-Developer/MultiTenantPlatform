@@ -238,6 +238,7 @@ if (app.IsSwaggerEnabled(app.Configuration))
 }
 
 app.UseAuthentication();
+app.UseMiddleware<UserStatusMiddleware>();
 app.UseMiddleware<TenantMiddleware>();
 app.UseAuthorization();
 

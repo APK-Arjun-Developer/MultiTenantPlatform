@@ -1,4 +1,4 @@
-using Application.Common;
+﻿using Application.Common;
 using Application.DTOs.ActivityLogs;
 using Application.DTOs.Common;
 using Application.DTOs.Roles;
@@ -202,7 +202,6 @@ public class RoleService : TenantScopedService, IRoleService
     private void InvalidateRoleCaches(ApplicationRole role)
     {
         _rolePermissionLookup.Invalidate(role.Id);
-        _cache.InvalidateTenantDashboard(role.TenantId);
     }
 
     private async Task LogActivityAsync(string action, string description)
@@ -216,7 +215,7 @@ public class RoleService : TenantScopedService, IRoleService
         });
     }
 
-    // Batch-load permissions for all roles in one query — eliminates N+1.
+    // Batch-load permissions for all roles in one query - eliminates N+1.
     private async Task<List<RoleResponse>> BatchMapRolesAsync(List<ApplicationRole> roles)
     {
         if (roles.Count == 0)
@@ -312,3 +311,4 @@ public class RoleService : TenantScopedService, IRoleService
         };
     }
 }
+

@@ -221,6 +221,7 @@ public class TenantService : TenantScopedService, ITenantService
 
         _cache.InvalidateTenantCatalog();
         _cache.InvalidateTenant(tenant.Id);
+        _cache.InvalidateTenantStatus(tenant.Id);
 
         await LogActivityAsync(ActivityActions.Tenants.Updated, $"Updated tenant '{tenant.Slug}'.");
 
@@ -270,6 +271,7 @@ public class TenantService : TenantScopedService, ITenantService
 
         _cache.InvalidateTenantCatalog();
         _cache.InvalidateTenant(tenant.Id);
+        _cache.InvalidateTenantStatus(tenant.Id);
 
         await LogActivityAsync(ActivityActions.Tenants.Deleted, $"Deleted tenant '{tenant.Slug}'.");
     }

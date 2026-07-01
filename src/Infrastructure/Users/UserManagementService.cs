@@ -1,4 +1,4 @@
-using Application.Common;
+﻿using Application.Common;
 using Application.DTOs.ActivityLogs;
 using Application.DTOs.Common;
 using Application.DTOs.Users;
@@ -101,7 +101,7 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             throw new ConflictException("User email already exists.");
         }
 
-        // Created inactive — user sets their own password via the account-setup email.
+        // Created inactive - user sets their own password via the account-setup email.
         var user = new ApplicationUser
         {
             Id = Guid.NewGuid(),
@@ -160,14 +160,12 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         }
         catch
         {
-            // Non-fatal — can be resent via the resend endpoint
+            // Non-fatal - can be resent via the resend endpoint
         }
 
         await LogActivityAsync(
             ActivityActions.Users.Created,
             $"Created user '{user.Email}'.");
-
-        _cache.InvalidateTenantDashboard(tenantId);
 
         return await MapToUserResponseAsync(user, includeTenantDetails: false);
     }
@@ -199,9 +197,9 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         query = (sortBy?.ToLowerInvariant(), sortOrder?.ToLowerInvariant()) switch
         {
             ("fullname", "desc") => query.OrderByDescending(u => u.FullName),
-            ("fullname", _)      => query.OrderBy(u => u.FullName),
-            ("email", "desc")    => query.OrderByDescending(u => u.Email),
-            _                    => query.OrderBy(u => u.Email),
+            ("fullname", _) => query.OrderBy(u => u.FullName),
+            ("email", "desc") => query.OrderByDescending(u => u.Email),
+            _ => query.OrderBy(u => u.Email),
         };
 
         var users = await query
@@ -209,7 +207,7 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             .Take(pageSize)
             .ToListAsync();
 
-        // Batch-load roles for all users in one query — eliminates N+1.
+        // Batch-load roles for all users in one query - eliminates N+1.
         var userIds = users.Select(u => u.Id).ToList();
         var tenantIds = users.Select(u => u.TenantId).Distinct().ToList();
 
@@ -372,12 +370,10 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
         }
 
-        // UserManager.UpdateAsync internally calls SaveChangesAsync — no second call needed.
+        // UserManager.UpdateAsync internally calls SaveChangesAsync - no second call needed.
         await _userManager.UpdateAsync(user);
 
         await LogActivityAsync(ActivityActions.Users.Updated, $"Updated user '{user.Email}'.");
-
-        _cache.InvalidateTenantDashboard(user.TenantId);
 
         var address = await AddressHelper.GetUserAddressAsync(_context, user.Id, IsSystemAdmin());
 
@@ -474,9 +470,9 @@ public class UserManagementService : TenantScopedService, IUserManagementService
                 string.Join(", ", result.Errors.Select(e => e.Description)));
         }
 
-        await LogActivityAsync(ActivityActions.Users.Deleted, $"Deleted user '{user.Email}'.");
+        _cache.InvalidateUserStatus(user.Id);
 
-        _cache.InvalidateTenantDashboard(user.TenantId);
+        await LogActivityAsync(ActivityActions.Users.Deleted, $"Deleted user '{user.Email}'.");
     }
 
     // ── Tenant Admin management (System Admin scope) ──────────────────────────
@@ -635,8 +631,6 @@ public class UserManagementService : TenantScopedService, IUserManagementService
 
         await LogActivityAsync(ActivityActions.Users.Updated, $"Updated tenant admin '{user.Email}'.");
 
-        _cache.InvalidateTenantDashboard(user.TenantId);
-
         var address = await AddressHelper.GetUserAddressAsync(_context, user.Id, ignoreTenantFilter: true);
 
         return await MapToUserResponseAsync(user, includeTenantDetails: true, address: address);
@@ -671,8 +665,6 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         }
 
         await LogActivityAsync(ActivityActions.Users.Deleted, $"Deleted tenant admin '{user.Email}'.");
-
-        _cache.InvalidateTenantDashboard(user.TenantId);
     }
 
     public async Task<UserResponse> UploadCurrentUserAvatarAsync(IFormFile file)
@@ -696,7 +688,7 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         if (previousFileId.HasValue)
         {
             try { await _fileService.DeleteAsync(previousFileId.Value); }
-            catch { /* old file already gone — not fatal */ }
+            catch { /* old file already gone - not fatal */ }
         }
 
         await LogActivityAsync(ActivityActions.Users.Updated, "Uploaded profile picture.");
@@ -855,3 +847,4 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             address);
     }
 }
+

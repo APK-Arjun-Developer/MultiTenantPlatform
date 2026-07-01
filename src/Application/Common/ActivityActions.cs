@@ -34,13 +34,6 @@ public static class ActivityActions
         public const string Deleted = "Deleted";
     }
 
-    public static class Products
-    {
-        public const string Created = "Created";
-        public const string Updated = "Updated";
-        public const string Deleted = "Deleted";
-    }
-
     public static class Files
     {
         public const string Uploaded = "Uploaded";

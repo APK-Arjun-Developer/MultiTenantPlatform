@@ -15,12 +15,6 @@ public sealed class PermissionsSeed : IDataSeed
         // TenantUser — basic operational permissions
         (PermissionNames.ProfileView,    "Profile",   "View own profile",                       SystemRole.TenantUser),
         (PermissionNames.ProfileEdit,    "Profile",   "Edit own profile and change password",   SystemRole.TenantUser),
-        (PermissionNames.ProductsCreate, "Products",  "Create products",                        SystemRole.TenantUser),
-        (PermissionNames.ProductsView,   "Products",  "View products",                          SystemRole.TenantUser),
-        (PermissionNames.ProductsEdit,   "Products",  "Edit products",                          SystemRole.TenantUser),
-        (PermissionNames.ProductsDelete, "Products",  "Delete products",                        SystemRole.TenantUser),
-        (PermissionNames.ReportsView,    "Reports",   "View reports",                           SystemRole.TenantUser),
-        (PermissionNames.ReportsExport,  "Reports",   "Export reports",                         SystemRole.TenantUser),
         (PermissionNames.FilesView,      "Files",     "View files",                             SystemRole.TenantUser),
         (PermissionNames.FilesUpload,    "Files",     "Upload files",                           SystemRole.TenantUser),
 

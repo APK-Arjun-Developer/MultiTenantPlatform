@@ -76,12 +76,17 @@ public class AccountSetupService : IAccountSetupService
 
         var tenantSlug = await GetTenantSlugAsync(user.TenantId, cancellationToken);
 
+        var hasAddress = await _context.Addresses
+            .IgnoreQueryFilters()
+            .AnyAsync(a => a.UserId == user.Id && a.DeletedAt == null, cancellationToken);
+
         return new ValidateAccountSetupResponse
         {
             IsValid = true,
             Email = user.Email,
             FullName = user.FullName,
             TenantSlug = tenantSlug,
+            HasAddress = hasAddress,
         };
     }
 

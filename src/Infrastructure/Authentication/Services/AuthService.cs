@@ -129,6 +129,21 @@ public class AuthService : IAuthService
             throw new InvalidOperationException("Your account has been deactivated. Please contact your administrator.");
         }
 
+        if (user.TenantId != Guid.Empty)
+        {
+            var tenantActive = await _context.Tenants
+                .IgnoreQueryFilters()
+                .Where(t => t.Id == user.TenantId && t.DeletedAt == null)
+                .Select(t => t.IsActive)
+                .FirstOrDefaultAsync();
+
+            if (!tenantActive)
+            {
+                throw new InvalidOperationException(
+                    "Your organization account has been deactivated. Please contact support.");
+            }
+        }
+
         await _refreshTokenService.RevokeAsync(storedToken, ipAddress);
 
         var newRefreshToken = await _refreshTokenService.CreateAsync(user.Id, user.TenantId, ipAddress);
@@ -207,14 +222,19 @@ public class AuthService : IAuthService
         var slug = request.TenantSlug.ToLowerInvariant();
         var tenant = await _context.Tenants
             .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(t =>
-                t.Slug == slug
-                && t.DeletedAt == null
-                && t.IsActive);
+            .Where(t => t.Slug == slug && t.DeletedAt == null)
+            .Select(t => new { t.Id, t.IsActive })
+            .FirstOrDefaultAsync();
 
         if (tenant == null)
         {
             return null;
+        }
+
+        if (!tenant.IsActive)
+        {
+            throw new InvalidOperationException(
+                "Your organization account has been deactivated. Please contact support.");
         }
 
         return await _userManager.Users

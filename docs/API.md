@@ -319,7 +319,7 @@ No authentication required. Used for the direct-create flow (TenantAdmin creates
 
 | Method | Path | Notes |
 |--------|------|-------|
-| GET | `/account-setup/validate?token=...` | Validate setup token. Returns email and name for pre-filling the form. |
+| GET | `/account-setup/validate?token=...` | Validate setup token. Returns email, name, and `hasAddress` (bool) for the client to decide whether to show the address step. |
 | POST | `/account-setup/set-password` | Set password, optionally update full name, and optionally set address. Token is consumed (single-use). |
 
 `set-password` request body:
@@ -340,21 +340,7 @@ No authentication required. Used for the direct-create flow (TenantAdmin creates
 }
 ```
 
-`fullName` and `address` are optional. When `fullName` is provided it overwrites the name set during direct-create.
-
----
-
-## Products
-
-Requires `X-Tenant-Id` for SystemAdmin. Scoped to current tenant.
-
-| Method | Path | Permission |
-|--------|------|------------|
-| GET | `/products` | `Products.View` |
-| GET | `/products/{id}` | `Products.View` |
-| POST | `/products` | `Products.Create` |
-| PUT | `/products` | `Products.Edit` |
-| DELETE | `/products` | `Products.Delete` |
+`fullName` and `address` are both optional. When the user was created via the direct-create flow the admin already provided their address — in that case `validate` returns `hasAddress: true` and the client omits the address step and leaves `address` out of `set-password`.
 
 ---
 

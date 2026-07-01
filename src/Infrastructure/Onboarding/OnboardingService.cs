@@ -4,6 +4,7 @@ using Application.DTOs.Onboarding;
 using Domain.Enums;
 using Application.Exceptions;
 using Application.Interfaces.ActivityLogs;
+using Application.Interfaces.Caching;
 using Application.Interfaces.Email;
 using Application.Interfaces.Onboarding;
 using Application.Interfaces.Tenant;
@@ -27,6 +28,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
     private readonly IIdentityRoleService _identityRoleService;
     private readonly IEmailService _emailService;
     private readonly IActivityLogService _activityLogService;
+    private readonly IAppCache _cache;
     private readonly ILogger<OnboardingService> _logger;
     private readonly string _appBaseUrl;
 
@@ -39,6 +41,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
         IIdentityRoleService identityRoleService,
         IEmailService emailService,
         IActivityLogService activityLogService,
+        IAppCache cache,
         ILogger<OnboardingService> logger,
         IConfiguration configuration)
         : base(currentTenantService)
@@ -48,6 +51,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
         _identityRoleService = identityRoleService;
         _emailService = emailService;
         _activityLogService = activityLogService;
+        _cache = cache;
         _logger = logger;
         _appBaseUrl = configuration["AppBaseUrl"] ?? "https://app.example.com";
     }
@@ -157,6 +161,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
         user.IsActive = true;
         user.UpdatedAt = DateTime.UtcNow;
         await _userManager.UpdateAsync(user);
+        _cache.InvalidateUserStatus(user.Id);
 
         await LogAsync(
             ActivityActions.Onboarding.UserActivated,
@@ -190,6 +195,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
         user.IsActive = false;
         user.UpdatedAt = DateTime.UtcNow;
         await _userManager.UpdateAsync(user);
+        _cache.InvalidateUserStatus(user.Id);
 
         await LogAsync(
             ActivityActions.Onboarding.UserDeactivated,
