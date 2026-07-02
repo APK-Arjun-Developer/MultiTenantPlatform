@@ -91,44 +91,74 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         if (notFound.Count > 0)
             throw new NotFoundException($"Role(s) not found for this tenant: {string.Join(", ", notFound)}");
 
-        var emailExists = await _userManager.Users
-            .AnyAsync(u =>
-                u.NormalizedEmail == request.Email.ToUpperInvariant() &&
-                u.TenantId == tenantId);
+        var normalised = request.Email.ToUpperInvariant();
 
-        if (emailExists)
-        {
+        var activeExists = await _userManager.Users
+            .AnyAsync(u => u.NormalizedEmail == normalised && u.TenantId == tenantId);
+
+        if (activeExists)
             throw new ConflictException("User email already exists.");
+
+        var softDeleted = await _context.Users
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.NormalizedEmail == normalised && u.TenantId == tenantId && u.DeletedAt != null);
+
+        ApplicationUser user;
+
+        if (softDeleted != null)
+        {
+            // Restore the soft-deleted record instead of inserting a new one.
+            softDeleted.FullName = request.FullName;
+            softDeleted.SystemRole = SystemRole.TenantUser;
+            softDeleted.IsActive = false;
+            softDeleted.EmailConfirmed = false;
+            softDeleted.DeletedAt = null;
+            softDeleted.SecurityStamp = Guid.NewGuid().ToString();
+            softDeleted.ConcurrencyStamp = Guid.NewGuid().ToString();
+            softDeleted.PasswordHash = _userManager.PasswordHasher.HashPassword(softDeleted, $"Placeholder!{Guid.NewGuid():N}");
+            softDeleted.UpdatedAt = DateTime.UtcNow;
+
+            var existingRoles = await _context.Set<IdentityUserRole<Guid>>()
+                .Where(ur => ur.UserId == softDeleted.Id)
+                .ToListAsync();
+            _context.Set<IdentityUserRole<Guid>>().RemoveRange(existingRoles);
+            await _context.SaveChangesAsync();
+
+            foreach (var role in roles)
+                await _identityRoleService.AddUserToRoleAsync(softDeleted.Id, role.Id);
+
+            var updateResult = await _userManager.UpdateAsync(softDeleted);
+            if (!updateResult.Succeeded)
+                throw new InvalidOperationException(string.Join(", ", updateResult.Errors.Select(e => e.Description)));
+
+            user = softDeleted;
         }
-
-        // Created inactive - user sets their own password via the account-setup email.
-        var user = new ApplicationUser
+        else
         {
-            Id = Guid.NewGuid(),
-            TenantId = tenantId,
-            SystemRole = SystemRole.TenantUser,
-            FullName = request.FullName,
-            Email = request.Email,
-            UserName = request.Email,
-            NormalizedEmail = request.Email.ToUpperInvariant(),
-            NormalizedUserName = request.Email.ToUpperInvariant(),
-            EmailConfirmed = false,
-            IsActive = false,
-            CreatedAt = DateTime.UtcNow
-        };
+            // Created inactive — user sets their own password via the account-setup email.
+            user = new ApplicationUser
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                SystemRole = SystemRole.TenantUser,
+                FullName = request.FullName,
+                Email = request.Email,
+                UserName = request.Email,
+                NormalizedEmail = normalised,
+                NormalizedUserName = normalised,
+                EmailConfirmed = false,
+                IsActive = false,
+                CreatedAt = DateTime.UtcNow
+            };
 
-        var placeholder = $"Placeholder!{Guid.NewGuid():N}";
-        var result = await _userManager.CreateAsync(user, placeholder);
+            var placeholder = $"Placeholder!{Guid.NewGuid():N}";
+            var result = await _userManager.CreateAsync(user, placeholder);
 
-        if (!result.Succeeded)
-        {
-            throw new InvalidOperationException(
-                string.Join(", ", result.Errors.Select(e => e.Description)));
-        }
+            if (!result.Succeeded)
+                throw new InvalidOperationException(string.Join(", ", result.Errors.Select(e => e.Description)));
 
-        foreach (var role in roles)
-        {
-            await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
+            foreach (var role in roles)
+                await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
         }
 
         // Invalidate any prior unused tokens, then issue a fresh one.
@@ -184,7 +214,9 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         var tenantId = RequireTenantId();
 
         IQueryable<ApplicationUser> query = _userManager.Users
-            .Where(u => u.Id != currentUserId && u.TenantId == tenantId);
+            .Where(u => u.Id != currentUserId
+                     && u.TenantId == tenantId
+                     && u.SystemRole == SystemRole.TenantUser);
 
         if (!string.IsNullOrWhiteSpace(search))
         {

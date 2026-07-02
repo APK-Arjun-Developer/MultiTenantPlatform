@@ -228,7 +228,7 @@ Requires `X-Tenant-Id` header for SystemAdmin. TenantAdmin/TenantUser are scoped
 
 | Method | Path | Permission | Notes |
 |--------|------|------------|-------|
-| GET | `/users` | `Users.View` | List users in current tenant (excl. self) |
+| GET | `/users` | `Users.View` | List **TenantUser**-role users in current tenant (excl. self, excl. SystemAdmin and TenantAdmin) |
 | GET | `/users/{id}` | `Users.View` | Get user by ID |
 | GET | `/users/current` | Authenticated | Own profile (self-service; no permission required) |
 | POST | `/users` | `Users.Create` | Create TenantUser with immediate password; optional `address` saved immediately |

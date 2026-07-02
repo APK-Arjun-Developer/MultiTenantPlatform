@@ -20,7 +20,8 @@ public class TenantConfiguration : IEntityTypeConfiguration<Domain.Entities.Tena
             .IsRequired();
 
         builder.HasIndex(x => x.Slug)
-            .IsUnique();
+            .IsUnique()
+            .HasFilter("[DeletedAt] IS NULL");
 
         builder.HasOne(x => x.ProfileFile)
             .WithMany()

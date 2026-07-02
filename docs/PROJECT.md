@@ -344,7 +344,7 @@ Errors are mapped by `ExceptionHandlingMiddleware` to the same envelope.
 
 ## Cross-cutting behavior
 
-- **Soft delete** — `DeletedAt` / `DeletedBy`; global query filters
+- **Soft delete** — `DeletedAt` / `DeletedBy`; global query filters. Unique indexes on `Users (Email, TenantId)`, `Users (NormalizedUserName)`, and `Tenants (Slug)` include a `WHERE DeletedAt IS NULL` filter so soft-deleted records don't block re-creation. All create paths (users via `OnboardingService` / `UserManagementService`, tenants via `TenantService.OnboardTenantAsync`) detect a matching soft-deleted record and restore it in place rather than inserting a new row.
 - **Audit fields** — stamped on `SaveChangesAsync` from JWT `user_id`
 - **Activity logging** — auth and CRUD events to `ActivityLogs`
 - **Request logging** — path, status, duration, tenant/user correlation

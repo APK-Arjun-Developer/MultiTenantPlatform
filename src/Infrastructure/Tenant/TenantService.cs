@@ -278,46 +278,58 @@ public class TenantService : TenantScopedService, ITenantService
 
     public async Task<OnboardTenantResponse> OnboardTenantAsync(OnboardTenantRequest request)
     {
-        var slugExists = await _context.Tenants
+        // Throw if an ACTIVE tenant already has this slug.
+        var activeSlugExists = await _context.Tenants
             .IgnoreQueryFilters()
             .AnyAsync(t => t.Slug == request.Tenant.Slug && t.DeletedAt == null);
 
-        if (slugExists)
-        {
+        if (activeSlugExists)
             throw new ConflictException("Tenant slug already exists.");
-        }
+
+        // Check if a soft-deleted tenant exists with the same slug (restore path).
+        var softDeletedTenant = await _context.Tenants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Slug == request.Tenant.Slug && t.DeletedAt != null);
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
 
         try
         {
-            var tenant = new Domain.Entities.Tenant
-            {
-                Id = Guid.NewGuid(),
-                Name = request.Tenant.Name,
-                Slug = request.Tenant.Slug,
-                IsActive = true,
-                CreatedAt = DateTime.UtcNow
-            };
+            Domain.Entities.Tenant tenant;
 
-            _context.Tenants.Add(tenant);
-            await _context.SaveChangesAsync();
+            if (softDeletedTenant != null)
+            {
+                // Restore the soft-deleted tenant record.
+                softDeletedTenant.Name = request.Tenant.Name;
+                softDeletedTenant.IsActive = true;
+                softDeletedTenant.DeletedAt = null;
+                softDeletedTenant.DeletedBy = null;
+                softDeletedTenant.UpdatedAt = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
+                tenant = softDeletedTenant;
+            }
+            else
+            {
+                tenant = new Domain.Entities.Tenant
+                {
+                    Id = Guid.NewGuid(),
+                    Name = request.Tenant.Name,
+                    Slug = request.Tenant.Slug,
+                    IsActive = true,
+                    CreatedAt = DateTime.UtcNow
+                };
+                _context.Tenants.Add(tenant);
+                await _context.SaveChangesAsync();
+            }
 
             // Create any caller-supplied custom roles (optional).
+            // IdentityRoleService.CreateRoleAsync already handles soft-deleted roles.
             var createdRoles = new List<CreatedRoleSummary>();
 
             foreach (var roleDetails in request.Roles)
             {
                 if (roleDetails.Name is RoleNames.SystemAdmin or RoleNames.TenantAdmin or RoleNames.TenantUser)
-                {
                     throw new ForbiddenException($"Cannot create built-in system role '{roleDetails.Name}' for a tenant.");
-                }
-
-                if (await _identityRoleService.RoleExistsAsync(tenant.Id, roleDetails.Name))
-                {
-                    throw new ConflictException(
-                        $"Role '{roleDetails.Name}' already exists for this tenant.");
-                }
 
                 var role = await _identityRoleService.CreateRoleAsync(
                     tenant.Id, roleDetails.Name, roleDetails.Description);
@@ -330,33 +342,69 @@ public class TenantService : TenantScopedService, ITenantService
 
             await _context.SaveChangesAsync();
 
-            // TenantAdmin permissions come from SystemRole — no role table entry or assignment needed.
-            // Created inactive; admin sets their own password via the account-setup email link.
-            var adminUser = new ApplicationUser
-            {
-                Id = Guid.NewGuid(),
-                TenantId = tenant.Id,
-                SystemRole = SystemRole.TenantAdmin,
-                FullName = request.User.FullName,
-                Email = request.User.Email,
-                UserName = request.User.Email,
-                NormalizedEmail = request.User.Email.ToUpperInvariant(),
-                NormalizedUserName = request.User.Email.ToUpperInvariant(),
-                EmailConfirmed = false,
-                IsActive = false,
-                CreatedAt = DateTime.UtcNow
-            };
+            // Create or restore the admin user for this tenant.
+            var normalised = request.User.Email.ToUpperInvariant();
 
-            var placeholder = $"Placeholder!{Guid.NewGuid():N}";
-            var createResult = await _userManager.CreateAsync(adminUser, placeholder);
+            var activeAdminExists = await _userManager.Users
+                .AnyAsync(u => u.NormalizedEmail == normalised && u.TenantId == tenant.Id);
+            if (activeAdminExists)
+                throw new ConflictException($"A user with email '{request.User.Email}' already exists in this tenant.");
 
-            if (!createResult.Succeeded)
+            var softDeletedAdmin = await _context.Users
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(u => u.NormalizedEmail == normalised && u.TenantId == tenant.Id && u.DeletedAt != null);
+
+            ApplicationUser adminUser;
+
+            if (softDeletedAdmin != null)
             {
-                throw new InvalidOperationException(
-                    string.Join(", ", createResult.Errors.Select(e => e.Description)));
+                softDeletedAdmin.FullName = request.User.FullName;
+                softDeletedAdmin.SystemRole = SystemRole.TenantAdmin;
+                softDeletedAdmin.IsActive = false;
+                softDeletedAdmin.EmailConfirmed = false;
+                softDeletedAdmin.DeletedAt = null;
+                softDeletedAdmin.SecurityStamp = Guid.NewGuid().ToString();
+                softDeletedAdmin.ConcurrencyStamp = Guid.NewGuid().ToString();
+                softDeletedAdmin.PasswordHash = _userManager.PasswordHasher.HashPassword(softDeletedAdmin, $"Placeholder!{Guid.NewGuid():N}");
+                softDeletedAdmin.UpdatedAt = DateTime.UtcNow;
+
+                var updateResult = await _userManager.UpdateAsync(softDeletedAdmin);
+                if (!updateResult.Succeeded)
+                    throw new InvalidOperationException(string.Join(", ", updateResult.Errors.Select(e => e.Description)));
+
+                adminUser = softDeletedAdmin;
+            }
+            else
+            {
+                adminUser = new ApplicationUser
+                {
+                    Id = Guid.NewGuid(),
+                    TenantId = tenant.Id,
+                    SystemRole = SystemRole.TenantAdmin,
+                    FullName = request.User.FullName,
+                    Email = request.User.Email,
+                    UserName = request.User.Email,
+                    NormalizedEmail = normalised,
+                    NormalizedUserName = normalised,
+                    EmailConfirmed = false,
+                    IsActive = false,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                var placeholder = $"Placeholder!{Guid.NewGuid():N}";
+                var createResult = await _userManager.CreateAsync(adminUser, placeholder);
+
+                if (!createResult.Succeeded)
+                    throw new InvalidOperationException(string.Join(", ", createResult.Errors.Select(e => e.Description)));
             }
 
             // Issue account-setup token so the admin can set their own password.
+            var stale = await _context.AccountSetupTokens
+                .IgnoreQueryFilters()
+                .Where(t => t.UserId == adminUser.Id && t.UsedAt == null)
+                .ToListAsync();
+            _context.AccountSetupTokens.RemoveRange(stale);
+
             var (rawToken, tokenHash) = TokenHelper.Generate();
             var now = DateTime.UtcNow;
 
@@ -402,6 +450,7 @@ public class TenantService : TenantScopedService, ITenantService
 
             _cache.InvalidateTenantCatalog();
             _cache.InvalidateTenant(tenant.Id);
+            _cache.InvalidateUserStatus(adminUser.Id);
 
             await LogActivityAsync(
                 ActivityActions.Tenants.Onboarded,
