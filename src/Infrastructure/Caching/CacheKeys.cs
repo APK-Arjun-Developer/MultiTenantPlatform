@@ -6,8 +6,6 @@ public static class CacheKeys
 
     public const string PermissionCatalogTenant = "permissions:catalog:tenant";
 
-    public const string PermissionCatalogTenantUser = "permissions:catalog:tenant-user";
-
     public const string PermissionNamesSystem = "permissions:names:system";
 
     public const string TenantCatalogAll = "tenants:catalog:all";

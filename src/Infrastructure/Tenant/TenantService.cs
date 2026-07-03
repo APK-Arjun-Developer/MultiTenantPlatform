@@ -1,4 +1,4 @@
-using Application.Common;
+﻿using Application.Common;
 using Application.DTOs.ActivityLogs;
 using Application.DTOs.Common;
 using Application.DTOs.Tenant;
@@ -64,7 +64,9 @@ public class TenantService : TenantScopedService, ITenantService
         int page, int pageSize,
         string? search = null,
         string? sortBy = null,
-        string? sortOrder = null)
+        string? sortOrder = null,
+        bool? isActive = null,
+        CreatedVia? createdVia = null)
     {
         (page, pageSize) = Pagination.Normalize(page, pageSize);
 
@@ -78,6 +80,16 @@ public class TenantService : TenantScopedService, ITenantService
             {
                 query = query.Where(t =>
                     t.Name.Contains(search) || t.Slug.Contains(search));
+            }
+
+            if (isActive.HasValue)
+            {
+                query = query.Where(t => t.IsActive == isActive.Value);
+            }
+
+            if (createdVia.HasValue)
+            {
+                query = query.Where(t => t.CreatedVia == createdVia.Value);
             }
 
             var totalCount = await query.CountAsync();
@@ -304,6 +316,7 @@ public class TenantService : TenantScopedService, ITenantService
                 softDeletedTenant.IsActive = true;
                 softDeletedTenant.DeletedAt = null;
                 softDeletedTenant.DeletedBy = null;
+                softDeletedTenant.CreatedVia = CreatedVia.Direct;
                 softDeletedTenant.UpdatedAt = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
                 tenant = softDeletedTenant;
@@ -316,6 +329,7 @@ public class TenantService : TenantScopedService, ITenantService
                     Name = request.Tenant.Name,
                     Slug = request.Tenant.Slug,
                     IsActive = true,
+                    CreatedVia = CreatedVia.Direct,
                     CreatedAt = DateTime.UtcNow
                 };
                 _context.Tenants.Add(tenant);
@@ -363,6 +377,7 @@ public class TenantService : TenantScopedService, ITenantService
                 softDeletedAdmin.IsActive = false;
                 softDeletedAdmin.EmailConfirmed = false;
                 softDeletedAdmin.DeletedAt = null;
+                softDeletedAdmin.CreatedVia = CreatedVia.Direct;
                 softDeletedAdmin.SecurityStamp = Guid.NewGuid().ToString();
                 softDeletedAdmin.ConcurrencyStamp = Guid.NewGuid().ToString();
                 softDeletedAdmin.PasswordHash = _userManager.PasswordHasher.HashPassword(softDeletedAdmin, $"Placeholder!{Guid.NewGuid():N}");
@@ -388,6 +403,7 @@ public class TenantService : TenantScopedService, ITenantService
                     NormalizedUserName = normalised,
                     EmailConfirmed = false,
                     IsActive = false,
+                    CreatedVia = CreatedVia.Direct,
                     CreatedAt = DateTime.UtcNow
                 };
 
@@ -514,6 +530,7 @@ public class TenantService : TenantScopedService, ITenantService
             Name = tenant.Name,
             Slug = tenant.Slug,
             IsActive = tenant.IsActive,
+            CreatedVia = tenant.CreatedVia,
             ProfileFileId = tenant.ProfileFileId,
             ProfileUrl = BuildProfileUrl(tenant.ProfileFileId),
             Address = AddressFormatter.ToResponse(address),

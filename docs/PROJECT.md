@@ -67,7 +67,7 @@ Every `ApplicationUser` has a `SystemRole` enum stored on the user record and em
 
 ### Layer 2 — Custom roles and permissions
 
-Custom roles live in the `Roles` table and are always scoped to a single `TenantId`. Each role has a set of `Permissions` (seeded catalog, PascalCase names).
+Custom roles live in the `Roles` table and are always scoped to a single `TenantId`. Each role has a set of `Permissions` (seeded catalog, PascalCase names). Role create/update caps permissions at the **TenantUser scope for every caller, including SystemAdmin** — enforced centrally in `IdentityRoleService`, which also covers custom roles created during tenant onboarding.
 
 | Permission module | Minimum `SystemRole` | Who can hold it |
 |-------------------|---------------------|-----------------|
@@ -270,7 +270,7 @@ Add a seed: new class in `Persistence/Seed/Seeds/`, register in `Persistence/Dep
 
 | Concept | Implementation |
 |---------|----------------|
-| Users | `ApplicationUser` + `TenantId`, `SystemRole`, `FullName`, `ProfileFileId`, soft delete |
+| Users | `ApplicationUser` + `TenantId`, `SystemRole`, `FullName`, `ProfileFileId`, `CreatedVia` (Direct / Invitation), soft delete |
 | Roles | `ApplicationRole` + `TenantId`, `Description` (custom roles only; no built-in role rows) |
 | User ↔ role | Identity `AspNetUserRoles` |
 | Role ↔ permission | `RolePermissions` |
@@ -345,6 +345,7 @@ Errors are mapped by `ExceptionHandlingMiddleware` to the same envelope.
 ## Cross-cutting behavior
 
 - **Soft delete** — `DeletedAt` / `DeletedBy`; global query filters. Unique indexes on `Users (Email, TenantId)`, `Users (NormalizedUserName)`, and `Tenants (Slug)` include a `WHERE DeletedAt IS NULL` filter so soft-deleted records don't block re-creation. All create paths (users via `OnboardingService` / `UserManagementService`, tenants via `TenantService.OnboardTenantAsync`) detect a matching soft-deleted record and restore it in place rather than inserting a new row.
+- **CreatedVia** — `CreatedVia` enum (`Direct` = 1, `Invitation` = 2) on both `ApplicationUser` and `Tenant` tracks whether the record was created directly by an admin or via an invitation link. Set at creation time across all paths: `Direct` for onboarding/direct-create flows, `Invitation` for all three `InvitationService.Accept*` flows (including the tenant created by `AcceptTenantCreationInvitationAsync`). Existing DB rows default to `Direct`.
 - **Audit fields** — stamped on `SaveChangesAsync` from JWT `user_id`
 - **Activity logging** — auth and CRUD events to `ActivityLogs`
 - **Request logging** — path, status, duration, tenant/user correlation

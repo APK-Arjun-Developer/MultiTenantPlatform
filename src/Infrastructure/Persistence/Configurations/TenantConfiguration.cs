@@ -1,3 +1,4 @@
+using Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -22,6 +23,11 @@ public class TenantConfiguration : IEntityTypeConfiguration<Domain.Entities.Tena
         builder.HasIndex(x => x.Slug)
             .IsUnique()
             .HasFilter("[DeletedAt] IS NULL");
+
+        builder.Property(x => x.CreatedVia)
+            .HasConversion<int>()
+            .HasDefaultValue(CreatedVia.Direct)
+            .IsRequired();
 
         builder.HasOne(x => x.ProfileFile)
             .WithMany()

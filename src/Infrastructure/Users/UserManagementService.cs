@@ -113,6 +113,7 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             softDeleted.IsActive = false;
             softDeleted.EmailConfirmed = false;
             softDeleted.DeletedAt = null;
+            softDeleted.CreatedVia = CreatedVia.Direct;
             softDeleted.SecurityStamp = Guid.NewGuid().ToString();
             softDeleted.ConcurrencyStamp = Guid.NewGuid().ToString();
             softDeleted.PasswordHash = _userManager.PasswordHasher.HashPassword(softDeleted, $"Placeholder!{Guid.NewGuid():N}");
@@ -148,6 +149,7 @@ public class UserManagementService : TenantScopedService, IUserManagementService
                 NormalizedUserName = normalised,
                 EmailConfirmed = false,
                 IsActive = false,
+                CreatedVia = CreatedVia.Direct,
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -204,7 +206,9 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         int page, int pageSize,
         string? search = null,
         string? sortBy = null,
-        string? sortOrder = null)
+        string? sortOrder = null,
+        bool? isActive = null,
+        CreatedVia? createdVia = null)
     {
         var currentUserId = RequireUserId();
 
@@ -222,6 +226,16 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         {
             query = query.Where(u =>
                 u.FullName.Contains(search) || u.Email!.Contains(search));
+        }
+
+        if (isActive.HasValue)
+        {
+            query = query.Where(u => u.IsActive == isActive.Value);
+        }
+
+        if (createdVia.HasValue)
+        {
+            query = query.Where(u => u.CreatedVia == createdVia.Value);
         }
 
         var totalCount = await query.CountAsync();
@@ -512,7 +526,9 @@ public class UserManagementService : TenantScopedService, IUserManagementService
     public async Task<PagedResponse<UserResponse>> GetTenantAdminsAsync(
         int page, int pageSize,
         string? search = null,
-        Guid? tenantId = null)
+        Guid? tenantId = null,
+        bool? isActive = null,
+        CreatedVia? createdVia = null)
     {
         if (!IsSystemAdmin())
         {
@@ -533,6 +549,16 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         {
             query = query.Where(u =>
                 u.FullName.Contains(search) || u.Email!.Contains(search));
+        }
+
+        if (isActive.HasValue)
+        {
+            query = query.Where(u => u.IsActive == isActive.Value);
+        }
+
+        if (createdVia.HasValue)
+        {
+            query = query.Where(u => u.CreatedVia == createdVia.Value);
         }
 
         var totalCount = await query.CountAsync();
@@ -696,6 +722,8 @@ public class UserManagementService : TenantScopedService, IUserManagementService
                 string.Join(", ", result.Errors.Select(e => e.Description)));
         }
 
+        _cache.InvalidateUserStatus(user.Id);
+
         await LogActivityAsync(ActivityActions.Users.Deleted, $"Deleted tenant admin '{user.Email}'.");
     }
 
@@ -707,6 +735,16 @@ public class UserManagementService : TenantScopedService, IUserManagementService
 
         if (file.Length > AvatarMaxBytes)
             throw new InvalidOperationException("Profile picture must be smaller than 5 MB.");
+
+        using (var dimensionStream = file.OpenReadStream())
+        {
+            var (width, height) = ReadImageDimensions(dimensionStream);
+            if (width <= 0 || height <= 0)
+                throw new InvalidOperationException("Could not read image dimensions. Please upload a valid image file.");
+            if (width != height)
+                throw new InvalidOperationException(
+                    $"Profile picture must be square ({width}×{height} is not square). Please crop your image before uploading.");
+        }
 
         var user = await GetCurrentUserEntityAsync();
         var previousFileId = user.ProfileFileId;
@@ -778,6 +816,114 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         return await _userManager.FindByIdAsync(RequireUserId().ToString())
             ?? throw new NotFoundException("User not found.");
     }
+
+    /// <summary>
+    /// Reads image dimensions from the stream header without decoding pixel data.
+    /// Supports JPEG, PNG, GIF, and WebP (lossy VP8 and lossless VP8L).
+    /// Returns (0, 0) when dimensions cannot be determined.
+    /// </summary>
+    private static (int Width, int Height) ReadImageDimensions(Stream stream)
+    {
+        try
+        {
+            var h = new byte[30];
+            var read = stream.Read(h, 0, h.Length);
+
+            if (read < 12) return (0, 0);
+
+            // PNG: magic \x89PNG\r\n\x1a\n, then IHDR chunk at offset 8 (width at 16, height at 20)
+            if (read >= 24
+                && h[0] == 0x89 && h[1] == 0x50 && h[2] == 0x4E && h[3] == 0x47)
+            {
+                return (ReadInt32BE(h, 16), ReadInt32BE(h, 20));
+            }
+
+            // GIF: GIF87a / GIF89a — logical width at offset 6, height at offset 8 (little-endian)
+            if (read >= 10 && h[0] == 'G' && h[1] == 'I' && h[2] == 'F')
+            {
+                return (ReadUInt16LE(h, 6), ReadUInt16LE(h, 8));
+            }
+
+            // WebP: "RIFF????WEBP VP8 " (lossy) or "RIFF????WEBP VP8L" (lossless)
+            if (read >= 28
+                && h[0] == 'R' && h[1] == 'I' && h[2] == 'F' && h[3] == 'F'
+                && h[8] == 'W' && h[9] == 'E' && h[10] == 'B' && h[11] == 'P')
+            {
+                // Lossy VP8: chunk id "VP8 ", bitstream start code at h[23..25] = 9D 01 2A
+                if (h[12] == 'V' && h[13] == 'P' && h[14] == '8' && h[15] == ' '
+                    && read >= 30 && h[23] == 0x9D && h[24] == 0x01 && h[25] == 0x2A)
+                {
+                    return ((ReadUInt16LE(h, 26) & 0x3FFF) + 1,
+                            (ReadUInt16LE(h, 28) & 0x3FFF) + 1);
+                }
+
+                // Lossless VP8L: chunk id "VP8L", signature byte 0x2F at h[20]
+                if (h[12] == 'V' && h[13] == 'P' && h[14] == '8' && h[15] == 'L'
+                    && read >= 25 && h[20] == 0x2F)
+                {
+                    // Dimensions packed in 28 bits: width-1 (14 bits) | height-1 (14 bits)
+                    var bits = ReadUInt32LE(h, 21);
+                    return ((int)(bits & 0x3FFF) + 1,
+                            (int)((bits >> 14) & 0x3FFF) + 1);
+                }
+
+                // Extended VP8X: canvas width at byte 24 (3-byte LE, +1), height at 27 (3-byte LE, +1)
+                if (h[12] == 'V' && h[13] == 'P' && h[14] == '8' && h[15] == 'X' && read >= 30)
+                {
+                    var w = ((h[24]) | (h[25] << 8) | (h[26] << 16)) + 1;
+                    var ht = ((h[27]) | (h[28] << 8) | (h[29] << 16)) + 1;
+                    return (w, ht);
+                }
+            }
+
+            // JPEG: FF D8 — scan for SOF (Start of Frame) marker
+            if (read >= 2 && h[0] == 0xFF && h[1] == 0xD8)
+            {
+                return ScanJpegDimensions(stream);
+            }
+        }
+        catch { }
+
+        return (0, 0);
+    }
+
+    private static (int Width, int Height) ScanJpegDimensions(Stream stream)
+    {
+        stream.Seek(2, SeekOrigin.Begin); // skip SOI marker
+        var buf = new byte[4];
+        while (stream.Read(buf, 0, 2) == 2 && buf[0] == 0xFF)
+        {
+            var marker = buf[1];
+
+            // SOF markers: C0–CF except C4 (DHT), C8 (reserved), CC (DAC)
+            if (marker is >= 0xC0 and <= 0xCF and not 0xC4 and not 0xC8 and not 0xCC)
+            {
+                if (stream.Read(buf, 0, 4) < 4) break;
+                // Segment: 2B length, 1B precision, 2B height, 2B width
+                var ht = (buf[2] << 8) | buf[3];
+                var wb = new byte[2];
+                if (stream.Read(wb, 0, 2) < 2) break;
+                return ((wb[0] << 8) | wb[1], ht);
+            }
+
+            // Skip segment body (length includes its own 2 bytes)
+            if (stream.Read(buf, 0, 2) < 2) break;
+            var segLen = (buf[0] << 8) | buf[1];
+            if (segLen < 2) break;
+            stream.Seek(segLen - 2, SeekOrigin.Current);
+        }
+
+        return (0, 0);
+    }
+
+    private static int ReadInt32BE(byte[] b, int offset) =>
+        (b[offset] << 24) | (b[offset + 1] << 16) | (b[offset + 2] << 8) | b[offset + 3];
+
+    private static int ReadUInt16LE(byte[] b, int offset) =>
+        b[offset] | (b[offset + 1] << 8);
+
+    private static uint ReadUInt32LE(byte[] b, int offset) =>
+        (uint)(b[offset] | (b[offset + 1] << 8) | (b[offset + 2] << 16) | (b[offset + 3] << 24));
 
     private async Task<ApplicationUser?> FindManagedUserAsync(string email)
     {
@@ -859,6 +1005,7 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             ProfileUrl = BuildUserAvatarUrl(user.Id, user.ProfileFileId),
             Address = AddressFormatter.ToResponse(address),
             Tenant = includeTenantDetails ? tenantDetails : null,
+            CreatedVia = user.CreatedVia,
             HasPendingSetup = hasPendingSetup,
         };
 

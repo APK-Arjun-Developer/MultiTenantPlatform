@@ -1,4 +1,4 @@
-using Application.Common;
+﻿using Application.Common;
 using Application.DTOs.ActivityLogs;
 using Application.DTOs.Onboarding;
 using Domain.Enums;
@@ -328,6 +328,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
             NormalizedUserName = email.ToUpperInvariant(),
             EmailConfirmed = false,
             IsActive = false,
+            CreatedVia = CreatedVia.Direct,
             CreatedAt = DateTime.UtcNow,
         };
 
@@ -418,6 +419,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
         user.IsActive = false;
         user.EmailConfirmed = false;
         user.DeletedAt = null;
+        user.CreatedVia = CreatedVia.Direct;
         user.SecurityStamp = Guid.NewGuid().ToString();
         user.ConcurrencyStamp = Guid.NewGuid().ToString();
         user.PasswordHash = _userManager.PasswordHasher.HashPassword(user, $"Placeholder!{Guid.NewGuid():N}");

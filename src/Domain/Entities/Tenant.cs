@@ -1,4 +1,5 @@
 using Domain.Contracts;
+using Domain.Enums;
 
 namespace Domain.Entities;
 
@@ -13,6 +14,8 @@ public class Tenant : IAuditableEntity
     public string Slug { get; set; } = default!;
 
     public bool IsActive { get; set; } = true;
+
+    public CreatedVia CreatedVia { get; set; }
 
     public Guid? ProfileFileId { get; set; }
 

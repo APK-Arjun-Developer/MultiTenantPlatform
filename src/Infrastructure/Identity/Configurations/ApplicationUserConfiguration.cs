@@ -1,3 +1,4 @@
+﻿using Domain.Enums;
 using Infrastructure.Identity.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -28,6 +29,11 @@ public class ApplicationUserConfiguration
 
         builder.Property(x => x.SystemRole)
             .HasConversion<int>()
+            .IsRequired();
+
+        builder.Property(x => x.CreatedVia)
+            .HasConversion<int>()
+            .HasDefaultValue(CreatedVia.Direct)
             .IsRequired();
 
         builder.Property(x => x.IsActive)

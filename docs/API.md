@@ -181,13 +181,29 @@ In production (`RequireEmailVerification: true`), the TenantAdmin created here w
 
 ---
 
+## Dashboard
+
+| Method | Path | Auth | Notes |
+|--------|------|------|-------|
+| GET | `/dashboard/stats` | `TenantAdminOrAbove` policy | Caller-scoped stats. SystemAdmin: `totalTenants`, `totalTenantAdmins`, `totalTenantUsers` (platform-wide). TenantAdmin: `totalTenantUsers` for own tenant; the other two fields are `null`. |
+
+```json
+// SystemAdmin
+{ "totalTenants": 12, "totalTenantAdmins": 15, "totalTenantUsers": 240 }
+
+// TenantAdmin
+{ "totalTenants": null, "totalTenantAdmins": null, "totalTenantUsers": 18 }
+```
+
+---
+
 ## Tenants
 
 All routes require `Tenants.*` permissions (SystemAdmin only).
 
 | Method | Path | Permission | Notes |
 |--------|------|------------|-------|
-| GET | `/tenants` | `Tenants.View` | SystemAdmin: all tenants (paginated). TenantAdmin/TenantUser: own tenant only. |
+| GET | `/tenants` | `Tenants.View` | SystemAdmin: all tenants (paginated). TenantAdmin/TenantUser: own tenant only. Responses include `createdVia: "Direct" \| "Invitation"`. |
 | GET | `/tenants/{id}` | `Tenants.View` | SystemAdmin: any tenant. Others: own tenant only. |
 | GET | `/tenants/current` | `Tenants.View` | TenantAdmin/TenantUser only. SystemAdmin gets HTTP 400. |
 | POST | `/tenants` | `Tenants.Create` | Direct-create tenant + admin user; sends account-setup email. Accepts `user.address` and `tenant.address`. |
@@ -236,12 +252,12 @@ Requires `X-Tenant-Id` header for SystemAdmin. TenantAdmin/TenantUser are scoped
 | POST | `/users/invite` | `Onboarding.Invite` | Invite prospective TenantUser by email |
 | PUT | `/users` | `Users.Edit` | Update user by email in body |
 | PUT | `/users/current` | Authenticated | Update own profile (self-service; no permission required) |
-| POST | `/users/current/avatar` | Authenticated | Upload own profile picture (JPEG/PNG/GIF/WebP, max 5 MB). Returns updated `UserDto`. |
+| POST | `/users/current/avatar` | Authenticated | Upload own profile picture (JPEG/PNG/GIF/WebP, max 5 MB, **must be square**). Returns updated `UserDto`. |
 | DELETE | `/users/current/avatar` | Authenticated | Remove own profile picture. |
 | GET | `/users/{id}/avatar` | Authenticated | Stream any user's profile picture image. No permission required — bypasses tenant scope for cross-tenant visibility (e.g., SystemAdmin viewing TenantAdmin avatars). |
 | POST | `/users/current/change-password` | Authenticated | Change own password (self-service; no permission required) |
 | DELETE | `/users` | `Users.Delete` | Soft-delete user by email in body |
-| POST | `/users/{userId}/resend` | `Onboarding.Resend` | Resend account-setup email. Only applicable when `hasPendingSetup` is `true` (directly-created user who has not yet completed setup). |
+| POST | `/users/{userId}/resend` | `Onboarding.Resend` | Resend account-setup email. Only applicable when `hasPendingSetup` is `true` (directly-created user who has not yet completed setup). User responses include `createdVia: "Direct" \| "Invitation"`. |
 | GET | `/users/invitations` | `Onboarding.Invite` | List TenantUser invitations (filter by `status`) |
 | POST | `/users/invitations/{id}/revoke` | `Onboarding.Revoke` | Revoke pending TenantUser invitation |
 | POST | `/users/invitations/{id}/resend` | `Onboarding.Resend` | Resend pending TenantUser invitation email (regenerates token, extends expiry). Only works when invitation is not yet accepted, revoked, or expired. |
@@ -262,7 +278,7 @@ Requires `X-Tenant-Id` header for SystemAdmin. Custom roles only — `SystemAdmi
 | GET | `/roles/{name}` | `Roles.View` | Get role by name |
 | GET | `/roles/current` | `Roles.View` | Caller's own role |
 | POST | `/roles` | `Roles.Create` | Create custom role with permissions |
-| PUT | `/roles` | `Roles.Edit` | Update role (name, description, permissions) by name in body |
+| PUT | `/roles` | `Roles.Edit` | Update role (rename, description, permissions) by name in body |
 | DELETE | `/roles/{name}` | `Roles.Delete` | Delete role by name |
 
 `POST /roles` body:
@@ -275,7 +291,9 @@ Requires `X-Tenant-Id` header for SystemAdmin. Custom roles only — `SystemAdmi
 }
 ```
 
-At least one permission is required. Permissions must be within the `TenantUser` scope — roles cannot escalate beyond a TenantUser's ceiling.
+`PUT /roles` uses the same body plus an optional `newName` — when set and different from `name`, the role is renamed (must not collide with an existing role or a built-in role name).
+
+At least one permission is required. Permissions must be within the `TenantUser` scope — roles cannot escalate beyond a TenantUser's ceiling. This ceiling applies to **every caller, including SystemAdmin** (enforced centrally in `IdentityRoleService`, so it also covers custom roles supplied to `POST /tenants`).
 
 ---
 
@@ -454,14 +472,23 @@ Set `"clearAddress": true` to remove. Omit `address` to leave unchanged.
 
 ---
 
-## Pagination
+## Pagination & Filtering
 
-`GET /users`, `GET /tenants`, `GET /roles`, `GET /products`:
+`GET /users`, `GET /tenants`, `GET /roles`:
 
 | Query | Default | Max |
 |-------|---------|-----|
 | `page` | `1` | — |
 | `pageSize` | `20` | `100` |
+
+`GET /users`, `GET /tenants`, `GET /tenant-admins` also accept filter params:
+
+| Query | Type | Notes |
+|-------|------|-------|
+| `isActive` | `bool?` | `true` → active only, `false` → inactive only, omit → all |
+| `createdVia` | `Direct` \| `Invitation` | omit → all |
+
+`GET /tenant-admins` additionally accepts `tenantId` (GUID) to scope by tenant.
 
 ```json
 {

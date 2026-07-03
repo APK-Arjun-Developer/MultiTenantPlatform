@@ -152,26 +152,6 @@ namespace Infrastructure.Persistence.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "Products",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    Price = table.Column<decimal>(type: "decimal(18,2)", precision: 18, scale: 2, nullable: false),
-                    TenantId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    CreatedBy = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    UpdatedBy = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
-                    DeletedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
-                    DeletedBy = table.Column<Guid>(type: "uniqueidentifier", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Products", x => x.Id);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "RefreshTokens",
                 columns: table => new
                 {
@@ -265,6 +245,7 @@ namespace Infrastructure.Persistence.Migrations
                     IsActive = table.Column<bool>(type: "bit", nullable: false, defaultValue: true),
                     LastLoginAt = table.Column<DateTime>(type: "datetime2", nullable: true),
                     PasswordSetAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    CreatedVia = table.Column<int>(type: "int", nullable: false, defaultValue: 1),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
                     DeletedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
@@ -546,12 +527,6 @@ namespace Infrastructure.Persistence.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_Products_TenantId_Name",
-                table: "Products",
-                columns: new[] { "TenantId", "Name" },
-                filter: "[DeletedAt] IS NULL");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_RefreshTokens_ExpiresAt",
                 table: "RefreshTokens",
                 column: "ExpiresAt");
@@ -593,7 +568,8 @@ namespace Infrastructure.Persistence.Migrations
                 name: "IX_Tenants_Slug",
                 table: "Tenants",
                 column: "Slug",
-                unique: true);
+                unique: true,
+                filter: "[DeletedAt] IS NULL");
 
             migrationBuilder.CreateIndex(
                 name: "EmailIndex",
@@ -605,7 +581,7 @@ namespace Infrastructure.Persistence.Migrations
                 table: "Users",
                 columns: new[] { "Email", "TenantId" },
                 unique: true,
-                filter: "[Email] IS NOT NULL");
+                filter: "[Email] IS NOT NULL AND [DeletedAt] IS NULL");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Users_ProfileFileId",
@@ -617,7 +593,7 @@ namespace Infrastructure.Persistence.Migrations
                 table: "Users",
                 column: "NormalizedUserName",
                 unique: true,
-                filter: "[NormalizedUserName] IS NOT NULL");
+                filter: "[NormalizedUserName] IS NOT NULL AND [DeletedAt] IS NULL");
         }
 
         /// <inheritdoc />
@@ -655,9 +631,6 @@ namespace Infrastructure.Persistence.Migrations
 
             migrationBuilder.DropTable(
                 name: "PasswordResetTokens");
-
-            migrationBuilder.DropTable(
-                name: "Products");
 
             migrationBuilder.DropTable(
                 name: "RefreshTokens");

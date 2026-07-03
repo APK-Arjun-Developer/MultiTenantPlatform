@@ -5,6 +5,7 @@ using Application.DTOs.Users;
 using Application.Interfaces.Invitations;
 using Application.Interfaces.Onboarding;
 using Application.Interfaces.Users;
+using Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -36,9 +37,11 @@ public class UsersController : ApiControllerBase
         [FromQuery] int pageSize = 20,
         [FromQuery] string? search = null,
         [FromQuery] string? sortBy = null,
-        [FromQuery] string? sortOrder = null)
+        [FromQuery] string? sortOrder = null,
+        [FromQuery] bool? isActive = null,
+        [FromQuery] CreatedVia? createdVia = null)
     {
-        var response = await _userManagementService.GetUsersAsync(page, pageSize, search, sortBy, sortOrder);
+        var response = await _userManagementService.GetUsersAsync(page, pageSize, search, sortBy, sortOrder, isActive, createdVia);
 
         return OkEnvelope(response, "Users retrieved.");
     }

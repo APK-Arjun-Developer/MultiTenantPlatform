@@ -117,11 +117,6 @@ public class RoleService : TenantScopedService, IRoleService
             throw new ConflictException($"Role '{request.Name}' already exists for this tenant.");
         }
 
-        if (!IsSystemAdmin())
-        {
-            await EnforceTenantUserScopeAsync(request.Permissions);
-        }
-
         var role = await _identityRoleService.CreateRoleAsync(tenantId, request.Name, request.Description);
 
         await _identityRoleService.AssignPermissionsToRoleByIdsAsync(role.Id, request.Permissions);
@@ -147,9 +142,21 @@ public class RoleService : TenantScopedService, IRoleService
             throw new ForbiddenException($"Cannot modify built-in system role '{role.Name}'.");
         }
 
-        if (!IsSystemAdmin())
+        var newName = request.NewName?.Trim();
+        if (!string.IsNullOrEmpty(newName) && newName != role.Name)
         {
-            await EnforceTenantUserScopeAsync(request.Permissions);
+            if (newName is RoleNames.SystemAdmin or RoleNames.TenantAdmin or RoleNames.TenantUser)
+            {
+                throw new ForbiddenException($"Cannot rename a role to built-in system role '{newName}'.");
+            }
+
+            if (await _identityRoleService.RoleExistsAsync(tenantId, newName))
+            {
+                throw new ConflictException($"Role '{newName}' already exists for this tenant.");
+            }
+
+            role.Name = newName;
+            role.NormalizedName = newName.ToUpperInvariant();
         }
 
         role.Description = request.Description;
@@ -252,48 +259,6 @@ public class RoleService : TenantScopedService, IRoleService
                 PermissionNames = perms.Select(p => p.Name).ToList(),
             };
         }).ToList();
-    }
-
-    private async Task EnforceTenantUserScopeAsync(IEnumerable<Guid> permissionIds)
-    {
-        var ids = permissionIds.ToList();
-        if (ids.Count == 0) return;
-
-        var allowed = PermissionNames.TenantUserPermissions.ToHashSet(StringComparer.Ordinal);
-
-        var disallowed = await _context.Permissions
-            .Where(p => ids.Contains(p.Id) && !allowed.Contains(p.Name))
-            .Select(p => p.Name)
-            .ToListAsync();
-
-        if (disallowed.Count > 0)
-        {
-            throw new ForbiddenException(
-                $"Custom roles may only include TenantUser-scoped permissions. " +
-                $"Disallowed: {string.Join(", ", disallowed)}");
-        }
-    }
-
-    // Built-in TenantAdmin/TenantUser roles can hold TenantAdmin + TenantUser permissions,
-    // but SystemAdmin-scoped permissions are always off-limits for tenant callers.
-    private async Task EnforceTenantAdminScopeAsync(IEnumerable<Guid> permissionIds)
-    {
-        var ids = permissionIds.ToList();
-        if (ids.Count == 0) return;
-
-        var allowed = PermissionNames.TenantPermissions.ToHashSet(StringComparer.Ordinal);
-
-        var disallowed = await _context.Permissions
-            .Where(p => ids.Contains(p.Id) && !allowed.Contains(p.Name))
-            .Select(p => p.Name)
-            .ToListAsync();
-
-        if (disallowed.Count > 0)
-        {
-            throw new ForbiddenException(
-                $"Roles may not include System Admin permissions. " +
-                $"Disallowed: {string.Join(", ", disallowed)}");
-        }
     }
 
     private async Task<RoleResponse> MapRoleAsync(ApplicationRole role)

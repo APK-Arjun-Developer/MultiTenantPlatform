@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Application.Common;
 using Application.DTOs.ActivityLogs;
 using Application.DTOs.Common;
@@ -483,6 +483,7 @@ public class InvitationService : TenantScopedService, IInvitationService
                 EmailConfirmed = true,
                 PhoneNumber = request.Phone,
                 IsActive = true,
+                CreatedVia = CreatedVia.Invitation,
                 PasswordSetAt = DateTime.UtcNow,
                 CreatedAt = DateTime.UtcNow,
             };
@@ -564,6 +565,7 @@ public class InvitationService : TenantScopedService, IInvitationService
                 EmailConfirmed = true,
                 PhoneNumber = request.Phone,
                 IsActive = true,
+                CreatedVia = CreatedVia.Invitation,
                 PasswordSetAt = DateTime.UtcNow,
                 CreatedAt = DateTime.UtcNow,
             };
@@ -663,6 +665,7 @@ public class InvitationService : TenantScopedService, IInvitationService
                 Name = request.TenantName,
                 Slug = request.TenantSlug,
                 IsActive = true,
+                CreatedVia = CreatedVia.Invitation,
                 CreatedAt = DateTime.UtcNow,
             };
 
@@ -688,6 +691,7 @@ public class InvitationService : TenantScopedService, IInvitationService
                 EmailConfirmed = true,
                 PhoneNumber = request.Phone,
                 IsActive = true,
+                CreatedVia = CreatedVia.Invitation,
                 PasswordSetAt = DateTime.UtcNow,
                 CreatedAt = DateTime.UtcNow,
             };

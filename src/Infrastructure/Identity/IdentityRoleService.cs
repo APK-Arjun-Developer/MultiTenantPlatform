@@ -1,5 +1,5 @@
 using Application.Common;
-using Application.Interfaces.Tenant;
+using Application.Exceptions;
 using Domain.Entities;
 using Domain.Enums;
 using Infrastructure.Identity.Entities;
@@ -13,36 +13,35 @@ public class IdentityRoleService : IIdentityRoleService
 {
     private readonly ApplicationDbContext _context;
     private readonly RoleManager<ApplicationRole> _roleManager;
-    private readonly ICurrentTenantService _currentTenantService;
 
     public IdentityRoleService(
         ApplicationDbContext context,
-        RoleManager<ApplicationRole> roleManager,
-        ICurrentTenantService currentTenantService)
+        RoleManager<ApplicationRole> roleManager)
     {
         _context = context;
         _roleManager = roleManager;
-        _currentTenantService = currentTenantService;
     }
 
-    private bool IsSystemAdmin() =>
-        _currentTenantService.IsSystemAdmin ||     // HTTP context with SystemAdmin JWT
-        !_currentTenantService.TenantId.HasValue;  // no HTTP context (seed/background)
-
-    private static void RejectPlatformPermissions(IEnumerable<Guid> permissionIds, IEnumerable<Permission> permissions)
+    // Custom roles are capped at the TenantUser permission ceiling for every caller,
+    // including SystemAdmin — roles exist to be assigned to tenant users and must
+    // never escalate beyond what a tenant user may hold.
+    private async Task RejectNonTenantUserPermissionsAsync(IEnumerable<Guid> permissionIds)
     {
-        var tenantSafeNames = PermissionNames.TenantPermissions.ToHashSet(StringComparer.Ordinal);
-        var platformIds = permissions
-            .Where(p => !tenantSafeNames.Contains(p.Name))
-            .Select(p => p.Id)
-            .ToHashSet();
+        var ids = permissionIds.ToList();
+        if (ids.Count == 0) return;
 
-        var violating = permissionIds.Where(id => platformIds.Contains(id)).ToList();
-        if (violating.Count > 0)
+        var allowed = PermissionNames.TenantUserPermissions.ToHashSet(StringComparer.Ordinal);
+
+        var disallowed = await _context.Permissions
+            .Where(p => ids.Contains(p.Id) && !allowed.Contains(p.Name))
+            .Select(p => p.Name)
+            .ToListAsync();
+
+        if (disallowed.Count > 0)
         {
-            throw new InvalidOperationException(
-                "Tenant roles cannot be assigned platform-only permissions " +
-                $"({string.Join(", ", violating)}).");
+            throw new ForbiddenException(
+                "Custom roles may only include TenantUser-scoped permissions. " +
+                $"Disallowed: {string.Join(", ", disallowed)}");
         }
     }
 
@@ -94,31 +93,6 @@ public class IdentityRoleService : IIdentityRoleService
         return role;
     }
 
-    public async Task<List<string>> ValidatePermissionNamesAsync(IEnumerable<string> permissionNames)
-    {
-        var names = permissionNames.Distinct(StringComparer.Ordinal).ToList();
-
-        if (names.Count == 0)
-        {
-            throw new InvalidOperationException("At least one permission is required.");
-        }
-
-        var existing = await _context.Permissions
-            .Where(p => names.Contains(p.Name))
-            .Select(p => p.Name)
-            .ToListAsync();
-
-        var missing = names.Except(existing, StringComparer.Ordinal).ToList();
-
-        if (missing.Count > 0)
-        {
-            throw new InvalidOperationException(
-                $"Unknown permissions: {string.Join(", ", missing)}");
-        }
-
-        return names;
-    }
-
     public async Task<List<Guid>> ValidatePermissionIdsAsync(IEnumerable<Guid> permissionIds)
     {
         var ids = permissionIds.Distinct().ToList();
@@ -148,13 +122,7 @@ public class IdentityRoleService : IIdentityRoleService
     {
         var ids = await ValidatePermissionIdsAsync(permissionIds);
 
-        if (!IsSystemAdmin())
-        {
-            var permissions = await _context.Permissions
-                .Where(p => ids.Contains(p.Id))
-                .ToListAsync();
-            RejectPlatformPermissions(ids, permissions);
-        }
+        await RejectNonTenantUserPermissionsAsync(ids);
 
         var existingSet = (await _context.RolePermissions
             .Where(rp => rp.RoleId == roleId)
@@ -175,13 +143,7 @@ public class IdentityRoleService : IIdentityRoleService
     {
         var ids = await ValidatePermissionIdsAsync(permissionIds);
 
-        if (!IsSystemAdmin())
-        {
-            var permissions = await _context.Permissions
-                .Where(p => ids.Contains(p.Id))
-                .ToListAsync();
-            RejectPlatformPermissions(ids, permissions);
-        }
+        await RejectNonTenantUserPermissionsAsync(ids);
 
         var existing = await _context.RolePermissions
             .Where(rp => rp.RoleId == roleId)
@@ -195,34 +157,6 @@ public class IdentityRoleService : IIdentityRoleService
             {
                 RoleId = roleId,
                 PermissionId = permissionId
-            });
-        }
-    }
-
-    public async Task AssignPermissionsToRoleAsync(Guid roleId, IEnumerable<string> permissionNames)
-    {
-        var names = await ValidatePermissionNamesAsync(permissionNames);
-
-        var permissions = await _context.Permissions
-            .Where(p => names.Contains(p.Name))
-            .ToListAsync();
-
-        if (!IsSystemAdmin())
-        {
-            RejectPlatformPermissions(permissions.Select(p => p.Id), permissions);
-        }
-
-        var existingSet = (await _context.RolePermissions
-            .Where(rp => rp.RoleId == roleId)
-            .Select(rp => rp.PermissionId)
-            .ToListAsync()).ToHashSet();
-
-        foreach (var permission in permissions.Where(p => !existingSet.Contains(p.Id)))
-        {
-            _context.RolePermissions.Add(new RolePermission
-            {
-                RoleId = roleId,
-                PermissionId = permission.Id
             });
         }
     }

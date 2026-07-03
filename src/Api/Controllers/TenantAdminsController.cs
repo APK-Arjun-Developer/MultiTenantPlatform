@@ -5,6 +5,7 @@ using Application.DTOs.Users;
 using Application.Interfaces.Invitations;
 using Application.Interfaces.Onboarding;
 using Application.Interfaces.Users;
+using Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -39,9 +40,11 @@ public class TenantAdminsController : ApiControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] string? search = null,
-        [FromQuery] Guid? tenantId = null)
+        [FromQuery] Guid? tenantId = null,
+        [FromQuery] bool? isActive = null,
+        [FromQuery] CreatedVia? createdVia = null)
     {
-        var response = await _userManagementService.GetTenantAdminsAsync(page, pageSize, search, tenantId);
+        var response = await _userManagementService.GetTenantAdminsAsync(page, pageSize, search, tenantId, isActive, createdVia);
 
         return OkEnvelope(response, "Tenant admins retrieved.");
     }

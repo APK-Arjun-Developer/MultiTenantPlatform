@@ -1,4 +1,5 @@
 using Application.DTOs.Common;
+using Domain.Enums;
 
 namespace Application.DTOs.Tenant;
 
@@ -11,6 +12,8 @@ public class TenantResponse
     public string Slug { get; set; } = default!;
 
     public bool IsActive { get; set; }
+
+    public CreatedVia CreatedVia { get; set; }
 
     public Guid? ProfileFileId { get; set; }
 
