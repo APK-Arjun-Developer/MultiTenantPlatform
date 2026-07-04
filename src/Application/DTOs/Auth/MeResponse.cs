@@ -12,7 +12,5 @@ public class MeResponse
 
     public string SystemRole { get; set; } = default!;
 
-    public string? TenantSlug { get; set; }
-
     public IReadOnlyList<string> Permissions { get; set; } = [];
 }

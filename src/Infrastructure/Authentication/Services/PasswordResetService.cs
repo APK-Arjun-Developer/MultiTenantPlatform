@@ -47,7 +47,7 @@ public class PasswordResetService : IPasswordResetService
         ForgotPasswordRequest request,
         CancellationToken cancellationToken = default)
     {
-        var user = await FindUserAsync(request.Email, request.TenantSlug, cancellationToken);
+        var user = await FindUserAsync(request.Email, cancellationToken);
 
         if (user == null || !user.IsActive)
         {
@@ -69,9 +69,9 @@ public class PasswordResetService : IPasswordResetService
 
         var record = new PasswordResetToken
         {
-            Id        = Guid.NewGuid(),
-            UserId    = user.Id,
-            TenantId  = user.TenantId,
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            TenantId = user.TenantId,
             TokenHash = hash,
             ExpiresAt = now.Add(TokenLifetime),
             CreatedAt = now,
@@ -97,10 +97,10 @@ public class PasswordResetService : IPasswordResetService
 
         await _activityLogService.LogAsync(new LogActivityRequest
         {
-            UserId      = user.Id,
-            TenantId    = user.TenantId,
-            Action      = ActivityActions.Auth.ForgotPassword,
-            Module      = ActivityModules.Auth,
+            UserId = user.Id,
+            TenantId = user.TenantId,
+            Action = ActivityActions.Auth.ForgotPassword,
+            Module = ActivityModules.Auth,
             Description = $"Password reset email sent to '{user.Email}'.",
         }, cancellationToken);
     }
@@ -133,19 +133,10 @@ public class PasswordResetService : IPasswordResetService
             return Invalid("Associated account was not found.");
         }
 
-        var tenantSlug = record.TenantId != Guid.Empty
-            ? await _context.Tenants
-                .IgnoreQueryFilters()
-                .Where(t => t.Id == record.TenantId && t.DeletedAt == null)
-                .Select(t => t.Slug)
-                .FirstOrDefaultAsync(cancellationToken)
-            : null;
-
         return new ValidateResetTokenResponse
         {
-            IsValid    = true,
-            Email      = user.Email,
-            TenantSlug = tenantSlug,
+            IsValid = true,
+            Email = user.Email,
         };
     }
 
@@ -191,44 +182,20 @@ public class PasswordResetService : IPasswordResetService
 
         await _activityLogService.LogAsync(new LogActivityRequest
         {
-            UserId      = user.Id,
-            TenantId    = user.TenantId,
-            Action      = ActivityActions.Auth.ResetPassword,
-            Module      = ActivityModules.Auth,
+            UserId = user.Id,
+            TenantId = user.TenantId,
+            Action = ActivityActions.Auth.ResetPassword,
+            Module = ActivityModules.Auth,
             Description = $"Password reset completed for '{user.Email}'.",
         }, cancellationToken);
     }
 
     private async Task<ApplicationUser?> FindUserAsync(
-        string email, string? tenantSlug, CancellationToken cancellationToken)
+        string email, CancellationToken cancellationToken)
     {
         var normalizedEmail = email.ToUpperInvariant();
-
-        if (string.IsNullOrWhiteSpace(tenantSlug))
-        {
-            return await _userManager.Users
-                .FirstOrDefaultAsync(u =>
-                    u.NormalizedEmail == normalizedEmail &&
-                    u.TenantId == Guid.Empty,
-                    cancellationToken);
-        }
-
-        var tenant = await _context.Tenants
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(t =>
-                t.Slug == tenantSlug && t.DeletedAt == null && t.IsActive,
-                cancellationToken);
-
-        if (tenant == null)
-        {
-            return null;
-        }
-
         return await _userManager.Users
-            .FirstOrDefaultAsync(u =>
-                u.NormalizedEmail == normalizedEmail &&
-                u.TenantId == tenant.Id,
-                cancellationToken);
+            .FirstOrDefaultAsync(u => u.NormalizedEmail == normalizedEmail, cancellationToken);
     }
 
     private async Task<PasswordResetToken?> FindTokenAsync(

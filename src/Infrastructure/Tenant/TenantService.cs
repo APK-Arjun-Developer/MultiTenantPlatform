@@ -78,8 +78,7 @@ public class TenantService : TenantScopedService, ITenantService
 
             if (!string.IsNullOrWhiteSpace(search))
             {
-                query = query.Where(t =>
-                    t.Name.Contains(search) || t.Slug.Contains(search));
+                query = query.Where(t => t.Name.Contains(search));
             }
 
             if (isActive.HasValue)
@@ -96,8 +95,6 @@ public class TenantService : TenantScopedService, ITenantService
 
             query = (sortBy?.ToLowerInvariant(), sortOrder?.ToLowerInvariant()) switch
             {
-                ("slug", "desc") => query.OrderByDescending(t => t.Slug),
-                ("slug", _) => query.OrderBy(t => t.Slug),
                 ("name", "desc") => query.OrderByDescending(t => t.Name),
                 _ => query.OrderBy(t => t.Name),
             };
@@ -112,8 +109,25 @@ public class TenantService : TenantScopedService, ITenantService
             var addressesByTenantId = await AddressHelper.GetTenantAddressesAsync(
                 _context, tenantIds);
 
+            var adminEmailsByTenantId = await _context.Users
+                .AsNoTracking()
+                .IgnoreQueryFilters()
+                .Where(u => tenantIds.Contains(u.TenantId)
+                            && u.SystemRole == SystemRole.TenantAdmin
+                            && u.DeletedAt == null)
+                .GroupBy(u => u.TenantId)
+                .Select(g => new
+                {
+                    TenantId = g.Key,
+                    Email = g.OrderBy(u => u.CreatedAt).Select(u => u.Email).FirstOrDefault(),
+                })
+                .ToDictionaryAsync(x => x.TenantId, x => x.Email);
+
             var items = tenants
-                .Select(t => MapToResponse(t, addressesByTenantId.GetValueOrDefault(t.Id)))
+                .Select(t => MapToResponse(
+                    t,
+                    addressesByTenantId.GetValueOrDefault(t.Id),
+                    adminEmailsByTenantId.GetValueOrDefault(t.Id)))
                 .ToList();
 
             return new PagedResponse<TenantResponse>
@@ -176,49 +190,32 @@ public class TenantService : TenantScopedService, ITenantService
 
                 var address = await AddressHelper.GetTenantAddressAsync(_context, tenantId);
 
-                return MapToResponse(tenant, address);
+                var adminEmail = await _context.Users
+                    .AsNoTracking()
+                    .IgnoreQueryFilters()
+                    .Where(u => u.TenantId == tenantId
+                                && u.SystemRole == SystemRole.TenantAdmin
+                                && u.DeletedAt == null)
+                    .OrderBy(u => u.CreatedAt)
+                    .Select(u => u.Email)
+                    .FirstOrDefaultAsync();
+
+                return MapToResponse(tenant, address, adminEmail);
             },
             TimeSpan.FromMinutes(_cacheOptions.TenantDetailMinutes));
     }
 
     public async Task<TenantResponse> UpdateAsync(UpdateTenantRequest request)
     {
-        Domain.Entities.Tenant tenant;
+        Guid tenantId = IsSystemAdmin() ? request.Id : RequireTenantId();
 
-        if (IsSystemAdmin())
-        {
-            if (string.IsNullOrWhiteSpace(request.Slug))
-            {
-                throw new InvalidOperationException(
-                    "Slug is required when updating a tenant as system admin.");
-            }
+        if (tenantId == Guid.Empty)
+            throw new InvalidOperationException("Tenant id is required.");
 
-            tenant = await _context.Tenants
-                .IgnoreQueryFilters()
-                .FirstOrDefaultAsync(t => t.Slug == request.Slug && t.DeletedAt == null)
-                ?? throw new NotFoundException("Tenant not found.");
-        }
-        else
-        {
-            tenant = await _context.Tenants
-                .IgnoreQueryFilters()
-                .FirstOrDefaultAsync(t => t.Id == RequireTenantId() && t.DeletedAt == null)
-                ?? throw new NotFoundException("Tenant not found.");
-        }
-
-        if (!string.IsNullOrWhiteSpace(request.NewSlug) && request.NewSlug != tenant.Slug)
-        {
-            var slugTaken = await _context.Tenants
-                .IgnoreQueryFilters()
-                .AnyAsync(t => t.Slug == request.NewSlug && t.Id != tenant.Id && t.DeletedAt == null);
-
-            if (slugTaken)
-            {
-                throw new ConflictException("Tenant slug already exists.");
-            }
-
-            tenant.Slug = request.NewSlug;
-        }
+        var tenant = await _context.Tenants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == tenantId && t.DeletedAt == null)
+            ?? throw new NotFoundException("Tenant not found.");
 
         tenant.Name = request.Name;
         tenant.IsActive = request.IsActive;
@@ -235,11 +232,21 @@ public class TenantService : TenantScopedService, ITenantService
         _cache.InvalidateTenant(tenant.Id);
         _cache.InvalidateTenantStatus(tenant.Id);
 
-        await LogActivityAsync(ActivityActions.Tenants.Updated, $"Updated tenant '{tenant.Slug}'.");
+        await LogActivityAsync(ActivityActions.Tenants.Updated, $"Updated tenant '{tenant.Name}'.");
 
         var address = await AddressHelper.GetTenantAddressAsync(_context, tenant.Id);
 
-        return MapToResponse(tenant, address);
+        var adminEmail = await _context.Users
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .Where(u => u.TenantId == tenant.Id
+                        && u.SystemRole == SystemRole.TenantAdmin
+                        && u.DeletedAt == null)
+            .OrderBy(u => u.CreatedAt)
+            .Select(u => u.Email)
+            .FirstOrDefaultAsync();
+
+        return MapToResponse(tenant, address, adminEmail);
     }
 
     public async Task<TenantResponse> UpdateCurrentTenantAddressAsync(UpdateCurrentTenantAddressRequest request)
@@ -258,7 +265,7 @@ public class TenantService : TenantScopedService, ITenantService
 
         _cache.InvalidateTenant(tenant.Id);
 
-        await LogActivityAsync(ActivityActions.Tenants.Updated, $"Updated address for tenant '{tenant.Slug}'.");
+        await LogActivityAsync(ActivityActions.Tenants.Updated, $"Updated address for tenant '{tenant.Name}'.");
 
         var address = await AddressHelper.GetTenantAddressAsync(_context, tenant.Id);
 
@@ -274,7 +281,7 @@ public class TenantService : TenantScopedService, ITenantService
 
         var tenant = await _context.Tenants
             .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(t => t.Slug == request.Slug && t.DeletedAt == null)
+            .FirstOrDefaultAsync(t => t.Id == request.Id && t.DeletedAt == null)
             ?? throw new NotFoundException("Tenant not found.");
 
         tenant.MarkDeleted();
@@ -285,23 +292,12 @@ public class TenantService : TenantScopedService, ITenantService
         _cache.InvalidateTenant(tenant.Id);
         _cache.InvalidateTenantStatus(tenant.Id);
 
-        await LogActivityAsync(ActivityActions.Tenants.Deleted, $"Deleted tenant '{tenant.Slug}'.");
+        await LogActivityAsync(ActivityActions.Tenants.Deleted, $"Deleted tenant '{tenant.Name}'.");
     }
 
     public async Task<OnboardTenantResponse> OnboardTenantAsync(OnboardTenantRequest request)
     {
-        // Throw if an ACTIVE tenant already has this slug.
-        var activeSlugExists = await _context.Tenants
-            .IgnoreQueryFilters()
-            .AnyAsync(t => t.Slug == request.Tenant.Slug && t.DeletedAt == null);
-
-        if (activeSlugExists)
-            throw new ConflictException("Tenant slug already exists.");
-
-        // Check if a soft-deleted tenant exists with the same slug (restore path).
-        var softDeletedTenant = await _context.Tenants
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(t => t.Slug == request.Tenant.Slug && t.DeletedAt != null);
+        var softDeletedTenant = (Domain.Entities.Tenant?)null;
 
         await using var transaction = await _context.Database.BeginTransactionAsync();
 
@@ -327,7 +323,6 @@ public class TenantService : TenantScopedService, ITenantService
                 {
                     Id = Guid.NewGuid(),
                     Name = request.Tenant.Name,
-                    Slug = request.Tenant.Slug,
                     IsActive = true,
                     CreatedVia = CreatedVia.Direct,
                     CreatedAt = DateTime.UtcNow
@@ -470,14 +465,13 @@ public class TenantService : TenantScopedService, ITenantService
 
             await LogActivityAsync(
                 ActivityActions.Tenants.Onboarded,
-                $"Onboarded tenant '{tenant.Slug}' with admin '{adminUser.Email}'.",
+                $"Onboarded tenant '{tenant.Name}' with admin '{adminUser.Email}'.",
                 tenantId: tenant.Id);
 
             return new OnboardTenantResponse
             {
                 TenantId = tenant.Id,
                 Name = tenant.Name,
-                Slug = tenant.Slug,
                 AdminUserId = adminUser.Id,
                 AdminEmail = adminUser.Email!,
                 Roles = createdRoles
@@ -523,17 +517,18 @@ public class TenantService : TenantScopedService, ITenantService
 
     private static TenantResponse MapToResponse(
         Domain.Entities.Tenant tenant,
-        Address? address = null) =>
+        Address? address = null,
+        string? adminEmail = null) =>
         new()
         {
             Id = tenant.Id,
             Name = tenant.Name,
-            Slug = tenant.Slug,
             IsActive = tenant.IsActive,
             CreatedVia = tenant.CreatedVia,
             ProfileFileId = tenant.ProfileFileId,
             ProfileUrl = BuildProfileUrl(tenant.ProfileFileId),
             Address = AddressFormatter.ToResponse(address),
+            AdminEmail = adminEmail,
         };
 
     private async Task LogActivityAsync(string action, string description, Guid? tenantId = null)

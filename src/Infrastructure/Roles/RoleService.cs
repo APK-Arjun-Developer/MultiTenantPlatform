@@ -46,7 +46,8 @@ public class RoleService : TenantScopedService, IRoleService
 
     public async Task<PagedResponse<RoleResponse>> GetRolesAsync(
         int page, int pageSize,
-        string? search = null)
+        string? search = null,
+        IReadOnlyList<Guid>? permissionIds = null)
     {
         (page, pageSize) = Pagination.Normalize(page, pageSize);
 
@@ -56,6 +57,12 @@ public class RoleService : TenantScopedService, IRoleService
         if (!string.IsNullOrWhiteSpace(search))
         {
             query = query.Where(r => r.Name!.Contains(search));
+        }
+
+        if (permissionIds is { Count: > 0 })
+        {
+            query = query.Where(r => _context.RolePermissions
+                .Any(rp => rp.RoleId == r.Id && permissionIds.Contains(rp.PermissionId)));
         }
 
         var totalCount = await query.CountAsync();

@@ -7,9 +7,8 @@ public class InviteTenantAdminRequestValidator : AbstractValidator<InviteTenantA
 {
     public InviteTenantAdminRequestValidator()
     {
-        RuleFor(x => x.TenantSlug)
-            .NotEmpty()
-            .MaximumLength(100);
+        RuleFor(x => x.TenantId)
+            .NotEqual(Guid.Empty);
 
         RuleFor(x => x.Email)
             .NotEmpty()

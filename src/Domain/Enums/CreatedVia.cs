@@ -2,6 +2,6 @@
 
 public enum CreatedVia
 {
-    Direct     = 1,
+    Direct = 1,
     Invitation = 2,
 }

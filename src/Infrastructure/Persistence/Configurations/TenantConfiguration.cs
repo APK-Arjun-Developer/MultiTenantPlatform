@@ -16,14 +16,6 @@ public class TenantConfiguration : IEntityTypeConfiguration<Domain.Entities.Tena
             .HasMaxLength(200)
             .IsRequired();
 
-        builder.Property(x => x.Slug)
-            .HasMaxLength(100)
-            .IsRequired();
-
-        builder.HasIndex(x => x.Slug)
-            .IsUnique()
-            .HasFilter("[DeletedAt] IS NULL");
-
         builder.Property(x => x.CreatedVia)
             .HasConversion<int>()
             .HasDefaultValue(CreatedVia.Direct)

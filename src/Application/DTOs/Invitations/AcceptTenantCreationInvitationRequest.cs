@@ -16,8 +16,6 @@ public class AcceptTenantCreationInvitationRequest
 
     public string TenantName { get; set; } = default!;
 
-    public string TenantSlug { get; set; } = default!;
-
     public AddressRequest? TenantAddress { get; set; }
 
     public AddressRequest? UserAddress { get; set; }

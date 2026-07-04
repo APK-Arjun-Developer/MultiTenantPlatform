@@ -7,8 +7,7 @@ public class DeleteTenantRequestValidator : AbstractValidator<DeleteTenantReques
 {
     public DeleteTenantRequestValidator()
     {
-        RuleFor(x => x.Slug)
-            .NotEmpty()
-            .MaximumLength(100);
+        RuleFor(x => x.Id)
+            .NotEqual(Guid.Empty);
     }
 }

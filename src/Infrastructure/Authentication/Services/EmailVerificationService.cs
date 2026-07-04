@@ -44,7 +44,7 @@ public class EmailVerificationService : IEmailVerificationService
         ResendEmailOtpRequest request,
         CancellationToken cancellationToken = default)
     {
-        var user = await FindUserAsync(request.Email, request.TenantSlug, cancellationToken);
+        var user = await FindUserAsync(request.Email, cancellationToken);
 
         // Silently succeed — never reveal whether the email exists or is already confirmed.
         if (user == null || user.EmailConfirmed)
@@ -125,7 +125,7 @@ public class EmailVerificationService : IEmailVerificationService
         VerifyEmailOtpRequest request,
         CancellationToken cancellationToken = default)
     {
-        var user = await FindUserAsync(request.Email, request.TenantSlug, cancellationToken)
+        var user = await FindUserAsync(request.Email, cancellationToken)
             ?? throw new InvalidOperationException("Invalid verification request.");
 
         if (user.EmailConfirmed)
@@ -172,35 +172,11 @@ public class EmailVerificationService : IEmailVerificationService
     }
 
     private async Task<ApplicationUser?> FindUserAsync(
-        string email, string? tenantSlug, CancellationToken cancellationToken)
+        string email, CancellationToken cancellationToken)
     {
         var normalizedEmail = email.ToUpperInvariant();
-
-        if (string.IsNullOrWhiteSpace(tenantSlug))
-        {
-            return await _userManager.Users
-                .FirstOrDefaultAsync(u =>
-                    u.NormalizedEmail == normalizedEmail &&
-                    u.TenantId == Guid.Empty,
-                    cancellationToken);
-        }
-
-        var tenant = await _context.Tenants
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(t =>
-                t.Slug == tenantSlug && t.DeletedAt == null,
-                cancellationToken);
-
-        if (tenant == null)
-        {
-            return null;
-        }
-
         return await _userManager.Users
-            .FirstOrDefaultAsync(u =>
-                u.NormalizedEmail == normalizedEmail &&
-                u.TenantId == tenant.Id,
-                cancellationToken);
+            .FirstOrDefaultAsync(u => u.NormalizedEmail == normalizedEmail, cancellationToken);
     }
 
     private static string GenerateOtp()

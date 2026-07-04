@@ -31,7 +31,7 @@ public class UsersController : ApiControllerBase
     }
 
     [HttpGet]
-    [HasPermission(PermissionNames.UsersView)]
+    [HasPermission(PermissionNames.UsersList)]
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,

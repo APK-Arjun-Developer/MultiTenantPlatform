@@ -9,8 +9,6 @@ public class TenantResponse
 
     public string Name { get; set; } = default!;
 
-    public string Slug { get; set; } = default!;
-
     public bool IsActive { get; set; }
 
     public CreatedVia CreatedVia { get; set; }
@@ -20,4 +18,6 @@ public class TenantResponse
     public string? ProfileUrl { get; set; }
 
     public AddressResponse? Address { get; set; }
+
+    public string? AdminEmail { get; set; }
 }

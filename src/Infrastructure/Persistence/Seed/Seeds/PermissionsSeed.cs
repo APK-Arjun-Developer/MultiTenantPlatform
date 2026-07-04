@@ -20,11 +20,13 @@ public sealed class PermissionsSeed : IDataSeed
 
         // TenantAdmin — tenant management permissions
         (PermissionNames.UsersCreate,          "Users",      "Create users",                            SystemRole.TenantAdmin),
-        (PermissionNames.UsersView,            "Users",      "View users",                              SystemRole.TenantAdmin),
+        (PermissionNames.UsersList,            "Users",      "List all users",                          SystemRole.TenantAdmin),
+        (PermissionNames.UsersView,            "Users",      "View user details",                       SystemRole.TenantAdmin),
         (PermissionNames.UsersEdit,            "Users",      "Edit users",                              SystemRole.TenantAdmin),
         (PermissionNames.UsersDelete,          "Users",      "Delete users",                            SystemRole.TenantAdmin),
         (PermissionNames.RolesCreate,          "Roles",      "Create roles",                            SystemRole.TenantAdmin),
-        (PermissionNames.RolesView,            "Roles",      "View roles",                              SystemRole.TenantAdmin),
+        (PermissionNames.RolesList,            "Roles",      "List all roles",                          SystemRole.TenantAdmin),
+        (PermissionNames.RolesView,            "Roles",      "View role details",                       SystemRole.TenantAdmin),
         (PermissionNames.RolesEdit,            "Roles",      "Edit roles",                              SystemRole.TenantAdmin),
         (PermissionNames.RolesDelete,          "Roles",      "Delete roles",                            SystemRole.TenantAdmin),
         (PermissionNames.FilesDelete,          "Files",      "Delete files",                            SystemRole.TenantAdmin),
@@ -36,10 +38,11 @@ public sealed class PermissionsSeed : IDataSeed
         (PermissionNames.OnboardingDeactivate, "Onboarding", "Deactivate user accounts",                SystemRole.TenantAdmin),
 
         // SystemAdmin — platform-level permissions
-        (PermissionNames.TenantsCreate, "Tenants", "Create tenants", SystemRole.SystemAdmin),
-        (PermissionNames.TenantsView,   "Tenants", "View tenants",   SystemRole.SystemAdmin),
-        (PermissionNames.TenantsEdit,   "Tenants", "Edit tenants",   SystemRole.SystemAdmin),
-        (PermissionNames.TenantsDelete, "Tenants", "Delete tenants", SystemRole.SystemAdmin),
+        (PermissionNames.TenantsCreate, "Tenants", "Create tenants",        SystemRole.SystemAdmin),
+        (PermissionNames.TenantsList,   "Tenants", "List all tenants",      SystemRole.SystemAdmin),
+        (PermissionNames.TenantsView,   "Tenants", "View tenant details",   SystemRole.SystemAdmin),
+        (PermissionNames.TenantsEdit,   "Tenants", "Edit tenants",          SystemRole.SystemAdmin),
+        (PermissionNames.TenantsDelete, "Tenants", "Delete tenants",        SystemRole.SystemAdmin),
     ];
 
     private readonly ApplicationDbContext _context;

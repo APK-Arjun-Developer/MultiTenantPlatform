@@ -24,8 +24,6 @@ public class OnboardTenantDetails
 {
     public string Name { get; set; } = default!;
 
-    public string Slug { get; set; } = default!;
-
     public AddressRequest? Address { get; set; }
 }
 

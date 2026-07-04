@@ -210,37 +210,8 @@ public class AuthService : IAuthService
     private async Task<ApplicationUser?> FindUserForLoginAsync(LoginRequest request)
     {
         var normalizedEmail = request.Email.ToUpperInvariant();
-
-        if (string.IsNullOrWhiteSpace(request.TenantSlug))
-        {
-            return await _userManager.Users
-                .FirstOrDefaultAsync(u =>
-                    u.NormalizedEmail == normalizedEmail &&
-                    u.TenantId == Guid.Empty);
-        }
-
-        var slug = request.TenantSlug.ToLowerInvariant();
-        var tenant = await _context.Tenants
-            .IgnoreQueryFilters()
-            .Where(t => t.Slug == slug && t.DeletedAt == null)
-            .Select(t => new { t.Id, t.IsActive })
-            .FirstOrDefaultAsync();
-
-        if (tenant == null)
-        {
-            return null;
-        }
-
-        if (!tenant.IsActive)
-        {
-            throw new InvalidOperationException(
-                "Your organization account has been deactivated. Please contact support.");
-        }
-
         return await _userManager.Users
-            .FirstOrDefaultAsync(u =>
-                u.NormalizedEmail == normalizedEmail &&
-                u.TenantId == tenant.Id);
+            .FirstOrDefaultAsync(u => u.NormalizedEmail == normalizedEmail);
     }
 
     public async Task<MeResponse> GetMeAsync(ClaimsPrincipal principal)
@@ -255,16 +226,6 @@ public class AuthService : IAuthService
             ? ((Domain.Enums.SystemRole)int.Parse(systemRoleClaim)).ToString()
             : nameof(Domain.Enums.SystemRole.TenantUser);
 
-        string? tenantSlug = null;
-        if (tenantId != Guid.Empty)
-        {
-            tenantSlug = await _context.Tenants
-                .IgnoreQueryFilters()
-                .Where(t => t.Id == tenantId)
-                .Select(t => t.Slug)
-                .FirstOrDefaultAsync();
-        }
-
         return new MeResponse
         {
             Id = userId,
@@ -272,7 +233,6 @@ public class AuthService : IAuthService
             FullName = fullName,
             Roles = roles,
             SystemRole = systemRole,
-            TenantSlug = tenantSlug,
         };
     }
 

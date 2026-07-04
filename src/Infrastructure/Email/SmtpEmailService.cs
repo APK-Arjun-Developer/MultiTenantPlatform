@@ -25,7 +25,7 @@ public sealed class SmtpEmailService : IEmailService
         ILogger<SmtpEmailService> logger)
     {
         _settings = settings.Value;
-        _logger   = logger;
+        _logger = logger;
 
         // 3 attempts with exponential back-off: 2s → 4s → 8s.
         // Retries on transient network / SMTP protocol errors.
@@ -33,9 +33,9 @@ public sealed class SmtpEmailService : IEmailService
             .AddRetry(new RetryStrategyOptions
             {
                 MaxRetryAttempts = 3,
-                BackoffType      = DelayBackoffType.Exponential,
-                Delay            = TimeSpan.FromSeconds(2),
-                ShouldHandle     = new PredicateBuilder()
+                BackoffType = DelayBackoffType.Exponential,
+                Delay = TimeSpan.FromSeconds(2),
+                ShouldHandle = new PredicateBuilder()
                     .Handle<SmtpCommandException>()
                     .Handle<SmtpProtocolException>()
                     .Handle<IOException>()

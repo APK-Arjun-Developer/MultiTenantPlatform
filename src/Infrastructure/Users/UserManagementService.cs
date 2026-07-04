@@ -890,7 +890,7 @@ public class UserManagementService : TenantScopedService, IUserManagementService
     private static (int Width, int Height) ScanJpegDimensions(Stream stream)
     {
         stream.Seek(2, SeekOrigin.Begin); // skip SOI marker
-        var buf = new byte[4];
+        var buf = new byte[7];
         while (stream.Read(buf, 0, 2) == 2 && buf[0] == 0xFF)
         {
             var marker = buf[1];
@@ -898,12 +898,12 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             // SOF markers: C0–CF except C4 (DHT), C8 (reserved), CC (DAC)
             if (marker is >= 0xC0 and <= 0xCF and not 0xC4 and not 0xC8 and not 0xCC)
             {
-                if (stream.Read(buf, 0, 4) < 4) break;
-                // Segment: 2B length, 1B precision, 2B height, 2B width
-                var ht = (buf[2] << 8) | buf[3];
-                var wb = new byte[2];
-                if (stream.Read(wb, 0, 2) < 2) break;
-                return ((wb[0] << 8) | wb[1], ht);
+                // Segment layout after FF Cx:
+                // [0-1] 2B length  [2] 1B precision  [3-4] 2B height (BE)  [5-6] 2B width (BE)
+                if (stream.Read(buf, 0, 7) < 7) break;
+                var height = (buf[3] << 8) | buf[4];
+                var width = (buf[5] << 8) | buf[6];
+                return (width, height);
             }
 
             // Skip segment body (length includes its own 2 bytes)
@@ -941,28 +941,46 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         Guid? profileFileId,
         bool clearProfileImage)
     {
+        var previousFileId = user.ProfileFileId;
+
         if (clearProfileImage)
         {
             user.ProfileFileId = null;
-            return;
         }
-
-        if (!profileFileId.HasValue)
+        else if (!profileFileId.HasValue)
         {
             return;
         }
-
-        var fileExists = await _context.Files
-            .AsNoTracking()
-            .AnyAsync(f => f.Id == profileFileId.Value && f.TenantId == user.TenantId);
-
-        if (!fileExists)
+        else
         {
-            throw new NotFoundException(
-                "Profile file not found or does not belong to the user's tenant.");
+            var fileExists = await _context.Files
+                .AsNoTracking()
+                .AnyAsync(f => f.Id == profileFileId.Value && f.TenantId == user.TenantId);
+
+            if (!fileExists)
+            {
+                throw new NotFoundException(
+                    "Profile file not found or does not belong to the user's tenant.");
+            }
+
+            user.ProfileFileId = profileFileId.Value;
         }
 
-        user.ProfileFileId = profileFileId.Value;
+        if (previousFileId.HasValue && previousFileId != user.ProfileFileId)
+        {
+            var oldFile = await _context.Files
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(f => f.Id == previousFileId.Value && f.DeletedAt == null);
+
+            if (oldFile is not null)
+            {
+                var relativePath = oldFile.RelativePath;
+                oldFile.DeletedAt = DateTime.UtcNow;
+
+                try { await _fileStorageService.DeletePhysicalAsync(relativePath); }
+                catch { /* non-fatal: record is soft-deleted; orphaned file requires manual cleanup */ }
+            }
+        }
     }
 
     private static string? BuildProfileUrl(Guid? profileFileId) =>
@@ -978,7 +996,6 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         {
             Id = tenant.Id,
             Name = tenant.Name,
-            Slug = tenant.Slug,
             IsActive = tenant.IsActive,
             ProfileFileId = tenant.ProfileFileId,
             ProfileUrl = BuildProfileUrl(tenant.ProfileFileId),

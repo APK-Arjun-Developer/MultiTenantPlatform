@@ -10,8 +10,6 @@ public class CreateTenantAdminResponse
 
     public Guid TenantId { get; set; }
 
-    public string TenantSlug { get; set; } = default!;
-
     public IReadOnlyList<string> Roles { get; set; } = [];
 
     public bool IsActive { get; set; }

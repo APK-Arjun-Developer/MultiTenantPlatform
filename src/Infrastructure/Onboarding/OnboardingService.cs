@@ -70,9 +70,9 @@ public class OnboardingService : TenantScopedService, IOnboardingService
         var tenant = await _context.Tenants
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(
-                t => t.Slug == request.TenantSlug && t.DeletedAt == null,
+                t => t.Id == request.TenantId && t.DeletedAt == null,
                 cancellationToken)
-            ?? throw new NotFoundException($"Tenant '{request.TenantSlug}' was not found.");
+            ?? throw new NotFoundException("Tenant not found.");
 
         var softDeleted = await FindSoftDeletedUserAsync(request.Email, tenant.Id, cancellationToken);
 
@@ -110,7 +110,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
 
             await LogAsync(
                 ActivityActions.Onboarding.TenantAdminCreated,
-                $"Created tenant admin '{user.Email}' for tenant '{tenant.Slug}'.",
+                $"Created tenant admin '{user.Email}' for tenant '{tenant.Name}'.",
                 tenant.Id);
 
             return new CreateTenantAdminResponse
@@ -119,7 +119,6 @@ public class OnboardingService : TenantScopedService, IOnboardingService
                 FullName = user.FullName,
                 Email = user.Email!,
                 TenantId = tenant.Id,
-                TenantSlug = tenant.Slug,
                 Roles = [],
                 IsActive = false,
             };

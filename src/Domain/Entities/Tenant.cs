@@ -11,8 +11,6 @@ public class Tenant : IAuditableEntity
 
     public string Name { get; set; } = default!;
 
-    public string Slug { get; set; } = default!;
-
     public bool IsActive { get; set; } = true;
 
     public CreatedVia CreatedVia { get; set; }

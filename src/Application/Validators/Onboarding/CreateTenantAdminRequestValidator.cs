@@ -8,9 +8,8 @@ public class CreateTenantAdminRequestValidator : AbstractValidator<CreateTenantA
 {
     public CreateTenantAdminRequestValidator()
     {
-        RuleFor(x => x.TenantSlug)
-            .NotEmpty()
-            .MaximumLength(100);
+        RuleFor(x => x.TenantId)
+            .NotEqual(Guid.Empty);
 
         RuleFor(x => x.FullName)
             .NotEmpty()

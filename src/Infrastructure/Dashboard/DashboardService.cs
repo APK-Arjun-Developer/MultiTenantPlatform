@@ -60,11 +60,26 @@ public class DashboardService : TenantScopedService, IDashboardService
                      && u.DeletedAt == null,
                 cancellationToken);
 
+        var roleCount = await _context.Roles
+            .IgnoreQueryFilters()
+            .CountAsync(r => r.TenantId == tenantId && r.DeletedAt == null, cancellationToken);
+
+        var now = DateTime.UtcNow;
+        var pendingInvitationCount = await _context.Invitations
+            .CountAsync(
+                i => i.TenantId == tenantId
+                     && i.AcceptedAt == null
+                     && i.RevokedAt == null
+                     && i.ExpiresAt > now,
+                cancellationToken);
+
         return new DashboardStatsResponse
         {
             TotalTenants = null,
             TotalTenantAdmins = null,
             TotalTenantUsers = tenantUserCount,
+            TotalRoles = roleCount,
+            TotalPendingInvitations = pendingInvitationCount,
         };
     }
 }

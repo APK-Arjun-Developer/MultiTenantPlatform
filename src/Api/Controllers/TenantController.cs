@@ -29,7 +29,7 @@ public class TenantController : ApiControllerBase
     }
 
     [HttpGet]
-    [HasPermission(PermissionNames.TenantsView)]
+    [HasPermission(PermissionNames.TenantsList)]
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
@@ -103,7 +103,7 @@ public class TenantController : ApiControllerBase
     }
 
     [HttpGet("invitations")]
-    [HasPermission(PermissionNames.TenantsView)]
+    [HasPermission(PermissionNames.TenantsList)]
     public async Task<IActionResult> GetInvitations(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
