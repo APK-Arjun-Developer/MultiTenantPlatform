@@ -78,7 +78,9 @@ Custom roles live in the `Roles` table and are always scoped to a single `Tenant
 | `Users.*`, `Roles.*` (includes `.List` and `.View` as separate granular permissions) | TenantAdmin | TenantAdmin, SystemAdmin |
 | `Onboarding.*` | TenantAdmin | TenantAdmin, SystemAdmin |
 | `Files.Delete` | TenantAdmin | TenantAdmin, SystemAdmin |
+| `AuditLogs.View` | TenantAdmin | TenantAdmin, SystemAdmin |
 | `Tenants.*` | SystemAdmin | SystemAdmin only |
+| `Subscriptions.*` | SystemAdmin | SystemAdmin only |
 
 Permission names are defined in `Application.Common.PermissionNames`. The full catalog is available at `GET /api/v1/permissions`.
 

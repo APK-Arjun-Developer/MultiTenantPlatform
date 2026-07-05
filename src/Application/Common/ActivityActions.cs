@@ -40,6 +40,11 @@ public static class ActivityActions
         public const string Deleted = "Deleted";
     }
 
+    public static class Subscriptions
+    {
+        public const string PlanChanged = "PlanChanged";
+    }
+
     public static class Onboarding
     {
         public const string TenantAdminCreated = "TenantAdminCreated";

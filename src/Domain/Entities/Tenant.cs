@@ -15,6 +15,8 @@ public class Tenant : IAuditableEntity
 
     public CreatedVia CreatedVia { get; set; }
 
+    public PlanType PlanType { get; set; } = PlanType.Free;
+
     public Guid? ProfileFileId { get; set; }
 
     public FileEntity? ProfileFile { get; set; }

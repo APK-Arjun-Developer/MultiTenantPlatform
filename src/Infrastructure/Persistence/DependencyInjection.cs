@@ -24,6 +24,7 @@ public static class DependencyInjection
         services.AddScoped<IDataSeed, PermissionsSeed>();
         services.AddScoped<IDataSeed, SuperAdminSeed>();
         services.AddScoped<IDataSeed, AddListPermissionsSeed>();
+        services.AddScoped<IDataSeed, SubscriptionAndAuditPermissionsSeed>();
 
         return services;
     }

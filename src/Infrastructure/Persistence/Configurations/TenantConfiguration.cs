@@ -21,6 +21,11 @@ public class TenantConfiguration : IEntityTypeConfiguration<Domain.Entities.Tena
             .HasDefaultValue(CreatedVia.Direct)
             .IsRequired();
 
+        builder.Property(x => x.PlanType)
+            .HasConversion<int>()
+            .HasDefaultValue(PlanType.Free)
+            .IsRequired();
+
         builder.HasOne(x => x.ProfileFile)
             .WithMany()
             .HasForeignKey(x => x.ProfileFileId)

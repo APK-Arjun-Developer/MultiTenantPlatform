@@ -1,6 +1,7 @@
 ﻿using Application.Common;
 using Application.DTOs.ActivityLogs;
 using Application.DTOs.Common;
+using Application.DTOs.Subscription;
 using Application.DTOs.Tenant;
 using Application.Exceptions;
 using Application.Interfaces.Authentication;
@@ -272,6 +273,46 @@ public class TenantService : TenantScopedService, ITenantService
         return MapToResponse(tenant, address);
     }
 
+    public async Task<TenantResponse> UpdateTenantSettingsAsync(UpdateTenantSettingsRequest request)
+    {
+        var tenantId = RequireTenantId();
+
+        var tenant = await _context.Tenants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == tenantId && t.DeletedAt == null)
+            ?? throw new NotFoundException("Tenant not found.");
+
+        tenant.Name = request.Name;
+        tenant.UpdatedAt = DateTime.UtcNow;
+
+        await ApplyProfileFileUpdateAsync(tenant, request.ProfileFileId, request.ClearProfileImage);
+
+        await AddressHelper.ApplyTenantAddressUpdateAsync(
+            _context, tenant, request.Address, request.ClearAddress);
+
+        await _context.SaveChangesAsync();
+
+        _cache.InvalidateTenantCatalog();
+        _cache.InvalidateTenant(tenant.Id);
+        _cache.InvalidateTenantStatus(tenant.Id);
+
+        await LogActivityAsync(ActivityActions.Tenants.Updated, $"Updated tenant settings for '{tenant.Name}'.");
+
+        var address = await AddressHelper.GetTenantAddressAsync(_context, tenant.Id);
+
+        var adminEmail = await _context.Users
+            .AsNoTracking()
+            .IgnoreQueryFilters()
+            .Where(u => u.TenantId == tenant.Id
+                        && u.SystemRole == SystemRole.TenantAdmin
+                        && u.DeletedAt == null)
+            .OrderBy(u => u.CreatedAt)
+            .Select(u => u.Email)
+            .FirstOrDefaultAsync();
+
+        return MapToResponse(tenant, address, adminEmail);
+    }
+
     public async Task DeleteAsync(DeleteTenantRequest request)
     {
         if (!IsSystemAdmin())
@@ -518,8 +559,10 @@ public class TenantService : TenantScopedService, ITenantService
     private static TenantResponse MapToResponse(
         Domain.Entities.Tenant tenant,
         Address? address = null,
-        string? adminEmail = null) =>
-        new()
+        string? adminEmail = null)
+    {
+        var features = PlanFeatures.Get(tenant.PlanType);
+        return new TenantResponse
         {
             Id = tenant.Id,
             Name = tenant.Name,
@@ -529,7 +572,17 @@ public class TenantService : TenantScopedService, ITenantService
             ProfileUrl = BuildProfileUrl(tenant.ProfileFileId),
             Address = AddressFormatter.ToResponse(address),
             AdminEmail = adminEmail,
+            PlanType = tenant.PlanType.ToString(),
+            PlanName = PlanFeatures.GetName(tenant.PlanType),
+            PlanFeatures = new PlanFeatureSummary
+            {
+                MaxUsers = features.MaxUsers,
+                MaxStorageMb = features.MaxStorageMb,
+                CanAccessReports = features.CanAccessReports,
+                CanAccessAdvancedRoles = features.CanAccessAdvancedRoles,
+            },
         };
+    }
 
     private async Task LogActivityAsync(string action, string description, Guid? tenantId = null)
     {

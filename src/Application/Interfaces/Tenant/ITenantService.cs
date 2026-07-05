@@ -18,5 +18,7 @@ public interface ITenantService
 
     Task<TenantResponse> UpdateCurrentTenantAddressAsync(UpdateCurrentTenantAddressRequest request);
 
+    Task<TenantResponse> UpdateTenantSettingsAsync(UpdateTenantSettingsRequest request);
+
     Task DeleteAsync(DeleteTenantRequest request);
 }

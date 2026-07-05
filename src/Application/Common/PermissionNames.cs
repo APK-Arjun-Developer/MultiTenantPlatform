@@ -36,6 +36,11 @@ public static class PermissionNames
     public const string OnboardingActivate = "Onboarding.Activate";
     public const string OnboardingDeactivate = "Onboarding.Deactivate";
 
+    public const string SubscriptionsView = "Subscriptions.View";
+    public const string SubscriptionsEdit = "Subscriptions.Edit";
+
+    public const string AuditLogsView = "AuditLogs.View";
+
     public static readonly IReadOnlyList<string> All =
     [
         UsersCreate,
@@ -64,6 +69,9 @@ public static class PermissionNames
         OnboardingRevoke,
         OnboardingActivate,
         OnboardingDeactivate,
+        AuditLogsView,
+        SubscriptionsView,
+        SubscriptionsEdit,
     ];
 
     // Maps each permission to the minimum SystemRole that can be assigned it.
@@ -95,6 +103,7 @@ public static class PermissionNames
             [OnboardingRevoke] = SystemRole.TenantAdmin,
             [OnboardingActivate] = SystemRole.TenantAdmin,
             [OnboardingDeactivate] = SystemRole.TenantAdmin,
+            [AuditLogsView] = SystemRole.TenantAdmin,
 
             // SystemAdmin — platform-level permissions
             [TenantsCreate] = SystemRole.SystemAdmin,
@@ -102,6 +111,8 @@ public static class PermissionNames
             [TenantsView] = SystemRole.SystemAdmin,
             [TenantsEdit] = SystemRole.SystemAdmin,
             [TenantsDelete] = SystemRole.SystemAdmin,
+            [SubscriptionsView] = SystemRole.SystemAdmin,
+            [SubscriptionsEdit] = SystemRole.SystemAdmin,
         };
 
     // All permissions a Tenant Admin can see or assign (TenantAdmin + TenantUser scopes).

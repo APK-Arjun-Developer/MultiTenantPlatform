@@ -501,14 +501,14 @@ PascalCase with module prefix. Constants: `Application.Common.PermissionNames`.
 | Module | Permissions | Minimum role |
 |--------|-------------|--------------|
 | `Profile` | `View`, `Edit` | TenantUser |
-| `Products` | `View`, `Create`, `Edit`, `Delete` | TenantUser |
-| `Reports` | `View`, `Export` | TenantUser |
 | `Files` | `View`, `Upload` | TenantUser |
 | `Files` | `Delete` | TenantAdmin |
 | `Users` | `View`, `Create`, `Edit`, `Delete` | TenantAdmin |
 | `Roles` | `View`, `Create`, `Edit`, `Delete` | TenantAdmin |
 | `Onboarding` | `Create`, `Invite`, `Resend`, `Revoke`, `Activate`, `Deactivate` | TenantAdmin |
+| `AuditLogs` | `View` | TenantAdmin |
 | `Tenants` | `View`, `Create`, `Edit`, `Delete` | SystemAdmin only |
+| `Subscriptions` | `View`, `Edit` | SystemAdmin only |
 
 ---
 
@@ -524,6 +524,76 @@ PascalCase with module prefix. Constants: `Application.Common.PermissionNames`.
 | `GET /reports/summary` | Report for specified tenant | Current tenant only |
 | `GET /reports/platform-summary` | Platform-wide totals (no tenant needed) | N/A — SystemAdmin only |
 | `GET /permissions` | Full catalog (incl. `Tenants.*`) | Tenant-safe subset |
+
+---
+
+## Subscriptions
+
+| Method | Path | Auth | Notes |
+|--------|------|------|-------|
+| GET | `/subscriptions/plans` | `Subscriptions.View` (SystemAdmin) | Returns all available plans with features |
+| PUT | `/subscriptions/tenant-plan` | `Subscriptions.Edit` (SystemAdmin) | Change a tenant's plan |
+
+Plan types: `Free` (MaxUsers=10, MaxStorageMb=500) · `Pro` (MaxUsers=unlimited, MaxStorageMb=10240).
+
+PUT body:
+```json
+{ "tenantId": "<guid>", "planType": "Pro" }
+```
+
+`TenantDto` now includes `planType`, `planName`, `planFeatures` on all tenant responses.
+
+---
+
+## Tenant Settings
+
+Self-service tenant settings for TenantAdmin (cannot change `isActive` or `planType`).
+
+| Method | Path | Auth | Notes |
+|--------|------|------|-------|
+| GET | `/tenant-settings` | TenantAdmin only | Returns current tenant (same shape as `TenantDto`) |
+| PUT | `/tenant-settings` | TenantAdmin only | Update name, address, profile image |
+
+---
+
+## Activity Logs
+
+| Method | Path | Auth | Notes |
+|--------|------|------|-------|
+| GET | `/activity-logs` | `AuditLogs.View` (TenantAdmin) | Paginated log of all tenant actions |
+
+Query params: `page`, `pageSize`, `userId` (GUID), `module`, `action`, `dateFrom` (ISO), `dateTo` (ISO).
+
+SystemAdmin can also call this endpoint; supply `X-Tenant-Id` to scope to a specific tenant or omit to see all tenants' logs.
+
+Response item:
+```json
+{
+  "id": "...",
+  "userId": "...",
+  "userDisplayName": "Jane Doe",
+  "userEmail": "jane@example.com",
+  "module": "Users",
+  "action": "Created",
+  "description": "Created user bob@example.com",
+  "ipAddress": "1.2.3.4",
+  "createdAt": "2026-07-05T10:00:00Z"
+}
+```
+
+---
+
+## Dashboard (updated)
+
+`GET /dashboard/stats` response now includes additional chart data fields:
+
+| Field | Visible to | Description |
+|-------|-----------|-------------|
+| `freePlanTenants` | SystemAdmin | Count of Free-plan tenants |
+| `proPlanTenants` | SystemAdmin | Count of Pro-plan tenants |
+| `acceptedInvitations` | TenantAdmin | Accepted user invitations |
+| `expiredInvitations` | TenantAdmin | Expired user invitations |
+| `revokedInvitations` | TenantAdmin | Revoked user invitations |
 
 ---
 
