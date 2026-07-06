@@ -212,8 +212,9 @@ namespace Infrastructure.Persistence.Migrations
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Name = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: false),
-                    Slug = table.Column<string>(type: "nvarchar(100)", maxLength: 100, nullable: false),
                     IsActive = table.Column<bool>(type: "bit", nullable: false),
+                    CreatedVia = table.Column<int>(type: "int", nullable: false, defaultValue: 1),
+                    PlanType = table.Column<int>(type: "int", nullable: false, defaultValue: 1),
                     ProfileFileId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     CreatedBy = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
@@ -563,13 +564,6 @@ namespace Infrastructure.Persistence.Migrations
                 name: "IX_Tenants_ProfileFileId",
                 table: "Tenants",
                 column: "ProfileFileId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Tenants_Slug",
-                table: "Tenants",
-                column: "Slug",
-                unique: true,
-                filter: "[DeletedAt] IS NULL");
 
             migrationBuilder.CreateIndex(
                 name: "EmailIndex",

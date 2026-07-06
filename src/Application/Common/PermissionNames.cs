@@ -39,8 +39,6 @@ public static class PermissionNames
     public const string SubscriptionsView = "Subscriptions.View";
     public const string SubscriptionsEdit = "Subscriptions.Edit";
 
-    public const string AuditLogsView = "AuditLogs.View";
-
     public static readonly IReadOnlyList<string> All =
     [
         UsersCreate,
@@ -69,7 +67,6 @@ public static class PermissionNames
         OnboardingRevoke,
         OnboardingActivate,
         OnboardingDeactivate,
-        AuditLogsView,
         SubscriptionsView,
         SubscriptionsEdit,
     ];
@@ -103,7 +100,6 @@ public static class PermissionNames
             [OnboardingRevoke] = SystemRole.TenantAdmin,
             [OnboardingActivate] = SystemRole.TenantAdmin,
             [OnboardingDeactivate] = SystemRole.TenantAdmin,
-            [AuditLogsView] = SystemRole.TenantAdmin,
 
             // SystemAdmin — platform-level permissions
             [TenantsCreate] = SystemRole.SystemAdmin,

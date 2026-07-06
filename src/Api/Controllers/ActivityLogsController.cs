@@ -1,5 +1,3 @@
-using Api.Attributes;
-using Application.Common;
 using Application.DTOs.ActivityLogs;
 using Application.Interfaces.ActivityLogs;
 using Microsoft.AspNetCore.Authorization;
@@ -9,7 +7,7 @@ namespace Api.Controllers;
 
 [ApiController]
 [Route("api/v1/activity-logs")]
-[Authorize]
+[Authorize(Policy = "SystemAdminOnly")]
 public class ActivityLogsController : ApiControllerBase
 {
     private readonly IActivityLogService _activityLogService;
@@ -20,7 +18,6 @@ public class ActivityLogsController : ApiControllerBase
     }
 
     [HttpGet]
-    [HasPermission(PermissionNames.AuditLogsView)]
     public async Task<IActionResult> GetLogs(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
