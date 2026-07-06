@@ -9,6 +9,7 @@ using Application.Interfaces.Tenant;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
+
 namespace Api.Controllers;
 
 [ApiController]
@@ -28,15 +29,17 @@ public class TenantController : ApiControllerBase
     }
 
     [HttpGet]
-    [HasPermission(PermissionNames.TenantsView)]
+    [HasPermission(PermissionNames.TenantsList)]
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] string? search = null,
         [FromQuery] string? sortBy = null,
-        [FromQuery] string? sortOrder = null)
+        [FromQuery] string? sortOrder = null,
+        [FromQuery] bool? isActive = null,
+        [FromQuery] CreatedVia? createdVia = null)
     {
-        var response = await _tenantService.GetTenantsAsync(page, pageSize, search, sortBy, sortOrder);
+        var response = await _tenantService.GetTenantsAsync(page, pageSize, search, sortBy, sortOrder, isActive, createdVia);
 
         return OkEnvelope(response, "Tenants retrieved.");
     }
@@ -100,7 +103,7 @@ public class TenantController : ApiControllerBase
     }
 
     [HttpGet("invitations")]
-    [HasPermission(PermissionNames.TenantsView)]
+    [HasPermission(PermissionNames.TenantsList)]
     public async Task<IActionResult> GetInvitations(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,

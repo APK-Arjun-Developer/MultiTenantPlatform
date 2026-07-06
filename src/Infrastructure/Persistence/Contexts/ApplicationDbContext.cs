@@ -27,8 +27,6 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Applicati
 
     public DbSet<FileEntity> Files => Set<FileEntity>();
 
-    public DbSet<Product> Products => Set<Product>();
-
     public DbSet<Permission> Permissions => Set<Permission>();
 
     public DbSet<RolePermission> RolePermissions => Set<RolePermission>();

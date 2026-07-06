@@ -67,7 +67,7 @@ Every `ApplicationUser` has a `SystemRole` enum stored on the user record and em
 
 ### Layer 2 — Custom roles and permissions
 
-Custom roles live in the `Roles` table and are always scoped to a single `TenantId`. Each role has a set of `Permissions` (seeded catalog, PascalCase names).
+Custom roles live in the `Roles` table and are always scoped to a single `TenantId`. Each role has a set of `Permissions` (seeded catalog, PascalCase names). Role create/update caps permissions at the **TenantUser scope for every caller, including SystemAdmin** — enforced centrally in `IdentityRoleService`, which also covers custom roles created during tenant onboarding.
 
 | Permission module | Minimum `SystemRole` | Who can hold it |
 |-------------------|---------------------|-----------------|
@@ -75,10 +75,13 @@ Custom roles live in the `Roles` table and are always scoped to a single `Tenant
 | `Products.*` | TenantUser | TenantUser, TenantAdmin, SystemAdmin |
 | `Reports.*` | TenantUser | TenantUser, TenantAdmin, SystemAdmin |
 | `Files.View`, `Files.Upload` | TenantUser | TenantUser, TenantAdmin, SystemAdmin |
-| `Users.*`, `Roles.*` | TenantAdmin | TenantAdmin, SystemAdmin |
+| `Users.*`, `Roles.*` (includes `.List` and `.View` as separate granular permissions) | TenantAdmin | TenantAdmin, SystemAdmin |
 | `Onboarding.*` | TenantAdmin | TenantAdmin, SystemAdmin |
 | `Files.Delete` | TenantAdmin | TenantAdmin, SystemAdmin |
 | `Tenants.*` | SystemAdmin | SystemAdmin only |
+| `Subscriptions.*` | SystemAdmin | SystemAdmin only |
+
+Activity logs (`GET /activity-logs`) are accessible to **SystemAdmin only** via policy (`SystemAdminOnly`) — not a permission, no TenantAdmin access.
 
 Permission names are defined in `Application.Common.PermissionNames`. The full catalog is available at `GET /api/v1/permissions`.
 
@@ -153,15 +156,32 @@ Tokens are set as **HttpOnly cookies** (`access_token`, `refresh_token`). The ac
 | `full_name` | Display name |
 | `role_ids` | GUIDs of custom roles assigned to the user |
 | `email` | User email |
+| `impersonated_by_id` | (impersonation sessions only) Admin's GUID |
+| `impersonated_by_email` | (impersonation sessions only) Admin's email |
+| `impersonated_by_name` | (impersonation sessions only) Admin's full name |
 
 Permissions are **not in the JWT** — loaded from DB per request (cached).
 
+### Impersonation
+
+SystemAdmin can impersonate any active TenantUser within a tenant via `POST /api/v1/impersonation/start`. This generates a short-lived impersonation JWT (normal access token lifetime) with `impersonated_by_*` claims. The admin's `refresh_token` is saved as an `impersonation_restore_token` HttpOnly cookie and `POST /api/v1/impersonation/stop` uses it to restore the admin's session. Token refresh is disabled during impersonation (no `refresh_token` cookie).
+
+### Password change session invalidation
+
+When a user changes their password via `PUT /api/v1/users/me/password`, **all existing refresh tokens for that user are immediately revoked** (`RevokeAllForUserAsync`). The current access token remains valid until it naturally expires (≤ 15 min dev / ≤ 60 min prod). This ensures that if an account is compromised and the password is changed, all attacker-held sessions become invalid on the next refresh attempt.
+
 ### Login rules
 
-- **SystemAdmin**: omit `tenantSlug`. Login finds the user by email where `TenantId == Guid.Empty`.
-- **TenantAdmin / TenantUser**: `tenantSlug` is required. The slug must match an active, non-deleted tenant.
+- Login finds the user by email globally. SystemAdmin users have `TenantId == Guid.Empty`; tenant users have a tenant-scoped `TenantId`.
+- Inactive tenants are detected by `UserStatusMiddleware` after login, not during credential lookup.
 - Login blocks users with `EmailConfirmed = false` ("Your email address has not been verified").
-- Login blocks users with `IsActive = false`.
+- Login blocks users with `IsActive = false` ("Your account has been deactivated. Please contact your administrator.").
+- **Every authenticated request** also runs active checks via `UserStatusMiddleware` (runs after `UseAuthentication()`, before `TenantMiddleware`):
+  - **User active**: checks `IsActive && DeletedAt == null` (cached 5 min per user; invalidated on deactivate/delete).
+  - **Tenant active**: for non-SystemAdmin users, also checks tenant `IsActive && DeletedAt == null` (cached 5 min per tenant; invalidated on tenant update/delete).
+  - Failures return `401` with `errors.code = "user_inactive"` or `"tenant_inactive"` and a human-readable `message`.
+  - Token refresh also checks user/tenant active state; inactive refresh returns `400` with same messages.
+- **Client behaviour**: `baseQueryWithReauth` detects `code = "user_inactive" | "tenant_inactive"`, shows a toast with the server message, and dispatches logout immediately (no refresh attempt).
 
 ---
 
@@ -177,7 +197,7 @@ New user accounts are created with `EmailConfirmed` based on the `Features:Requi
 When `RequireEmailVerification: true`:
 1. User is created with `EmailConfirmed = false`.
 2. A 6-digit OTP is generated, hashed, stored in `EmailVerificationOtps`, and emailed.
-3. The user calls `POST /auth/verify-email` with `{ email, tenantSlug, otp }`.
+3. The user calls `POST /auth/verify-email` with `{ email, otp }`.
 4. On success, `EmailConfirmed` is set to `true`; the user can now log in.
 5. `POST /auth/resend-verification` issues a fresh OTP (invalidates the previous one).
 
@@ -264,7 +284,7 @@ Add a seed: new class in `Persistence/Seed/Seeds/`, register in `Persistence/Dep
 
 | Concept | Implementation |
 |---------|----------------|
-| Users | `ApplicationUser` + `TenantId`, `SystemRole`, `FullName`, `ProfileFileId`, soft delete |
+| Users | `ApplicationUser` + `TenantId`, `SystemRole`, `FullName`, `ProfileFileId`, `CreatedVia` (Direct / Invitation), soft delete |
 | Roles | `ApplicationRole` + `TenantId`, `Description` (custom roles only; no built-in role rows) |
 | User ↔ role | Identity `AspNetUserRoles` |
 | Role ↔ permission | `RolePermissions` |
@@ -338,7 +358,8 @@ Errors are mapped by `ExceptionHandlingMiddleware` to the same envelope.
 
 ## Cross-cutting behavior
 
-- **Soft delete** — `DeletedAt` / `DeletedBy`; global query filters
+- **Soft delete** — `DeletedAt` / `DeletedBy`; global query filters. Unique indexes on `Users (Email, TenantId)` and `Users (NormalizedUserName)` include a `WHERE DeletedAt IS NULL` filter so soft-deleted records don't block re-creation. All create paths (users via `OnboardingService` / `UserManagementService`, tenants via `TenantService.OnboardTenantAsync`) detect a matching soft-deleted record and restore it in place rather than inserting a new row.
+- **CreatedVia** — `CreatedVia` enum (`Direct` = 1, `Invitation` = 2) on both `ApplicationUser` and `Tenant` tracks whether the record was created directly by an admin or via an invitation link. Set at creation time across all paths: `Direct` for onboarding/direct-create flows, `Invitation` for all three `InvitationService.Accept*` flows (including the tenant created by `AcceptTenantCreationInvitationAsync`). Existing DB rows default to `Direct`.
 - **Audit fields** — stamped on `SaveChangesAsync` from JWT `user_id`
 - **Activity logging** — auth and CRUD events to `ActivityLogs`
 - **Request logging** — path, status, duration, tenant/user correlation

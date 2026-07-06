@@ -13,13 +13,5 @@ public class LoginRequestValidator : AbstractValidator<LoginRequest>
 
         RuleFor(x => x.Password)
             .NotEmpty();
-
-        RuleFor(x => x.TenantSlug)
-            .MaximumLength(100)
-            .Matches("^[a-z0-9]+(?:-[a-z0-9]+)*$")
-            .When(x => !string.IsNullOrWhiteSpace(x.TenantSlug))
-            .WithMessage(
-                "TenantSlug must be lowercase alphanumeric with optional hyphens. " +
-                "Omit TenantSlug for platform SystemAdmin login.");
     }
 }

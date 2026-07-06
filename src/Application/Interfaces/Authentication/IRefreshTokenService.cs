@@ -9,4 +9,6 @@ public interface IRefreshTokenService
     Task<RefreshToken?> GetByTokenAsync(string token);
 
     Task RevokeAsync(RefreshToken token, string ipAddress);
+
+    Task RevokeAllForUserAsync(Guid userId, string ipAddress);
 }

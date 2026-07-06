@@ -12,13 +12,9 @@ public interface IIdentityRoleService
 
     Task<List<Guid>> ValidatePermissionIdsAsync(IEnumerable<Guid> permissionIds);
 
-    Task<List<string>> ValidatePermissionNamesAsync(IEnumerable<string> permissionNames);
-
     Task AssignPermissionsToRoleByIdsAsync(Guid roleId, IEnumerable<Guid> permissionIds);
 
     Task SetRolePermissionsByIdsAsync(Guid roleId, IEnumerable<Guid> permissionIds);
-
-    Task AssignPermissionsToRoleAsync(Guid roleId, IEnumerable<string> permissionNames);
 
     Task AddUserToRoleAsync(Guid userId, Guid roleId);
 }

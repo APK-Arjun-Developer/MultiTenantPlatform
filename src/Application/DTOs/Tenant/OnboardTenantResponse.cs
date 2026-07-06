@@ -6,8 +6,6 @@ public class OnboardTenantResponse
 
     public string Name { get; set; } = default!;
 
-    public string Slug { get; set; } = default!;
-
     public Guid AdminUserId { get; set; }
 
     public string AdminEmail { get; set; } = default!;

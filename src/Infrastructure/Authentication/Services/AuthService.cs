@@ -129,6 +129,21 @@ public class AuthService : IAuthService
             throw new InvalidOperationException("Your account has been deactivated. Please contact your administrator.");
         }
 
+        if (user.TenantId != Guid.Empty)
+        {
+            var tenantActive = await _context.Tenants
+                .IgnoreQueryFilters()
+                .Where(t => t.Id == user.TenantId && t.DeletedAt == null)
+                .Select(t => t.IsActive)
+                .FirstOrDefaultAsync();
+
+            if (!tenantActive)
+            {
+                throw new InvalidOperationException(
+                    "Your organization account has been deactivated. Please contact support.");
+            }
+        }
+
         await _refreshTokenService.RevokeAsync(storedToken, ipAddress);
 
         var newRefreshToken = await _refreshTokenService.CreateAsync(user.Id, user.TenantId, ipAddress);
@@ -195,32 +210,8 @@ public class AuthService : IAuthService
     private async Task<ApplicationUser?> FindUserForLoginAsync(LoginRequest request)
     {
         var normalizedEmail = request.Email.ToUpperInvariant();
-
-        if (string.IsNullOrWhiteSpace(request.TenantSlug))
-        {
-            return await _userManager.Users
-                .FirstOrDefaultAsync(u =>
-                    u.NormalizedEmail == normalizedEmail &&
-                    u.TenantId == Guid.Empty);
-        }
-
-        var slug = request.TenantSlug.ToLowerInvariant();
-        var tenant = await _context.Tenants
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(t =>
-                t.Slug == slug
-                && t.DeletedAt == null
-                && t.IsActive);
-
-        if (tenant == null)
-        {
-            return null;
-        }
-
         return await _userManager.Users
-            .FirstOrDefaultAsync(u =>
-                u.NormalizedEmail == normalizedEmail &&
-                u.TenantId == tenant.Id);
+            .FirstOrDefaultAsync(u => u.NormalizedEmail == normalizedEmail);
     }
 
     public async Task<MeResponse> GetMeAsync(ClaimsPrincipal principal)
@@ -235,25 +226,27 @@ public class AuthService : IAuthService
             ? ((Domain.Enums.SystemRole)int.Parse(systemRoleClaim)).ToString()
             : nameof(Domain.Enums.SystemRole.TenantUser);
 
-        string? tenantSlug = null;
-        if (tenantId != Guid.Empty)
+        ImpersonatedByInfo? impersonatedBy = null;
+        var impersonatedByIdClaim = principal.FindFirstValue("impersonated_by_id");
+        if (impersonatedByIdClaim != null && Guid.TryParse(impersonatedByIdClaim, out var impersonatedById))
         {
-            tenantSlug = await _context.Tenants
-                .IgnoreQueryFilters()
-                .Where(t => t.Id == tenantId)
-                .Select(t => t.Slug)
-                .FirstOrDefaultAsync();
+            impersonatedBy = new ImpersonatedByInfo
+            {
+                Id = impersonatedById,
+                Email = principal.FindFirstValue("impersonated_by_email") ?? string.Empty,
+                FullName = principal.FindFirstValue("impersonated_by_name") ?? string.Empty,
+            };
         }
 
-        return new MeResponse
+        return await Task.FromResult(new MeResponse
         {
             Id = userId,
             Email = email,
             FullName = fullName,
             Roles = roles,
             SystemRole = systemRole,
-            TenantSlug = tenantSlug,
-        };
+            ImpersonatedBy = impersonatedBy,
+        });
     }
 
     private async Task<IList<(Guid Id, string Name)>> GetUserRolesWithIdsAsync(ApplicationUser user)

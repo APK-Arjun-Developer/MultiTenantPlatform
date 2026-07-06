@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Application.Common;
 using Application.DTOs.ActivityLogs;
 using Application.DTOs.Common;
@@ -114,9 +114,9 @@ public class InvitationService : TenantScopedService, IInvitationService
         var tenant = await _context.Tenants
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(
-                t => t.Slug == request.TenantSlug && t.DeletedAt == null,
+                t => t.Id == request.TenantId && t.DeletedAt == null,
                 cancellationToken)
-            ?? throw new NotFoundException($"Tenant '{request.TenantSlug}' was not found.");
+            ?? throw new NotFoundException($"Tenant not found.");
 
         await EnsureEmailNotActiveInTenantAsync(request.Email, tenant.Id, cancellationToken);
         await EnsureNoPendingInvitationAsync(request.Email, tenant.Id, cancellationToken);
@@ -137,7 +137,7 @@ public class InvitationService : TenantScopedService, IInvitationService
 
         await LogAsync(
             ActivityActions.Onboarding.TenantAdminInvited,
-            $"Invited '{request.Email}' as tenant admin for '{tenant.Slug}'.",
+            $"Invited '{request.Email}' as tenant admin for '{tenant.Name}'.",
             tenant.Id);
 
         return BuildInviteResponse(invitation.Record);
@@ -450,7 +450,6 @@ public class InvitationService : TenantScopedService, IInvitationService
             Email = invitation.Email,
             InvitationType = invitation.InvitationType,
             TenantName = tenant?.Name,
-            TenantSlug = tenant?.Slug,
         };
     }
 
@@ -462,8 +461,6 @@ public class InvitationService : TenantScopedService, IInvitationService
     {
         var invitation = await GetValidInvitationAsync(
             request.Token, InvitationType.TenantAdmin, cancellationToken);
-
-        var tenantSlug = await GetTenantSlugAsync(invitation.TenantId, cancellationToken);
 
         await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
 
@@ -483,6 +480,7 @@ public class InvitationService : TenantScopedService, IInvitationService
                 EmailConfirmed = true,
                 PhoneNumber = request.Phone,
                 IsActive = true,
+                CreatedVia = CreatedVia.Invitation,
                 PasswordSetAt = DateTime.UtcNow,
                 CreatedAt = DateTime.UtcNow,
             };
@@ -519,7 +517,6 @@ public class InvitationService : TenantScopedService, IInvitationService
                 Email = invitation.Email,
                 FullName = user.FullName,
                 TenantId = user.TenantId,
-                TenantSlug = tenantSlug,
                 Roles = [],
                 InvitationType = InvitationType.TenantAdmin,
                 IsActive = true,
@@ -540,8 +537,6 @@ public class InvitationService : TenantScopedService, IInvitationService
     {
         var invitation = await GetValidInvitationAsync(
             request.Token, InvitationType.TenantUser, cancellationToken);
-
-        var tenantSlug = await GetTenantSlugAsync(invitation.TenantId, cancellationToken);
 
         await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
 
@@ -564,6 +559,7 @@ public class InvitationService : TenantScopedService, IInvitationService
                 EmailConfirmed = true,
                 PhoneNumber = request.Phone,
                 IsActive = true,
+                CreatedVia = CreatedVia.Invitation,
                 PasswordSetAt = DateTime.UtcNow,
                 CreatedAt = DateTime.UtcNow,
             };
@@ -613,7 +609,6 @@ public class InvitationService : TenantScopedService, IInvitationService
                 Email = invitation.Email,
                 FullName = user.FullName,
                 TenantId = user.TenantId,
-                TenantSlug = tenantSlug,
                 Roles = roleNames,
                 InvitationType = InvitationType.TenantUser,
                 IsActive = true,
@@ -640,18 +635,9 @@ public class InvitationService : TenantScopedService, IInvitationService
             throw new InvalidOperationException("Invitation type mismatch.");
         }
 
-        if (invitation.IsRevoked)  throw new InvalidOperationException("This invitation has been revoked.");
+        if (invitation.IsRevoked) throw new InvalidOperationException("This invitation has been revoked.");
         if (invitation.IsAccepted) throw new ConflictException("This invitation has already been accepted.");
-        if (invitation.IsExpired)  throw new InvalidOperationException("This invitation has expired.");
-
-        var slugExists = await _context.Tenants
-            .IgnoreQueryFilters()
-            .AnyAsync(t => t.Slug == request.TenantSlug && t.DeletedAt == null, cancellationToken);
-
-        if (slugExists)
-        {
-            throw new ConflictException("Tenant slug already exists. Please choose a different one.");
-        }
+        if (invitation.IsExpired) throw new InvalidOperationException("This invitation has expired.");
 
         await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
 
@@ -661,8 +647,8 @@ public class InvitationService : TenantScopedService, IInvitationService
             {
                 Id = Guid.NewGuid(),
                 Name = request.TenantName,
-                Slug = request.TenantSlug,
                 IsActive = true,
+                CreatedVia = CreatedVia.Invitation,
                 CreatedAt = DateTime.UtcNow,
             };
 
@@ -688,6 +674,7 @@ public class InvitationService : TenantScopedService, IInvitationService
                 EmailConfirmed = true,
                 PhoneNumber = request.Phone,
                 IsActive = true,
+                CreatedVia = CreatedVia.Invitation,
                 PasswordSetAt = DateTime.UtcNow,
                 CreatedAt = DateTime.UtcNow,
             };
@@ -716,7 +703,7 @@ public class InvitationService : TenantScopedService, IInvitationService
                 user.Id,
                 tenant.Id,
                 ActivityActions.Onboarding.InvitationAccepted,
-                $"User '{invitation.Email}' accepted new-tenant invitation and created tenant '{tenant.Slug}'.");
+                $"User '{invitation.Email}' accepted new-tenant invitation and created tenant '{tenant.Name}'.");
 
             return new AcceptInvitationResponse
             {
@@ -724,7 +711,6 @@ public class InvitationService : TenantScopedService, IInvitationService
                 Email = invitation.Email,
                 FullName = user.FullName,
                 TenantId = tenant.Id,
-                TenantSlug = tenant.Slug,
                 Roles = [],
                 InvitationType = InvitationType.NewTenant,
                 IsActive = true,
@@ -895,17 +881,6 @@ public class InvitationService : TenantScopedService, IInvitationService
         }
     }
 
-    private async Task<string?> GetTenantSlugAsync(Guid tenantId, CancellationToken cancellationToken)
-    {
-        if (tenantId == Guid.Empty) return null;
-
-        return await _context.Tenants
-            .IgnoreQueryFilters()
-            .Where(t => t.Id == tenantId && t.DeletedAt == null)
-            .Select(t => t.Slug)
-            .FirstOrDefaultAsync(cancellationToken);
-    }
-
     private static List<Guid> DeserializeRoleIds(string json)
     {
         return JsonSerializer.Deserialize<List<Guid>>(json) ?? [];
@@ -928,18 +903,18 @@ public class InvitationService : TenantScopedService, IInvitationService
     private static IQueryable<Invitation> ApplyStatusFilter(IQueryable<Invitation> query, string? status) =>
         status?.ToLowerInvariant() switch
         {
-            "pending"  => query.Where(i => i.AcceptedAt == null && i.RevokedAt == null && i.ExpiresAt > DateTime.UtcNow),
+            "pending" => query.Where(i => i.AcceptedAt == null && i.RevokedAt == null && i.ExpiresAt > DateTime.UtcNow),
             "accepted" => query.Where(i => i.AcceptedAt != null),
-            "revoked"  => query.Where(i => i.RevokedAt != null),
-            "expired"  => query.Where(i => i.AcceptedAt == null && i.RevokedAt == null && i.ExpiresAt <= DateTime.UtcNow),
-            _          => query,
+            "revoked" => query.Where(i => i.RevokedAt != null),
+            "expired" => query.Where(i => i.AcceptedAt == null && i.RevokedAt == null && i.ExpiresAt <= DateTime.UtcNow),
+            _ => query,
         };
 
     private static string DeriveStatus(Invitation i)
     {
         if (i.IsAccepted) return "Accepted";
-        if (i.IsRevoked)  return "Revoked";
-        if (i.IsExpired)  return "Expired";
+        if (i.IsRevoked) return "Revoked";
+        if (i.IsExpired) return "Expired";
 
         return "Pending";
     }
@@ -968,19 +943,19 @@ public class InvitationService : TenantScopedService, IInvitationService
     private static InvitationListItemResponse MapToListItem(Invitation i, string? tenantName) =>
         new()
         {
-            Id              = i.Id,
-            Email           = i.Email,
-            InvitationType  = i.InvitationType,
-            TenantId        = i.TenantId,
-            TenantName      = tenantName,
-            ExpiresAt       = i.ExpiresAt,
-            AcceptedAt      = i.AcceptedAt,
-            RevokedAt       = i.RevokedAt,
-            IsExpired       = i.IsExpired,
-            IsAccepted      = i.IsAccepted,
-            IsRevoked       = i.IsRevoked,
-            Status          = DeriveStatus(i),
-            CreatedAt       = i.CreatedAt,
+            Id = i.Id,
+            Email = i.Email,
+            InvitationType = i.InvitationType,
+            TenantId = i.TenantId,
+            TenantName = tenantName,
+            ExpiresAt = i.ExpiresAt,
+            AcceptedAt = i.AcceptedAt,
+            RevokedAt = i.RevokedAt,
+            IsExpired = i.IsExpired,
+            IsAccepted = i.IsAccepted,
+            IsRevoked = i.IsRevoked,
+            Status = DeriveStatus(i),
+            CreatedAt = i.CreatedAt,
             InvitedByUserId = i.InvitedByUserId,
         };
 

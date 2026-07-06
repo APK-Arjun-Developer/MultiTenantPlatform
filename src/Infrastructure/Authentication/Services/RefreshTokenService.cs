@@ -45,11 +45,15 @@ public class RefreshTokenService : IRefreshTokenService
 
     public async Task<RefreshToken?> GetByTokenAsync(string token)
     {
+        // IgnoreQueryFilters: refresh tokens are looked up cross-tenant (e.g. during impersonation
+        // restore, the caller's tenant context differs from the token owner's TenantId).
         return await _context.RefreshTokens
+            .IgnoreQueryFilters()
             .FirstOrDefaultAsync(x =>
                 x.Token == token &&
                 x.RevokedAt == null &&
-                x.ExpiresAt > DateTime.UtcNow);
+                x.ExpiresAt > DateTime.UtcNow &&
+                x.DeletedAt == null);
     }
 
     public async Task RevokeAsync(RefreshToken token, string ipAddress)
@@ -59,6 +63,22 @@ public class RefreshTokenService : IRefreshTokenService
         token.RevokedByIp = ipAddress;
 
         _context.RefreshTokens.Update(token);
+
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task RevokeAllForUserAsync(Guid userId, string ipAddress)
+    {
+        var tokens = await _context.RefreshTokens
+            .IgnoreQueryFilters()
+            .Where(x => x.UserId == userId && x.RevokedAt == null && x.DeletedAt == null)
+            .ToListAsync();
+
+        foreach (var token in tokens)
+        {
+            token.RevokedAt = DateTime.UtcNow;
+            token.RevokedByIp = ipAddress;
+        }
 
         await _context.SaveChangesAsync();
     }

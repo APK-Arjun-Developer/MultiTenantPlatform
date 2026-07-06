@@ -36,12 +36,6 @@ public class AcceptTenantCreationInvitationRequestValidator
             .NotEmpty()
             .MaximumLength(200);
 
-        RuleFor(x => x.TenantSlug)
-            .NotEmpty()
-            .MaximumLength(100)
-            .Matches("^[a-z0-9]+(?:-[a-z0-9]+)*$")
-            .WithMessage("Slug must be lowercase alphanumeric with optional hyphens.");
-
         RuleFor(x => x.TenantAddress)
             .NotNull().WithMessage("Company address is required.");
 

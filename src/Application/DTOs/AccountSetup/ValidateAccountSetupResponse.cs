@@ -8,7 +8,8 @@ public class ValidateAccountSetupResponse
 
     public string? FullName { get; set; }
 
-    public string? TenantSlug { get; set; }
-
     public string? ErrorMessage { get; set; }
+
+    /// <summary>True when the user already has an address (direct-creation flow). Client skips address step.</summary>
+    public bool HasAddress { get; set; }
 }

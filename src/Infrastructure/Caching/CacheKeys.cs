@@ -6,8 +6,6 @@ public static class CacheKeys
 
     public const string PermissionCatalogTenant = "permissions:catalog:tenant";
 
-    public const string PermissionCatalogTenantUser = "permissions:catalog:tenant-user";
-
     public const string PermissionNamesSystem = "permissions:names:system";
 
     public const string TenantCatalogAll = "tenants:catalog:all";
@@ -16,9 +14,8 @@ public static class CacheKeys
 
     public static string TenantDetail(Guid tenantId) => $"tenant:detail:{tenantId:N}";
 
-    public static string Products(Guid tenantId) => $"products:tenant:{tenantId:N}";
+    public static string UserStatus(Guid userId) => $"user:status:{userId:N}";
 
-    public static string ReportSummary(Guid tenantId) => $"reports:summary:{tenantId:N}";
+    public static string TenantStatus(Guid tenantId) => $"tenant:status:{tenantId:N}";
 
-    public const string PlatformSummary = "reports:platform-summary";
 }

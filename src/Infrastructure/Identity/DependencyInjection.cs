@@ -1,5 +1,7 @@
 using Infrastructure.Persistence.Contexts;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Application.Interfaces.Auth;
 using Infrastructure.Identity.Services;
@@ -16,8 +18,6 @@ using Application.Interfaces.Authorization;
 using Application.Interfaces.Caching;
 using Application.Interfaces.Files;
 using Application.Interfaces.Permissions;
-using Application.Interfaces.Reports;
-using Application.Interfaces.Products;
 using Application.Interfaces.Roles;
 using Application.Interfaces.Tenant;
 using Application.Interfaces.Users;
@@ -25,22 +25,24 @@ using Infrastructure.ActivityLogs;
 using Infrastructure.Caching;
 using Infrastructure.Files;
 using Infrastructure.Permissions;
-using Infrastructure.Reports;
-using Infrastructure.Products;
 using Infrastructure.Authorization;
 using Infrastructure.MultiTenancy;
 using Infrastructure.Roles;
 using Infrastructure.Tenant;
 using Infrastructure.Users;
 using Application.Interfaces.AccountSetup;
+using Application.Interfaces.Dashboard;
 using Application.Interfaces.Email;
 using Application.Interfaces.Invitations;
 using Application.Interfaces.Onboarding;
+using Application.Interfaces.Subscription;
 using Infrastructure.AccountSetup;
+using Infrastructure.Dashboard;
 using Infrastructure.Email;
 using Infrastructure.Invitations;
 using Infrastructure.Jobs;
 using Infrastructure.Onboarding;
+using Infrastructure.Subscription;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -151,7 +153,8 @@ public static class DependencyInjection
                             ctx.Token = cookieToken;
 
                         return Task.CompletedTask;
-                    }
+                    },
+
                 };
             });
 
@@ -160,6 +163,7 @@ public static class DependencyInjection
         services.AddScoped<IRefreshTokenService, RefreshTokenService>();
         services.AddScoped<IPasswordResetService, PasswordResetService>();
         services.AddScoped<IEmailVerificationService, EmailVerificationService>();
+        services.AddScoped<IImpersonationService, ImpersonationService>();
 
         services.AddHttpContextAccessor();
         services.AddMemoryCache();
@@ -180,9 +184,6 @@ public static class DependencyInjection
         services.AddScoped<IFileStorageService, LocalFileStorageService>();
         services.AddScoped<IFileService, FileService>();
 
-        services.AddScoped<IReportService, ReportService>();
-        services.AddScoped<IProductService, ProductService>();
-
         services.AddScoped<ICurrentUserPermissionService, CurrentUserPermissionService>();
         services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
         services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
@@ -192,6 +193,8 @@ public static class DependencyInjection
         services.AddScoped<IOnboardingService, OnboardingService>();
         services.AddScoped<IAccountSetupService, AccountSetupService>();
         services.AddScoped<IInvitationService, InvitationService>();
+        services.AddScoped<IDashboardService, DashboardService>();
+        services.AddScoped<ISubscriptionService, SubscriptionService>();
 
         return services;
     }

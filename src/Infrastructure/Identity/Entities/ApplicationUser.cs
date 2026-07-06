@@ -1,4 +1,4 @@
-using Domain.Entities;
+﻿using Domain.Entities;
 using Domain.Enums;
 using Microsoft.AspNetCore.Identity;
 
@@ -23,6 +23,8 @@ public class ApplicationUser : IdentityUser<Guid>
     public DateTime? LastLoginAt { get; set; }
 
     public DateTime? PasswordSetAt { get; set; }
+
+    public CreatedVia CreatedVia { get; set; }
 
     public DateTime CreatedAt { get; set; }
 

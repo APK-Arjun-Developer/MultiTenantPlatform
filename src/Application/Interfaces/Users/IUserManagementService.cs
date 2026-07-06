@@ -1,5 +1,6 @@
 using Application.DTOs.Common;
 using Application.DTOs.Users;
+using Domain.Enums;
 using Microsoft.AspNetCore.Http;
 
 namespace Application.Interfaces.Users;
@@ -8,7 +9,7 @@ public interface IUserManagementService
 {
     Task<UserResponse> CreateUserAsync(CreateUserRequest request);
 
-    Task<PagedResponse<UserResponse>> GetUsersAsync(int page, int pageSize, string? search = null, string? sortBy = null, string? sortOrder = null);
+    Task<PagedResponse<UserResponse>> GetUsersAsync(int page, int pageSize, string? search = null, string? sortBy = null, string? sortOrder = null, bool? isActive = null, CreatedVia? createdVia = null);
 
     Task<UserResponse> GetByIdAsync(Guid id);
 
@@ -30,7 +31,7 @@ public interface IUserManagementService
 
     // ── Tenant Admin management (System Admin scope) ──────────────────────────
 
-    Task<PagedResponse<UserResponse>> GetTenantAdminsAsync(int page, int pageSize, string? search = null, Guid? tenantId = null);
+    Task<PagedResponse<UserResponse>> GetTenantAdminsAsync(int page, int pageSize, string? search = null, Guid? tenantId = null, bool? isActive = null, CreatedVia? createdVia = null);
 
     Task<UserResponse> GetTenantAdminByIdAsync(Guid id);
 

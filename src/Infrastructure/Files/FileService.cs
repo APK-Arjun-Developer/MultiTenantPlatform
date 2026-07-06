@@ -74,9 +74,13 @@ public class FileService : TenantScopedService, IFileService
         ".zip", ".mp4", ".mp3",
     };
 
+    // Returns Guid.Empty for SystemAdmin (their files are stored under the empty tenant).
+    private Guid GetEffectiveTenantId() =>
+        IsSystemAdmin() ? Guid.Empty : RequireTenantId();
+
     public async Task<FileResponse> UploadAsync(IFormFile file)
     {
-        var tenantId = RequireTenantId();
+        var tenantId = GetEffectiveTenantId();
 
         if (file.Length <= 0)
         {
@@ -158,7 +162,7 @@ public class FileService : TenantScopedService, IFileService
 
     private async Task<FileEntity> FindFileAsync(Guid id)
     {
-        var tenantId = RequireTenantId();
+        var tenantId = GetEffectiveTenantId();
         return await _context.Files
             .FirstOrDefaultAsync(f => f.Id == id && f.TenantId == tenantId)
             ?? throw new NotFoundException($"File '{id}' was not found.");

@@ -1,9 +1,10 @@
-using Application.Common;
+﻿using Application.Common;
 using Application.DTOs.ActivityLogs;
 using Application.DTOs.Onboarding;
 using Domain.Enums;
 using Application.Exceptions;
 using Application.Interfaces.ActivityLogs;
+using Application.Interfaces.Caching;
 using Application.Interfaces.Email;
 using Application.Interfaces.Onboarding;
 using Application.Interfaces.Tenant;
@@ -27,6 +28,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
     private readonly IIdentityRoleService _identityRoleService;
     private readonly IEmailService _emailService;
     private readonly IActivityLogService _activityLogService;
+    private readonly IAppCache _cache;
     private readonly ILogger<OnboardingService> _logger;
     private readonly string _appBaseUrl;
 
@@ -39,6 +41,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
         IIdentityRoleService identityRoleService,
         IEmailService emailService,
         IActivityLogService activityLogService,
+        IAppCache cache,
         ILogger<OnboardingService> logger,
         IConfiguration configuration)
         : base(currentTenantService)
@@ -48,6 +51,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
         _identityRoleService = identityRoleService;
         _emailService = emailService;
         _activityLogService = activityLogService;
+        _cache = cache;
         _logger = logger;
         _appBaseUrl = configuration["AppBaseUrl"] ?? "https://app.example.com";
     }
@@ -66,19 +70,29 @@ public class OnboardingService : TenantScopedService, IOnboardingService
         var tenant = await _context.Tenants
             .IgnoreQueryFilters()
             .FirstOrDefaultAsync(
-                t => t.Slug == request.TenantSlug && t.DeletedAt == null,
+                t => t.Id == request.TenantId && t.DeletedAt == null,
                 cancellationToken)
-            ?? throw new NotFoundException($"Tenant '{request.TenantSlug}' was not found.");
+            ?? throw new NotFoundException("Tenant not found.");
 
-        await EnsureEmailNotTakenAsync(request.Email, tenant.Id, cancellationToken);
+        var softDeleted = await FindSoftDeletedUserAsync(request.Email, tenant.Id, cancellationToken);
 
         await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
 
         try
         {
-            // TenantAdmin permissions come from SystemRole — no role table entry needed.
-            var user = CreateInactiveUser(request.FullName, request.Email, tenant.Id, SystemRole.TenantAdmin);
-            await CreateUserOrThrowAsync(user);
+            ApplicationUser user;
+
+            if (softDeleted != null)
+            {
+                await RestoreUserForOnboardingAsync(softDeleted, request.FullName, SystemRole.TenantAdmin, [], cancellationToken);
+                user = softDeleted;
+            }
+            else
+            {
+                // TenantAdmin permissions come from SystemRole — no role table entry needed.
+                user = CreateInactiveUser(request.FullName, request.Email, tenant.Id, SystemRole.TenantAdmin);
+                await CreateUserOrThrowAsync(user);
+            }
 
             var (rawToken, setupUrl) = await IssueSetupTokenAsync(user, cancellationToken);
 
@@ -96,7 +110,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
 
             await LogAsync(
                 ActivityActions.Onboarding.TenantAdminCreated,
-                $"Created tenant admin '{user.Email}' for tenant '{tenant.Slug}'.",
+                $"Created tenant admin '{user.Email}' for tenant '{tenant.Name}'.",
                 tenant.Id);
 
             return new CreateTenantAdminResponse
@@ -105,7 +119,6 @@ public class OnboardingService : TenantScopedService, IOnboardingService
                 FullName = user.FullName,
                 Email = user.Email!,
                 TenantId = tenant.Id,
-                TenantSlug = tenant.Slug,
                 Roles = [],
                 IsActive = false,
             };
@@ -157,6 +170,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
         user.IsActive = true;
         user.UpdatedAt = DateTime.UtcNow;
         await _userManager.UpdateAsync(user);
+        _cache.InvalidateUserStatus(user.Id);
 
         await LogAsync(
             ActivityActions.Onboarding.UserActivated,
@@ -190,6 +204,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
         user.IsActive = false;
         user.UpdatedAt = DateTime.UtcNow;
         await _userManager.UpdateAsync(user);
+        _cache.InvalidateUserStatus(user.Id);
 
         await LogAsync(
             ActivityActions.Onboarding.UserDeactivated,
@@ -211,7 +226,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
     {
         var tenantId = RequireTenantId();
 
-        await EnsureEmailNotTakenAsync(request.Email, tenantId, cancellationToken);
+        var softDeleted = await FindSoftDeletedUserAsync(request.Email, tenantId, cancellationToken);
 
         var roles = await ResolveRolesByIdAsync(tenantId, request.RoleIds, cancellationToken);
 
@@ -219,15 +234,20 @@ public class OnboardingService : TenantScopedService, IOnboardingService
 
         try
         {
-            // This flow only creates TenantUsers.
-            var systemRole = SystemRole.TenantUser;
+            ApplicationUser user;
 
-            var user = CreateInactiveUser(request.FullName, request.Email, tenantId, systemRole);
-            await CreateUserOrThrowAsync(user);
-
-            foreach (var role in roles)
+            if (softDeleted != null)
             {
-                await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
+                await RestoreUserForOnboardingAsync(softDeleted, request.FullName, SystemRole.TenantUser, roles, cancellationToken);
+                user = softDeleted;
+            }
+            else
+            {
+                user = CreateInactiveUser(request.FullName, request.Email, tenantId, SystemRole.TenantUser);
+                await CreateUserOrThrowAsync(user);
+
+                foreach (var role in roles)
+                    await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
             }
 
             var (_, setupUrl) = await IssueSetupTokenAsync(user, cancellationToken);
@@ -307,6 +327,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
             NormalizedUserName = email.ToUpperInvariant(),
             EmailConfirmed = false,
             IsActive = false,
+            CreatedVia = CreatedVia.Direct,
             CreatedAt = DateTime.UtcNow,
         };
 
@@ -362,20 +383,60 @@ public class OnboardingService : TenantScopedService, IOnboardingService
         return setupUrl;
     }
 
-    private async Task EnsureEmailNotTakenAsync(
+    // Returns a soft-deleted user if one exists (restore path), or null (create path).
+    // Throws ConflictException if an active (non-deleted) user with that email already exists.
+    private async Task<ApplicationUser?> FindSoftDeletedUserAsync(
         string email,
         Guid tenantId,
         CancellationToken cancellationToken)
     {
-        var exists = await _userManager.Users
-            .AnyAsync(
-                u => u.NormalizedEmail == email.ToUpperInvariant() && u.TenantId == tenantId,
-                cancellationToken);
+        var normalised = email.ToUpperInvariant();
 
-        if (exists)
-        {
+        var activeExists = await _userManager.Users
+            .AnyAsync(u => u.NormalizedEmail == normalised && u.TenantId == tenantId, cancellationToken);
+
+        if (activeExists)
             throw new ConflictException($"A user with email '{email}' already exists in this tenant.");
-        }
+
+        return await _context.Users
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(
+                u => u.NormalizedEmail == normalised && u.TenantId == tenantId && u.DeletedAt != null,
+                cancellationToken);
+    }
+
+    // Restores a soft-deleted user to an inactive pending-setup state with fresh credentials/roles.
+    private async Task RestoreUserForOnboardingAsync(
+        ApplicationUser user,
+        string fullName,
+        SystemRole systemRole,
+        List<ApplicationRole> roles,
+        CancellationToken cancellationToken)
+    {
+        user.FullName = fullName;
+        user.SystemRole = systemRole;
+        user.IsActive = false;
+        user.EmailConfirmed = false;
+        user.DeletedAt = null;
+        user.CreatedVia = CreatedVia.Direct;
+        user.SecurityStamp = Guid.NewGuid().ToString();
+        user.ConcurrencyStamp = Guid.NewGuid().ToString();
+        user.PasswordHash = _userManager.PasswordHasher.HashPassword(user, $"Placeholder!{Guid.NewGuid():N}");
+        user.UpdatedAt = DateTime.UtcNow;
+
+        // Replace role assignments
+        var existingRoles = await _context.Set<IdentityUserRole<Guid>>()
+            .Where(ur => ur.UserId == user.Id)
+            .ToListAsync(cancellationToken);
+        _context.Set<IdentityUserRole<Guid>>().RemoveRange(existingRoles);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        foreach (var role in roles)
+            await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
+
+        var result = await _userManager.UpdateAsync(user);
+        if (!result.Succeeded)
+            throw new InvalidOperationException(string.Join(", ", result.Errors.Select(e => e.Description)));
     }
 
     private async Task<List<ApplicationRole>> ResolveRolesByIdAsync(

@@ -8,29 +8,25 @@ namespace Infrastructure.Persistence.Seed.Seeds;
 
 public sealed class PermissionsSeed : IDataSeed
 {
-    public const string Id = "20260603000001_Permissions";
+    public const string Id = "20260706000001_Permissions";
 
     private static readonly (string Name, string Module, string Description, SystemRole RequiredSystemRole)[] Definitions =
     [
         // TenantUser — basic operational permissions
         (PermissionNames.ProfileView,    "Profile",   "View own profile",                       SystemRole.TenantUser),
         (PermissionNames.ProfileEdit,    "Profile",   "Edit own profile and change password",   SystemRole.TenantUser),
-        (PermissionNames.ProductsCreate, "Products",  "Create products",                        SystemRole.TenantUser),
-        (PermissionNames.ProductsView,   "Products",  "View products",                          SystemRole.TenantUser),
-        (PermissionNames.ProductsEdit,   "Products",  "Edit products",                          SystemRole.TenantUser),
-        (PermissionNames.ProductsDelete, "Products",  "Delete products",                        SystemRole.TenantUser),
-        (PermissionNames.ReportsView,    "Reports",   "View reports",                           SystemRole.TenantUser),
-        (PermissionNames.ReportsExport,  "Reports",   "Export reports",                         SystemRole.TenantUser),
         (PermissionNames.FilesView,      "Files",     "View files",                             SystemRole.TenantUser),
         (PermissionNames.FilesUpload,    "Files",     "Upload files",                           SystemRole.TenantUser),
 
         // TenantAdmin — tenant management permissions
         (PermissionNames.UsersCreate,          "Users",      "Create users",                            SystemRole.TenantAdmin),
-        (PermissionNames.UsersView,            "Users",      "View users",                              SystemRole.TenantAdmin),
+        (PermissionNames.UsersList,            "Users",      "List all users",                          SystemRole.TenantAdmin),
+        (PermissionNames.UsersView,            "Users",      "View user details",                       SystemRole.TenantAdmin),
         (PermissionNames.UsersEdit,            "Users",      "Edit users",                              SystemRole.TenantAdmin),
         (PermissionNames.UsersDelete,          "Users",      "Delete users",                            SystemRole.TenantAdmin),
         (PermissionNames.RolesCreate,          "Roles",      "Create roles",                            SystemRole.TenantAdmin),
-        (PermissionNames.RolesView,            "Roles",      "View roles",                              SystemRole.TenantAdmin),
+        (PermissionNames.RolesList,            "Roles",      "List all roles",                          SystemRole.TenantAdmin),
+        (PermissionNames.RolesView,            "Roles",      "View role details",                       SystemRole.TenantAdmin),
         (PermissionNames.RolesEdit,            "Roles",      "Edit roles",                              SystemRole.TenantAdmin),
         (PermissionNames.RolesDelete,          "Roles",      "Delete roles",                            SystemRole.TenantAdmin),
         (PermissionNames.FilesDelete,          "Files",      "Delete files",                            SystemRole.TenantAdmin),
@@ -42,10 +38,13 @@ public sealed class PermissionsSeed : IDataSeed
         (PermissionNames.OnboardingDeactivate, "Onboarding", "Deactivate user accounts",                SystemRole.TenantAdmin),
 
         // SystemAdmin — platform-level permissions
-        (PermissionNames.TenantsCreate, "Tenants", "Create tenants", SystemRole.SystemAdmin),
-        (PermissionNames.TenantsView,   "Tenants", "View tenants",   SystemRole.SystemAdmin),
-        (PermissionNames.TenantsEdit,   "Tenants", "Edit tenants",   SystemRole.SystemAdmin),
-        (PermissionNames.TenantsDelete, "Tenants", "Delete tenants", SystemRole.SystemAdmin),
+        (PermissionNames.TenantsCreate,     "Tenants",       "Create tenants",                   SystemRole.SystemAdmin),
+        (PermissionNames.TenantsList,       "Tenants",       "List all tenants",                 SystemRole.SystemAdmin),
+        (PermissionNames.TenantsView,       "Tenants",       "View tenant details",              SystemRole.SystemAdmin),
+        (PermissionNames.TenantsEdit,       "Tenants",       "Edit tenants",                     SystemRole.SystemAdmin),
+        (PermissionNames.TenantsDelete,     "Tenants",       "Delete tenants",                   SystemRole.SystemAdmin),
+        (PermissionNames.SubscriptionsView, "Subscriptions", "View subscription plans",          SystemRole.SystemAdmin),
+        (PermissionNames.SubscriptionsEdit, "Subscriptions", "Change tenant subscription plan",  SystemRole.SystemAdmin),
     ];
 
     private readonly ApplicationDbContext _context;
@@ -57,7 +56,7 @@ public sealed class PermissionsSeed : IDataSeed
 
     public string SeedId => Id;
 
-    public string Description => "Full RBAC permission catalog with system role scopes.";
+    public string Description => "Full RBAC permission catalog.";
 
     public async Task ApplyAsync(CancellationToken cancellationToken = default)
     {
@@ -70,9 +69,7 @@ public sealed class PermissionsSeed : IDataSeed
         foreach (var (name, module, description, requiredSystemRole) in Definitions)
         {
             if (existingSet.Contains(name))
-            {
                 continue;
-            }
 
             _context.Permissions.Add(new Permission
             {

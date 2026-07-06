@@ -6,7 +6,5 @@ public class ValidateResetTokenResponse
 
     public string? Email { get; set; }
 
-    public string? TenantSlug { get; set; }
-
     public string? ErrorMessage { get; set; }
 }

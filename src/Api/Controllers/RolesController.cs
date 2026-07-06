@@ -20,13 +20,14 @@ public class RolesController : ApiControllerBase
     }
 
     [HttpGet]
-    [HasPermission(PermissionNames.RolesView)]
+    [HasPermission(PermissionNames.RolesList)]
     public async Task<IActionResult> GetAll(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
-        [FromQuery] string? search = null)
+        [FromQuery] string? search = null,
+        [FromQuery] List<Guid>? permissionIds = null)
     {
-        var response = await _roleService.GetRolesAsync(page, pageSize, search);
+        var response = await _roleService.GetRolesAsync(page, pageSize, search, permissionIds);
 
         return OkEnvelope(response, "Roles retrieved.");
     }

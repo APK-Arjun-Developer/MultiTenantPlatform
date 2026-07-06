@@ -22,12 +22,8 @@ public interface IAppCache
 
     void InvalidateTenant(Guid tenantId);
 
-    void InvalidateProducts(Guid tenantId);
+    void InvalidateUserStatus(Guid userId);
 
-    void InvalidateReportSummary(Guid tenantId);
+    void InvalidateTenantStatus(Guid tenantId);
 
-    /// <summary>
-    /// Call after any change that affects tenant dashboard counts (users, roles, products, logs).
-    /// </summary>
-    void InvalidateTenantDashboard(Guid tenantId);
 }

@@ -1,9 +1,10 @@
-using Application.Common;
+﻿using Application.Common;
 using Application.DTOs.ActivityLogs;
 using Application.DTOs.Common;
 using Application.DTOs.Users;
 using Application.Exceptions;
 using Application.Interfaces.ActivityLogs;
+using Application.Interfaces.Authentication;
 using Application.Interfaces.Caching;
 using Application.Interfaces.Email;
 using Application.Interfaces.Files;
@@ -35,6 +36,8 @@ public class UserManagementService : TenantScopedService, IUserManagementService
     private readonly IEmailService _emailService;
     private readonly IFileService _fileService;
     private readonly IFileStorageService _fileStorageService;
+    private readonly IRefreshTokenService _refreshTokenService;
+    private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly string _appBaseUrl;
 
     private static readonly TimeSpan SetupTokenLifetime = TimeSpan.FromDays(7);
@@ -57,6 +60,8 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         IEmailService emailService,
         IFileService fileService,
         IFileStorageService fileStorageService,
+        IRefreshTokenService refreshTokenService,
+        IHttpContextAccessor httpContextAccessor,
         IConfiguration configuration)
         : base(currentTenantService)
     {
@@ -69,6 +74,8 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         _emailService = emailService;
         _fileService = fileService;
         _fileStorageService = fileStorageService;
+        _refreshTokenService = refreshTokenService;
+        _httpContextAccessor = httpContextAccessor;
         _appBaseUrl = configuration["AppBaseUrl"] ?? "https://app.example.com";
     }
 
@@ -91,44 +98,76 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         if (notFound.Count > 0)
             throw new NotFoundException($"Role(s) not found for this tenant: {string.Join(", ", notFound)}");
 
-        var emailExists = await _userManager.Users
-            .AnyAsync(u =>
-                u.NormalizedEmail == request.Email.ToUpperInvariant() &&
-                u.TenantId == tenantId);
+        var normalised = request.Email.ToUpperInvariant();
 
-        if (emailExists)
-        {
+        var activeExists = await _userManager.Users
+            .AnyAsync(u => u.NormalizedEmail == normalised && u.TenantId == tenantId);
+
+        if (activeExists)
             throw new ConflictException("User email already exists.");
+
+        var softDeleted = await _context.Users
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.NormalizedEmail == normalised && u.TenantId == tenantId && u.DeletedAt != null);
+
+        ApplicationUser user;
+
+        if (softDeleted != null)
+        {
+            // Restore the soft-deleted record instead of inserting a new one.
+            softDeleted.FullName = request.FullName;
+            softDeleted.SystemRole = SystemRole.TenantUser;
+            softDeleted.IsActive = false;
+            softDeleted.EmailConfirmed = false;
+            softDeleted.DeletedAt = null;
+            softDeleted.CreatedVia = CreatedVia.Direct;
+            softDeleted.SecurityStamp = Guid.NewGuid().ToString();
+            softDeleted.ConcurrencyStamp = Guid.NewGuid().ToString();
+            softDeleted.PasswordHash = _userManager.PasswordHasher.HashPassword(softDeleted, $"Placeholder!{Guid.NewGuid():N}");
+            softDeleted.UpdatedAt = DateTime.UtcNow;
+
+            var existingRoles = await _context.Set<IdentityUserRole<Guid>>()
+                .Where(ur => ur.UserId == softDeleted.Id)
+                .ToListAsync();
+            _context.Set<IdentityUserRole<Guid>>().RemoveRange(existingRoles);
+            await _context.SaveChangesAsync();
+
+            foreach (var role in roles)
+                await _identityRoleService.AddUserToRoleAsync(softDeleted.Id, role.Id);
+
+            var updateResult = await _userManager.UpdateAsync(softDeleted);
+            if (!updateResult.Succeeded)
+                throw new InvalidOperationException(string.Join(", ", updateResult.Errors.Select(e => e.Description)));
+
+            user = softDeleted;
         }
-
-        // Created inactive — user sets their own password via the account-setup email.
-        var user = new ApplicationUser
+        else
         {
-            Id = Guid.NewGuid(),
-            TenantId = tenantId,
-            SystemRole = SystemRole.TenantUser,
-            FullName = request.FullName,
-            Email = request.Email,
-            UserName = request.Email,
-            NormalizedEmail = request.Email.ToUpperInvariant(),
-            NormalizedUserName = request.Email.ToUpperInvariant(),
-            EmailConfirmed = false,
-            IsActive = false,
-            CreatedAt = DateTime.UtcNow
-        };
+            // Created inactive — user sets their own password via the account-setup email.
+            user = new ApplicationUser
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                SystemRole = SystemRole.TenantUser,
+                FullName = request.FullName,
+                Email = request.Email,
+                UserName = request.Email,
+                NormalizedEmail = normalised,
+                NormalizedUserName = normalised,
+                EmailConfirmed = false,
+                IsActive = false,
+                CreatedVia = CreatedVia.Direct,
+                CreatedAt = DateTime.UtcNow
+            };
 
-        var placeholder = $"Placeholder!{Guid.NewGuid():N}";
-        var result = await _userManager.CreateAsync(user, placeholder);
+            var placeholder = $"Placeholder!{Guid.NewGuid():N}";
+            var result = await _userManager.CreateAsync(user, placeholder);
 
-        if (!result.Succeeded)
-        {
-            throw new InvalidOperationException(
-                string.Join(", ", result.Errors.Select(e => e.Description)));
-        }
+            if (!result.Succeeded)
+                throw new InvalidOperationException(string.Join(", ", result.Errors.Select(e => e.Description)));
 
-        foreach (var role in roles)
-        {
-            await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
+            foreach (var role in roles)
+                await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
         }
 
         // Invalidate any prior unused tokens, then issue a fresh one.
@@ -160,14 +199,12 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         }
         catch
         {
-            // Non-fatal — can be resent via the resend endpoint
+            // Non-fatal - can be resent via the resend endpoint
         }
 
         await LogActivityAsync(
             ActivityActions.Users.Created,
             $"Created user '{user.Email}'.");
-
-        _cache.InvalidateTenantDashboard(tenantId);
 
         return await MapToUserResponseAsync(user, includeTenantDetails: false);
     }
@@ -176,7 +213,9 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         int page, int pageSize,
         string? search = null,
         string? sortBy = null,
-        string? sortOrder = null)
+        string? sortOrder = null,
+        bool? isActive = null,
+        CreatedVia? createdVia = null)
     {
         var currentUserId = RequireUserId();
 
@@ -186,7 +225,9 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         var tenantId = RequireTenantId();
 
         IQueryable<ApplicationUser> query = _userManager.Users
-            .Where(u => u.Id != currentUserId && u.TenantId == tenantId);
+            .Where(u => u.Id != currentUserId
+                     && u.TenantId == tenantId
+                     && u.SystemRole == SystemRole.TenantUser);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -194,14 +235,24 @@ public class UserManagementService : TenantScopedService, IUserManagementService
                 u.FullName.Contains(search) || u.Email!.Contains(search));
         }
 
+        if (isActive.HasValue)
+        {
+            query = query.Where(u => u.IsActive == isActive.Value);
+        }
+
+        if (createdVia.HasValue)
+        {
+            query = query.Where(u => u.CreatedVia == createdVia.Value);
+        }
+
         var totalCount = await query.CountAsync();
 
         query = (sortBy?.ToLowerInvariant(), sortOrder?.ToLowerInvariant()) switch
         {
             ("fullname", "desc") => query.OrderByDescending(u => u.FullName),
-            ("fullname", _)      => query.OrderBy(u => u.FullName),
-            ("email", "desc")    => query.OrderByDescending(u => u.Email),
-            _                    => query.OrderBy(u => u.Email),
+            ("fullname", _) => query.OrderBy(u => u.FullName),
+            ("email", "desc") => query.OrderByDescending(u => u.Email),
+            _ => query.OrderBy(u => u.Email),
         };
 
         var users = await query
@@ -209,7 +260,7 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             .Take(pageSize)
             .ToListAsync();
 
-        // Batch-load roles for all users in one query — eliminates N+1.
+        // Batch-load roles for all users in one query - eliminates N+1.
         var userIds = users.Select(u => u.Id).ToList();
         var tenantIds = users.Select(u => u.TenantId).Distinct().ToList();
 
@@ -372,12 +423,10 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
         }
 
-        // UserManager.UpdateAsync internally calls SaveChangesAsync — no second call needed.
+        // UserManager.UpdateAsync internally calls SaveChangesAsync - no second call needed.
         await _userManager.UpdateAsync(user);
 
         await LogActivityAsync(ActivityActions.Users.Updated, $"Updated user '{user.Email}'.");
-
-        _cache.InvalidateTenantDashboard(user.TenantId);
 
         var address = await AddressHelper.GetUserAddressAsync(_context, user.Id, IsSystemAdmin());
 
@@ -444,6 +493,9 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         user.UpdatedAt = DateTime.UtcNow;
         await _userManager.UpdateAsync(user);
 
+        var ip = _httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        await _refreshTokenService.RevokeAllForUserAsync(user.Id, ip);
+
         await LogActivityAsync(ActivityActions.Users.Updated, "Changed own password.");
     }
 
@@ -474,9 +526,9 @@ public class UserManagementService : TenantScopedService, IUserManagementService
                 string.Join(", ", result.Errors.Select(e => e.Description)));
         }
 
-        await LogActivityAsync(ActivityActions.Users.Deleted, $"Deleted user '{user.Email}'.");
+        _cache.InvalidateUserStatus(user.Id);
 
-        _cache.InvalidateTenantDashboard(user.TenantId);
+        await LogActivityAsync(ActivityActions.Users.Deleted, $"Deleted user '{user.Email}'.");
     }
 
     // ── Tenant Admin management (System Admin scope) ──────────────────────────
@@ -484,7 +536,9 @@ public class UserManagementService : TenantScopedService, IUserManagementService
     public async Task<PagedResponse<UserResponse>> GetTenantAdminsAsync(
         int page, int pageSize,
         string? search = null,
-        Guid? tenantId = null)
+        Guid? tenantId = null,
+        bool? isActive = null,
+        CreatedVia? createdVia = null)
     {
         if (!IsSystemAdmin())
         {
@@ -505,6 +559,16 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         {
             query = query.Where(u =>
                 u.FullName.Contains(search) || u.Email!.Contains(search));
+        }
+
+        if (isActive.HasValue)
+        {
+            query = query.Where(u => u.IsActive == isActive.Value);
+        }
+
+        if (createdVia.HasValue)
+        {
+            query = query.Where(u => u.CreatedVia == createdVia.Value);
         }
 
         var totalCount = await query.CountAsync();
@@ -635,8 +699,6 @@ public class UserManagementService : TenantScopedService, IUserManagementService
 
         await LogActivityAsync(ActivityActions.Users.Updated, $"Updated tenant admin '{user.Email}'.");
 
-        _cache.InvalidateTenantDashboard(user.TenantId);
-
         var address = await AddressHelper.GetUserAddressAsync(_context, user.Id, ignoreTenantFilter: true);
 
         return await MapToUserResponseAsync(user, includeTenantDetails: true, address: address);
@@ -670,9 +732,9 @@ public class UserManagementService : TenantScopedService, IUserManagementService
                 string.Join(", ", result.Errors.Select(e => e.Description)));
         }
 
-        await LogActivityAsync(ActivityActions.Users.Deleted, $"Deleted tenant admin '{user.Email}'.");
+        _cache.InvalidateUserStatus(user.Id);
 
-        _cache.InvalidateTenantDashboard(user.TenantId);
+        await LogActivityAsync(ActivityActions.Users.Deleted, $"Deleted tenant admin '{user.Email}'.");
     }
 
     public async Task<UserResponse> UploadCurrentUserAvatarAsync(IFormFile file)
@@ -683,6 +745,16 @@ public class UserManagementService : TenantScopedService, IUserManagementService
 
         if (file.Length > AvatarMaxBytes)
             throw new InvalidOperationException("Profile picture must be smaller than 5 MB.");
+
+        using (var dimensionStream = file.OpenReadStream())
+        {
+            var (width, height) = ReadImageDimensions(dimensionStream);
+            if (width <= 0 || height <= 0)
+                throw new InvalidOperationException("Could not read image dimensions. Please upload a valid image file.");
+            if (width != height)
+                throw new InvalidOperationException(
+                    $"Profile picture must be square ({width}×{height} is not square). Please crop your image before uploading.");
+        }
 
         var user = await GetCurrentUserEntityAsync();
         var previousFileId = user.ProfileFileId;
@@ -696,7 +768,7 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         if (previousFileId.HasValue)
         {
             try { await _fileService.DeleteAsync(previousFileId.Value); }
-            catch { /* old file already gone — not fatal */ }
+            catch { /* old file already gone - not fatal */ }
         }
 
         await LogActivityAsync(ActivityActions.Users.Updated, "Uploaded profile picture.");
@@ -755,6 +827,114 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             ?? throw new NotFoundException("User not found.");
     }
 
+    /// <summary>
+    /// Reads image dimensions from the stream header without decoding pixel data.
+    /// Supports JPEG, PNG, GIF, and WebP (lossy VP8 and lossless VP8L).
+    /// Returns (0, 0) when dimensions cannot be determined.
+    /// </summary>
+    private static (int Width, int Height) ReadImageDimensions(Stream stream)
+    {
+        try
+        {
+            var h = new byte[30];
+            var read = stream.Read(h, 0, h.Length);
+
+            if (read < 12) return (0, 0);
+
+            // PNG: magic \x89PNG\r\n\x1a\n, then IHDR chunk at offset 8 (width at 16, height at 20)
+            if (read >= 24
+                && h[0] == 0x89 && h[1] == 0x50 && h[2] == 0x4E && h[3] == 0x47)
+            {
+                return (ReadInt32BE(h, 16), ReadInt32BE(h, 20));
+            }
+
+            // GIF: GIF87a / GIF89a — logical width at offset 6, height at offset 8 (little-endian)
+            if (read >= 10 && h[0] == 'G' && h[1] == 'I' && h[2] == 'F')
+            {
+                return (ReadUInt16LE(h, 6), ReadUInt16LE(h, 8));
+            }
+
+            // WebP: "RIFF????WEBP VP8 " (lossy) or "RIFF????WEBP VP8L" (lossless)
+            if (read >= 28
+                && h[0] == 'R' && h[1] == 'I' && h[2] == 'F' && h[3] == 'F'
+                && h[8] == 'W' && h[9] == 'E' && h[10] == 'B' && h[11] == 'P')
+            {
+                // Lossy VP8: chunk id "VP8 ", bitstream start code at h[23..25] = 9D 01 2A
+                if (h[12] == 'V' && h[13] == 'P' && h[14] == '8' && h[15] == ' '
+                    && read >= 30 && h[23] == 0x9D && h[24] == 0x01 && h[25] == 0x2A)
+                {
+                    return ((ReadUInt16LE(h, 26) & 0x3FFF) + 1,
+                            (ReadUInt16LE(h, 28) & 0x3FFF) + 1);
+                }
+
+                // Lossless VP8L: chunk id "VP8L", signature byte 0x2F at h[20]
+                if (h[12] == 'V' && h[13] == 'P' && h[14] == '8' && h[15] == 'L'
+                    && read >= 25 && h[20] == 0x2F)
+                {
+                    // Dimensions packed in 28 bits: width-1 (14 bits) | height-1 (14 bits)
+                    var bits = ReadUInt32LE(h, 21);
+                    return ((int)(bits & 0x3FFF) + 1,
+                            (int)((bits >> 14) & 0x3FFF) + 1);
+                }
+
+                // Extended VP8X: canvas width at byte 24 (3-byte LE, +1), height at 27 (3-byte LE, +1)
+                if (h[12] == 'V' && h[13] == 'P' && h[14] == '8' && h[15] == 'X' && read >= 30)
+                {
+                    var w = ((h[24]) | (h[25] << 8) | (h[26] << 16)) + 1;
+                    var ht = ((h[27]) | (h[28] << 8) | (h[29] << 16)) + 1;
+                    return (w, ht);
+                }
+            }
+
+            // JPEG: FF D8 — scan for SOF (Start of Frame) marker
+            if (read >= 2 && h[0] == 0xFF && h[1] == 0xD8)
+            {
+                return ScanJpegDimensions(stream);
+            }
+        }
+        catch { }
+
+        return (0, 0);
+    }
+
+    private static (int Width, int Height) ScanJpegDimensions(Stream stream)
+    {
+        stream.Seek(2, SeekOrigin.Begin); // skip SOI marker
+        var buf = new byte[7];
+        while (stream.Read(buf, 0, 2) == 2 && buf[0] == 0xFF)
+        {
+            var marker = buf[1];
+
+            // SOF markers: C0–CF except C4 (DHT), C8 (reserved), CC (DAC)
+            if (marker is >= 0xC0 and <= 0xCF and not 0xC4 and not 0xC8 and not 0xCC)
+            {
+                // Segment layout after FF Cx:
+                // [0-1] 2B length  [2] 1B precision  [3-4] 2B height (BE)  [5-6] 2B width (BE)
+                if (stream.Read(buf, 0, 7) < 7) break;
+                var height = (buf[3] << 8) | buf[4];
+                var width = (buf[5] << 8) | buf[6];
+                return (width, height);
+            }
+
+            // Skip segment body (length includes its own 2 bytes)
+            if (stream.Read(buf, 0, 2) < 2) break;
+            var segLen = (buf[0] << 8) | buf[1];
+            if (segLen < 2) break;
+            stream.Seek(segLen - 2, SeekOrigin.Current);
+        }
+
+        return (0, 0);
+    }
+
+    private static int ReadInt32BE(byte[] b, int offset) =>
+        (b[offset] << 24) | (b[offset + 1] << 16) | (b[offset + 2] << 8) | b[offset + 3];
+
+    private static int ReadUInt16LE(byte[] b, int offset) =>
+        b[offset] | (b[offset + 1] << 8);
+
+    private static uint ReadUInt32LE(byte[] b, int offset) =>
+        (uint)(b[offset] | (b[offset + 1] << 8) | (b[offset + 2] << 16) | (b[offset + 3] << 24));
+
     private async Task<ApplicationUser?> FindManagedUserAsync(string email)
     {
         var normalizedEmail = email.ToUpperInvariant();
@@ -771,28 +951,46 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         Guid? profileFileId,
         bool clearProfileImage)
     {
+        var previousFileId = user.ProfileFileId;
+
         if (clearProfileImage)
         {
             user.ProfileFileId = null;
-            return;
         }
-
-        if (!profileFileId.HasValue)
+        else if (!profileFileId.HasValue)
         {
             return;
         }
-
-        var fileExists = await _context.Files
-            .AsNoTracking()
-            .AnyAsync(f => f.Id == profileFileId.Value && f.TenantId == user.TenantId);
-
-        if (!fileExists)
+        else
         {
-            throw new NotFoundException(
-                "Profile file not found or does not belong to the user's tenant.");
+            var fileExists = await _context.Files
+                .AsNoTracking()
+                .AnyAsync(f => f.Id == profileFileId.Value && f.TenantId == user.TenantId);
+
+            if (!fileExists)
+            {
+                throw new NotFoundException(
+                    "Profile file not found or does not belong to the user's tenant.");
+            }
+
+            user.ProfileFileId = profileFileId.Value;
         }
 
-        user.ProfileFileId = profileFileId.Value;
+        if (previousFileId.HasValue && previousFileId != user.ProfileFileId)
+        {
+            var oldFile = await _context.Files
+                .IgnoreQueryFilters()
+                .FirstOrDefaultAsync(f => f.Id == previousFileId.Value && f.DeletedAt == null);
+
+            if (oldFile is not null)
+            {
+                var relativePath = oldFile.RelativePath;
+                oldFile.DeletedAt = DateTime.UtcNow;
+
+                try { await _fileStorageService.DeletePhysicalAsync(relativePath); }
+                catch { /* non-fatal: record is soft-deleted; orphaned file requires manual cleanup */ }
+            }
+        }
     }
 
     private static string? BuildProfileUrl(Guid? profileFileId) =>
@@ -808,7 +1006,6 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         {
             Id = tenant.Id,
             Name = tenant.Name,
-            Slug = tenant.Slug,
             IsActive = tenant.IsActive,
             ProfileFileId = tenant.ProfileFileId,
             ProfileUrl = BuildProfileUrl(tenant.ProfileFileId),
@@ -835,6 +1032,8 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             ProfileUrl = BuildUserAvatarUrl(user.Id, user.ProfileFileId),
             Address = AddressFormatter.ToResponse(address),
             Tenant = includeTenantDetails ? tenantDetails : null,
+            CreatedVia = user.CreatedVia,
+            LastLoginAt = user.LastLoginAt,
             HasPendingSetup = hasPendingSetup,
         };
 
@@ -855,3 +1054,4 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             address);
     }
 }
+

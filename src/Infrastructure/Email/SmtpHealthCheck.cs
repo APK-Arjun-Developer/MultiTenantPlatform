@@ -19,7 +19,7 @@ public sealed class SmtpHealthCheck : IHealthCheck
     public SmtpHealthCheck(IOptions<SmtpSettings> settings, ILogger<SmtpHealthCheck> logger)
     {
         _settings = settings.Value;
-        _logger   = logger;
+        _logger = logger;
     }
 
     public async Task<HealthCheckResult> CheckHealthAsync(

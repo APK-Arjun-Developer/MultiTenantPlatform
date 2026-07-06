@@ -29,12 +29,6 @@ public class OnboardTenantDetailsValidator : AbstractValidator<OnboardTenantDeta
             .NotEmpty()
             .MaximumLength(200);
 
-        RuleFor(x => x.Slug)
-            .NotEmpty()
-            .MaximumLength(100)
-            .Matches("^[a-z0-9]+(?:-[a-z0-9]+)*$")
-            .WithMessage("Slug must be lowercase alphanumeric with optional hyphens.");
-
         RuleFor(x => x.Address)
             .NotNull().WithMessage("Company address is required.");
 

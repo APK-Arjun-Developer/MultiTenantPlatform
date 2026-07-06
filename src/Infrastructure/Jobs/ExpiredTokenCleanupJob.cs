@@ -16,7 +16,7 @@ public sealed class ExpiredTokenCleanupJob : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<ExpiredTokenCleanupJob> _logger;
-    private static readonly TimeSpan RunInterval    = TimeSpan.FromHours(24);
+    private static readonly TimeSpan RunInterval = TimeSpan.FromHours(24);
     private static readonly TimeSpan RetentionPeriod = TimeSpan.FromDays(30);
 
     public ExpiredTokenCleanupJob(

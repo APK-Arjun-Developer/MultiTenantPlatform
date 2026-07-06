@@ -1,4 +1,4 @@
-using Application.DTOs.Common;
+﻿using Application.DTOs.Common;
 using Domain.Enums;
 
 namespace Application.DTOs.Users;
@@ -27,6 +27,10 @@ public class UserResponse
 
     public UserTenantDetails? Tenant { get; set; }
 
+    public CreatedVia CreatedVia { get; set; }
+
+    public DateTime? LastLoginAt { get; set; }
+
     /// <summary>True when the user was created directly and has not completed account setup yet.</summary>
     public bool HasPendingSetup { get; set; }
 }
@@ -36,8 +40,6 @@ public class UserTenantDetails
     public Guid Id { get; set; }
 
     public string Name { get; set; } = default!;
-
-    public string Slug { get; set; } = default!;
 
     public bool IsActive { get; set; }
 

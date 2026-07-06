@@ -1,4 +1,4 @@
-using Domain.Enums;
+﻿using Domain.Enums;
 using Infrastructure.Identity.Entities;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -61,6 +61,7 @@ public sealed class SuperAdminSeed : IDataSeed
             NormalizedUserName = adminEmail.ToUpperInvariant(),
             EmailConfirmed = true,
             IsActive = true,
+            CreatedVia = CreatedVia.Direct,
             CreatedAt = DateTime.UtcNow,
         };
 

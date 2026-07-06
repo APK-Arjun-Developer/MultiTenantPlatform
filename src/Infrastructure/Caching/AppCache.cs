@@ -46,18 +46,13 @@ public sealed class AppCache : IAppCache
     public void InvalidateTenant(Guid tenantId)
     {
         Remove(CacheKeys.TenantDetail(tenantId));
-        InvalidateTenantDashboard(tenantId);
+        InvalidateTenantCatalog();
     }
 
-    public void InvalidateProducts(Guid tenantId) =>
-        Remove(CacheKeys.Products(tenantId));
+    public void InvalidateUserStatus(Guid userId) =>
+        Remove(CacheKeys.UserStatus(userId));
 
-    public void InvalidateReportSummary(Guid tenantId) =>
-        Remove(CacheKeys.ReportSummary(tenantId));
+    public void InvalidateTenantStatus(Guid tenantId) =>
+        Remove(CacheKeys.TenantStatus(tenantId));
 
-    public void InvalidateTenantDashboard(Guid tenantId)
-    {
-        InvalidateProducts(tenantId);
-        InvalidateReportSummary(tenantId);
-    }
 }

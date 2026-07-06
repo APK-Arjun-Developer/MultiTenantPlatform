@@ -1,3 +1,4 @@
+using Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -15,12 +16,15 @@ public class TenantConfiguration : IEntityTypeConfiguration<Domain.Entities.Tena
             .HasMaxLength(200)
             .IsRequired();
 
-        builder.Property(x => x.Slug)
-            .HasMaxLength(100)
+        builder.Property(x => x.CreatedVia)
+            .HasConversion<int>()
+            .HasDefaultValue(CreatedVia.Direct)
             .IsRequired();
 
-        builder.HasIndex(x => x.Slug)
-            .IsUnique();
+        builder.Property(x => x.PlanType)
+            .HasConversion<int>()
+            .HasDefaultValue(PlanType.Free)
+            .IsRequired();
 
         builder.HasOne(x => x.ProfileFile)
             .WithMany()
