@@ -70,6 +70,23 @@ Returns user ID, full name, roles, and the caller's effective **permissions** li
 }
 ```
 
+### Me — `GET /auth/me` (updated)
+
+When the calling user is being impersonated by a SystemAdmin, the `impersonatedBy` field is populated:
+
+```json
+{
+  "id": "...", "email": "jane@acme.com", "fullName": "Jane Smith",
+  "roles": ["SalesRep"], "systemRole": "TenantUser",
+  "permissions": ["Products.View"],
+  "impersonatedBy": {
+    "id": "...", "email": "admin@system.com", "fullName": "System Admin"
+  }
+}
+```
+
+`impersonatedBy` is `null` for normal (non-impersonated) sessions.
+
 ### JWT claims
 
 | Claim | Description |
@@ -80,6 +97,9 @@ Returns user ID, full name, roles, and the caller's effective **permissions** li
 | `full_name` | Display name |
 | `role_ids` | GUIDs of custom roles assigned to the user |
 | `email` | User email address |
+| `impersonated_by_id` | (impersonation only) GUID of the admin who started impersonation |
+| `impersonated_by_email` | (impersonation only) Admin's email |
+| `impersonated_by_name` | (impersonation only) Admin's full name |
 
 Permissions are checked per request from the database (cached), not from the token.
 
@@ -506,9 +526,10 @@ PascalCase with module prefix. Constants: `Application.Common.PermissionNames`.
 | `Users` | `View`, `Create`, `Edit`, `Delete` | TenantAdmin |
 | `Roles` | `View`, `Create`, `Edit`, `Delete` | TenantAdmin |
 | `Onboarding` | `Create`, `Invite`, `Resend`, `Revoke`, `Activate`, `Deactivate` | TenantAdmin |
-| `AuditLogs` | `View` | TenantAdmin |
 | `Tenants` | `View`, `Create`, `Edit`, `Delete` | SystemAdmin only |
 | `Subscriptions` | `View`, `Edit` | SystemAdmin only |
+
+Activity logs (`GET /activity-logs`) require `SystemAdminOnly` policy — no permission name, no TenantAdmin access.
 
 ---
 
@@ -553,23 +574,75 @@ Self-service tenant settings for TenantAdmin (cannot change `isActive` or `planT
 |--------|------|------|-------|
 | GET | `/tenant-settings` | TenantAdmin only | Returns current tenant (same shape as `TenantDto`) |
 | PUT | `/tenant-settings` | TenantAdmin only | Update name, address, profile image |
+| POST | `/tenant-settings/logo` | TenantAdmin only | Upload tenant logo (JPEG/PNG/GIF/WebP, max 10 MB). Multipart form-data with `file` field. |
+| DELETE | `/tenant-settings/logo` | TenantAdmin only | Remove tenant logo. |
+
+---
+
+## Impersonation (SystemAdmin)
+
+Allows a SystemAdmin to temporarily act as a TenantUser within a specific tenant. Impersonation replaces the `access_token` cookie with a short-lived JWT containing `impersonated_by_*` claims. The admin's session is preserved in the `impersonation_restore_token` cookie (HttpOnly) for restoration.
+
+| Method | Path | Auth | Notes |
+|--------|------|------|-------|
+| POST | `/impersonation/start` | `SystemAdminOnly` | Start impersonating a tenant user. Requires `X-Tenant-Id` header and active `refresh_token` cookie. |
+| POST | `/impersonation/stop` | Authenticated | End impersonation. Requires `impersonation_restore_token` cookie. Restores admin session. |
+
+### Start impersonation request
+
+```json
+{ "targetUserId": "<guid>" }
+```
+
+### Start impersonation response
+
+```json
+{
+  "userId": "...",
+  "email": "jane@acme.com",
+  "fullName": "Jane Smith",
+  "systemRole": "TenantUser",
+  "roles": ["SalesRep"],
+  "expiresAt": "2026-07-06T15:30:00Z"
+}
+```
+
+Cookies set: `access_token` = target user JWT, `impersonation_restore_token` = admin refresh token. The `refresh_token` cookie is cleared (no token refresh during impersonation).
+
+### Stop impersonation response
+
+```json
+{
+  "userId": "...",
+  "email": "admin@system.com",
+  "fullName": "System Admin",
+  "systemRole": "SystemAdmin",
+  "expiresAt": "2026-07-06T15:45:00Z"
+}
+```
+
+Cookies set: `access_token` = admin JWT, `refresh_token` = new admin refresh token. `impersonation_restore_token` cookie cleared.
 
 ---
 
 ## Activity Logs
 
+**SystemAdmin only** — TenantAdmin and TenantUser cannot access audit logs.
+
 | Method | Path | Auth | Notes |
 |--------|------|------|-------|
-| GET | `/activity-logs` | `AuditLogs.View` (TenantAdmin) | Paginated log of all tenant actions |
+| GET | `/activity-logs` | `SystemAdminOnly` | Paginated log of tenant actions |
 
 Query params: `page`, `pageSize`, `userId` (GUID), `module`, `action`, `dateFrom` (ISO), `dateTo` (ISO).
 
-SystemAdmin can also call this endpoint; supply `X-Tenant-Id` to scope to a specific tenant or omit to see all tenants' logs.
+Supply `X-Tenant-Id` header to scope to a specific tenant. Omit the header to see all tenants' logs.
 
 Response item:
 ```json
 {
   "id": "...",
+  "tenantId": "...",
+  "tenantName": "Acme Corp",
   "userId": "...",
   "userDisplayName": "Jane Doe",
   "userEmail": "jane@example.com",
@@ -613,7 +686,8 @@ Use **Authorize** with `Bearer {accessToken}` from login.
 | Area | Methods |
 |------|---------|
 | Auth | `POST login`, `refresh`, `logout`, `verify-email`, `resend-verification`, `forgot-password`, `reset-password`, `GET me` |
-| Users | `GET`, `GET {id}`, `GET current`, `POST`, `POST direct-create`, `POST invite`, `PUT`, `PUT current`, `POST current/change-password`, `DELETE`, `POST {id}/resend`, `POST {id}/activate`, `POST {id}/deactivate`, `GET invitations`, `POST invitations/{id}/revoke`, `POST invitations/{id}/resend` |
+| Impersonation | `POST start`, `POST stop` |
+| Users | `GET`, `GET {id}`, `GET current`, `POST`, `POST direct-create`, `POST invite`, `PUT`, `PUT current`, `POST current/change-password`, `DELETE`, `POST {id}/resend`, `POST {id}/activate`, `POST {id}/deactivate`, `GET invitations`, `POST invitations/{id}/revoke`, `POST invitations/{id}/resend` | Responses include `lastLoginAt` (ISO datetime or null) |
 | Tenant Admins | `GET`, `GET {id}`, `POST`, `PUT {id}`, `DELETE {id}`, `POST invite`, `POST {id}/resend`, `POST {id}/activate`, `POST {id}/deactivate`, `GET invitations`, `POST invitations/{id}/revoke`, `POST invitations/{id}/resend` |
 | Tenants | `GET`, `GET {id}`, `GET current`, `POST`, `PUT`, `DELETE` |
 | Roles | `GET`, `GET {name}`, `GET current`, `POST`, `PUT`, `DELETE {name}` |

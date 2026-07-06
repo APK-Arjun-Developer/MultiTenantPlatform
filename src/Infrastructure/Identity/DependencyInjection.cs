@@ -163,6 +163,7 @@ public static class DependencyInjection
         services.AddScoped<IRefreshTokenService, RefreshTokenService>();
         services.AddScoped<IPasswordResetService, PasswordResetService>();
         services.AddScoped<IEmailVerificationService, EmailVerificationService>();
+        services.AddScoped<IImpersonationService, ImpersonationService>();
 
         services.AddHttpContextAccessor();
         services.AddMemoryCache();

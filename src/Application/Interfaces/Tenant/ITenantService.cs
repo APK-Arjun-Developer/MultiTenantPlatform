@@ -1,6 +1,7 @@
 using Application.DTOs.Common;
 using Application.DTOs.Tenant;
 using Domain.Enums;
+using Microsoft.AspNetCore.Http;
 
 namespace Application.Interfaces.Tenant;
 
@@ -19,6 +20,10 @@ public interface ITenantService
     Task<TenantResponse> UpdateCurrentTenantAddressAsync(UpdateCurrentTenantAddressRequest request);
 
     Task<TenantResponse> UpdateTenantSettingsAsync(UpdateTenantSettingsRequest request);
+
+    Task<TenantResponse> UploadTenantLogoAsync(IFormFile file);
+
+    Task<TenantResponse> RemoveTenantLogoAsync();
 
     Task DeleteAsync(DeleteTenantRequest request);
 }

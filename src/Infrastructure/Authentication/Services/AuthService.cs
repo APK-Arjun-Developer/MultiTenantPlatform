@@ -226,14 +226,27 @@ public class AuthService : IAuthService
             ? ((Domain.Enums.SystemRole)int.Parse(systemRoleClaim)).ToString()
             : nameof(Domain.Enums.SystemRole.TenantUser);
 
-        return new MeResponse
+        ImpersonatedByInfo? impersonatedBy = null;
+        var impersonatedByIdClaim = principal.FindFirstValue("impersonated_by_id");
+        if (impersonatedByIdClaim != null && Guid.TryParse(impersonatedByIdClaim, out var impersonatedById))
+        {
+            impersonatedBy = new ImpersonatedByInfo
+            {
+                Id = impersonatedById,
+                Email = principal.FindFirstValue("impersonated_by_email") ?? string.Empty,
+                FullName = principal.FindFirstValue("impersonated_by_name") ?? string.Empty,
+            };
+        }
+
+        return await Task.FromResult(new MeResponse
         {
             Id = userId,
             Email = email,
             FullName = fullName,
             Roles = roles,
             SystemRole = systemRole,
-        };
+            ImpersonatedBy = impersonatedBy,
+        });
     }
 
     private async Task<IList<(Guid Id, string Name)>> GetUserRolesWithIdsAsync(ApplicationUser user)

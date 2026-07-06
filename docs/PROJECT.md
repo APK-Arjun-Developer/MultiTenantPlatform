@@ -78,9 +78,10 @@ Custom roles live in the `Roles` table and are always scoped to a single `Tenant
 | `Users.*`, `Roles.*` (includes `.List` and `.View` as separate granular permissions) | TenantAdmin | TenantAdmin, SystemAdmin |
 | `Onboarding.*` | TenantAdmin | TenantAdmin, SystemAdmin |
 | `Files.Delete` | TenantAdmin | TenantAdmin, SystemAdmin |
-| `AuditLogs.View` | TenantAdmin | TenantAdmin, SystemAdmin |
 | `Tenants.*` | SystemAdmin | SystemAdmin only |
 | `Subscriptions.*` | SystemAdmin | SystemAdmin only |
+
+Activity logs (`GET /activity-logs`) are accessible to **SystemAdmin only** via policy (`SystemAdminOnly`) — not a permission, no TenantAdmin access.
 
 Permission names are defined in `Application.Common.PermissionNames`. The full catalog is available at `GET /api/v1/permissions`.
 
@@ -155,8 +156,19 @@ Tokens are set as **HttpOnly cookies** (`access_token`, `refresh_token`). The ac
 | `full_name` | Display name |
 | `role_ids` | GUIDs of custom roles assigned to the user |
 | `email` | User email |
+| `impersonated_by_id` | (impersonation sessions only) Admin's GUID |
+| `impersonated_by_email` | (impersonation sessions only) Admin's email |
+| `impersonated_by_name` | (impersonation sessions only) Admin's full name |
 
 Permissions are **not in the JWT** — loaded from DB per request (cached).
+
+### Impersonation
+
+SystemAdmin can impersonate any active TenantUser within a tenant via `POST /api/v1/impersonation/start`. This generates a short-lived impersonation JWT (normal access token lifetime) with `impersonated_by_*` claims. The admin's `refresh_token` is saved as an `impersonation_restore_token` HttpOnly cookie and `POST /api/v1/impersonation/stop` uses it to restore the admin's session. Token refresh is disabled during impersonation (no `refresh_token` cookie).
+
+### Password change session invalidation
+
+When a user changes their password via `PUT /api/v1/users/me/password`, **all existing refresh tokens for that user are immediately revoked** (`RevokeAllForUserAsync`). The current access token remains valid until it naturally expires (≤ 15 min dev / ≤ 60 min prod). This ensures that if an account is compromised and the password is changed, all attacker-held sessions become invalid on the next refresh attempt.
 
 ### Login rules
 

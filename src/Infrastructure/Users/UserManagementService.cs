@@ -4,6 +4,7 @@ using Application.DTOs.Common;
 using Application.DTOs.Users;
 using Application.Exceptions;
 using Application.Interfaces.ActivityLogs;
+using Application.Interfaces.Authentication;
 using Application.Interfaces.Caching;
 using Application.Interfaces.Email;
 using Application.Interfaces.Files;
@@ -35,6 +36,8 @@ public class UserManagementService : TenantScopedService, IUserManagementService
     private readonly IEmailService _emailService;
     private readonly IFileService _fileService;
     private readonly IFileStorageService _fileStorageService;
+    private readonly IRefreshTokenService _refreshTokenService;
+    private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly string _appBaseUrl;
 
     private static readonly TimeSpan SetupTokenLifetime = TimeSpan.FromDays(7);
@@ -57,6 +60,8 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         IEmailService emailService,
         IFileService fileService,
         IFileStorageService fileStorageService,
+        IRefreshTokenService refreshTokenService,
+        IHttpContextAccessor httpContextAccessor,
         IConfiguration configuration)
         : base(currentTenantService)
     {
@@ -69,6 +74,8 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         _emailService = emailService;
         _fileService = fileService;
         _fileStorageService = fileStorageService;
+        _refreshTokenService = refreshTokenService;
+        _httpContextAccessor = httpContextAccessor;
         _appBaseUrl = configuration["AppBaseUrl"] ?? "https://app.example.com";
     }
 
@@ -485,6 +492,9 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         user.PasswordSetAt = DateTime.UtcNow;
         user.UpdatedAt = DateTime.UtcNow;
         await _userManager.UpdateAsync(user);
+
+        var ip = _httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        await _refreshTokenService.RevokeAllForUserAsync(user.Id, ip);
 
         await LogActivityAsync(ActivityActions.Users.Updated, "Changed own password.");
     }
@@ -1023,6 +1033,7 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             Address = AddressFormatter.ToResponse(address),
             Tenant = includeTenantDetails ? tenantDetails : null,
             CreatedVia = user.CreatedVia,
+            LastLoginAt = user.LastLoginAt,
             HasPendingSetup = hasPendingSetup,
         };
 

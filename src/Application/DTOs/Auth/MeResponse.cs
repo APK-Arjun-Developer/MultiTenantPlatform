@@ -13,4 +13,13 @@ public class MeResponse
     public string SystemRole { get; set; } = default!;
 
     public IReadOnlyList<string> Permissions { get; set; } = [];
+
+    public ImpersonatedByInfo? ImpersonatedBy { get; set; }
+}
+
+public class ImpersonatedByInfo
+{
+    public Guid Id { get; set; }
+    public string Email { get; set; } = default!;
+    public string FullName { get; set; } = default!;
 }

@@ -6,6 +6,7 @@ using Application.DTOs.Tenant;
 using Application.Exceptions;
 using Application.Interfaces.Authentication;
 using Application.Interfaces.Email;
+using Application.Interfaces.Files;
 using Application.Options;
 using Domain.Entities;
 using Domain.Enums;
@@ -19,6 +20,7 @@ using Infrastructure.Identity.Entities;
 using Infrastructure.Onboarding;
 using Infrastructure.Persistence;
 using Infrastructure.Persistence.Contexts;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -35,6 +37,7 @@ public class TenantService : TenantScopedService, ITenantService
     private readonly CacheOptions _cacheOptions;
     private readonly IIdentityRoleService _identityRoleService;
     private readonly IEmailService _emailService;
+    private readonly IFileService _fileService;
     private readonly string _appBaseUrl;
 
     private static readonly TimeSpan SetupTokenLifetime = TimeSpan.FromDays(7);
@@ -48,6 +51,7 @@ public class TenantService : TenantScopedService, ITenantService
         IOptions<CacheOptions> cacheOptions,
         IIdentityRoleService identityRoleService,
         IEmailService emailService,
+        IFileService fileService,
         IConfiguration configuration)
         : base(currentTenantService)
     {
@@ -58,6 +62,7 @@ public class TenantService : TenantScopedService, ITenantService
         _cacheOptions = cacheOptions.Value;
         _identityRoleService = identityRoleService;
         _emailService = emailService;
+        _fileService = fileService;
         _appBaseUrl = configuration["AppBaseUrl"] ?? "https://app.example.com";
     }
 
@@ -523,6 +528,61 @@ public class TenantService : TenantScopedService, ITenantService
             await transaction.RollbackAsync();
             throw;
         }
+    }
+
+    public async Task<TenantResponse> UploadTenantLogoAsync(IFormFile file)
+    {
+        var tenantId = RequireTenantId();
+
+        var tenant = await _context.Tenants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == tenantId && t.DeletedAt == null)
+            ?? throw new NotFoundException("Tenant not found.");
+
+        var previousFileId = tenant.ProfileFileId;
+        var uploaded = await _fileService.UploadAsync(file);
+
+        tenant.ProfileFileId = uploaded.Id;
+        tenant.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        _cache.InvalidateTenant(tenant.Id);
+
+        if (previousFileId.HasValue)
+        {
+            try { await _fileService.DeleteAsync(previousFileId.Value); }
+            catch { /* old file already gone */ }
+        }
+
+        await LogActivityAsync(ActivityActions.Tenants.Updated, $"Updated logo for tenant '{tenant.Name}'.");
+
+        var address = await AddressHelper.GetTenantAddressAsync(_context, tenant.Id);
+        return MapToResponse(tenant, address);
+    }
+
+    public async Task<TenantResponse> RemoveTenantLogoAsync()
+    {
+        var tenantId = RequireTenantId();
+
+        var tenant = await _context.Tenants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == tenantId && t.DeletedAt == null)
+            ?? throw new NotFoundException("Tenant not found.");
+
+        if (tenant.ProfileFileId.HasValue)
+        {
+            try { await _fileService.DeleteAsync(tenant.ProfileFileId.Value); }
+            catch { /* file already gone */ }
+            tenant.ProfileFileId = null;
+            tenant.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+            _cache.InvalidateTenant(tenant.Id);
+        }
+
+        await LogActivityAsync(ActivityActions.Tenants.Updated, $"Removed logo for tenant '{tenant.Name}'.");
+
+        var address = await AddressHelper.GetTenantAddressAsync(_context, tenant.Id);
+        return MapToResponse(tenant, address);
     }
 
     private async Task ApplyProfileFileUpdateAsync(

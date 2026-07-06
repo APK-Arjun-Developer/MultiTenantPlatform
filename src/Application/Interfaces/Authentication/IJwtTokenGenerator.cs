@@ -12,5 +12,16 @@ public interface IJwtTokenGenerator
         SystemRole systemRole,
         IList<(Guid Id, string Name)> roles);
 
+    string GenerateImpersonationToken(
+        Guid userId,
+        string email,
+        string fullName,
+        Guid tenantId,
+        SystemRole systemRole,
+        IList<(Guid Id, string Name)> roles,
+        Guid impersonatedById,
+        string impersonatedByEmail,
+        string impersonatedByFullName);
+
     DateTime ComputeAccessTokenExpiryUtc();
 }

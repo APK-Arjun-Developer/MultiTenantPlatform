@@ -39,6 +39,27 @@ public class TenantSettingsController : ApiControllerBase
         return OkEnvelope(response, "Tenant settings updated.");
     }
 
+    [HttpPost("logo")]
+    [RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<IActionResult> UploadLogo(IFormFile file)
+    {
+        if (!IsTenantAdmin())
+            return Forbid();
+
+        var response = await _tenantService.UploadTenantLogoAsync(file);
+        return OkEnvelope(response, "Company logo updated.");
+    }
+
+    [HttpDelete("logo")]
+    public async Task<IActionResult> RemoveLogo()
+    {
+        if (!IsTenantAdmin())
+            return Forbid();
+
+        var response = await _tenantService.RemoveTenantLogoAsync();
+        return OkEnvelope(response, "Company logo removed.");
+    }
+
     private bool IsTenantAdmin()
     {
         var systemRoleClaim = User.FindFirstValue("system_role");
