@@ -74,25 +74,16 @@ public class OnboardingService : TenantScopedService, IOnboardingService
                 cancellationToken)
             ?? throw new NotFoundException("Tenant not found.");
 
-        var softDeleted = await FindSoftDeletedUserAsync(request.Email, tenant.Id, cancellationToken);
+        await EnsureEmailNotActiveInTenantAsync(request.Email, tenant.Id, cancellationToken);
 
         await using var tx = await _context.Database.BeginTransactionAsync(cancellationToken);
 
         try
         {
-            ApplicationUser user;
-
-            if (softDeleted != null)
-            {
-                await RestoreUserForOnboardingAsync(softDeleted, request.FullName, SystemRole.TenantAdmin, [], cancellationToken);
-                user = softDeleted;
-            }
-            else
-            {
-                // TenantAdmin permissions come from SystemRole — no role table entry needed.
-                user = CreateInactiveUser(request.FullName, request.Email, tenant.Id, SystemRole.TenantAdmin);
-                await CreateUserOrThrowAsync(user);
-            }
+            // Always create a fresh record — the filtered unique index allows new rows for deleted emails.
+            // TenantAdmin permissions come from SystemRole — no role table entry needed.
+            var user = CreateInactiveUser(request.FullName, request.Email, tenant.Id, SystemRole.TenantAdmin);
+            await CreateUserOrThrowAsync(user);
 
             var (rawToken, setupUrl) = await IssueSetupTokenAsync(user, cancellationToken);
 
@@ -226,7 +217,7 @@ public class OnboardingService : TenantScopedService, IOnboardingService
     {
         var tenantId = RequireTenantId();
 
-        var softDeleted = await FindSoftDeletedUserAsync(request.Email, tenantId, cancellationToken);
+        await EnsureEmailNotActiveInTenantAsync(request.Email, tenantId, cancellationToken);
 
         var roles = await ResolveRolesByIdAsync(tenantId, request.RoleIds, cancellationToken);
 
@@ -234,21 +225,12 @@ public class OnboardingService : TenantScopedService, IOnboardingService
 
         try
         {
-            ApplicationUser user;
+            // Always create a fresh record — the filtered unique index allows new rows for deleted emails.
+            var user = CreateInactiveUser(request.FullName, request.Email, tenantId, SystemRole.TenantUser);
+            await CreateUserOrThrowAsync(user);
 
-            if (softDeleted != null)
-            {
-                await RestoreUserForOnboardingAsync(softDeleted, request.FullName, SystemRole.TenantUser, roles, cancellationToken);
-                user = softDeleted;
-            }
-            else
-            {
-                user = CreateInactiveUser(request.FullName, request.Email, tenantId, SystemRole.TenantUser);
-                await CreateUserOrThrowAsync(user);
-
-                foreach (var role in roles)
-                    await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
-            }
+            foreach (var role in roles)
+                await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
 
             var (_, setupUrl) = await IssueSetupTokenAsync(user, cancellationToken);
 
@@ -383,9 +365,9 @@ public class OnboardingService : TenantScopedService, IOnboardingService
         return setupUrl;
     }
 
-    // Returns a soft-deleted user if one exists (restore path), or null (create path).
-    // Throws ConflictException if an active (non-deleted) user with that email already exists.
-    private async Task<ApplicationUser?> FindSoftDeletedUserAsync(
+    // Throws ConflictException if an active user with that email already exists in the tenant.
+    // Soft-deleted records are not blocked — the DB unique index excludes them.
+    private async Task EnsureEmailNotActiveInTenantAsync(
         string email,
         Guid tenantId,
         CancellationToken cancellationToken)
@@ -397,46 +379,6 @@ public class OnboardingService : TenantScopedService, IOnboardingService
 
         if (activeExists)
             throw new ConflictException($"A user with email '{email}' already exists in this tenant.");
-
-        return await _context.Users
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(
-                u => u.NormalizedEmail == normalised && u.TenantId == tenantId && u.DeletedAt != null,
-                cancellationToken);
-    }
-
-    // Restores a soft-deleted user to an inactive pending-setup state with fresh credentials/roles.
-    private async Task RestoreUserForOnboardingAsync(
-        ApplicationUser user,
-        string fullName,
-        SystemRole systemRole,
-        List<ApplicationRole> roles,
-        CancellationToken cancellationToken)
-    {
-        user.FullName = fullName;
-        user.SystemRole = systemRole;
-        user.IsActive = false;
-        user.EmailConfirmed = false;
-        user.DeletedAt = null;
-        user.CreatedVia = CreatedVia.Direct;
-        user.SecurityStamp = Guid.NewGuid().ToString();
-        user.ConcurrencyStamp = Guid.NewGuid().ToString();
-        user.PasswordHash = _userManager.PasswordHasher.HashPassword(user, $"Placeholder!{Guid.NewGuid():N}");
-        user.UpdatedAt = DateTime.UtcNow;
-
-        // Replace role assignments
-        var existingRoles = await _context.Set<IdentityUserRole<Guid>>()
-            .Where(ur => ur.UserId == user.Id)
-            .ToListAsync(cancellationToken);
-        _context.Set<IdentityUserRole<Guid>>().RemoveRange(existingRoles);
-        await _context.SaveChangesAsync(cancellationToken);
-
-        foreach (var role in roles)
-            await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
-
-        var result = await _userManager.UpdateAsync(user);
-        if (!result.Succeeded)
-            throw new InvalidOperationException(string.Join(", ", result.Errors.Select(e => e.Description)));
     }
 
     private async Task<List<ApplicationRole>> ResolveRolesByIdAsync(

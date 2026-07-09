@@ -102,6 +102,23 @@ public class TenantController : ApiControllerBase
         return OkEnvelope("Tenant deleted.");
     }
 
+    [HttpPost("{id:guid}/logo")]
+    [HasPermission(PermissionNames.TenantsEdit)]
+    [RequestSizeLimit(10 * 1024 * 1024)]
+    public async Task<IActionResult> UploadLogo(Guid id, IFormFile file)
+    {
+        var response = await _tenantService.UploadTenantLogoByIdAsync(id, file);
+        return OkEnvelope(response, "Company logo updated.");
+    }
+
+    [HttpDelete("{id:guid}/logo")]
+    [HasPermission(PermissionNames.TenantsEdit)]
+    public async Task<IActionResult> RemoveLogo(Guid id)
+    {
+        var response = await _tenantService.RemoveTenantLogoByIdAsync(id);
+        return OkEnvelope(response, "Company logo removed.");
+    }
+
     [HttpGet("invitations")]
     [HasPermission(PermissionNames.TenantsList)]
     public async Task<IActionResult> GetInvitations(

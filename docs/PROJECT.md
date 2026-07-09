@@ -176,6 +176,7 @@ When a user changes their password via `PUT /api/v1/users/me/password`, **all ex
 - Inactive tenants are detected by `UserStatusMiddleware` after login, not during credential lookup.
 - Login blocks users with `EmailConfirmed = false` ("Your email address has not been verified").
 - Login blocks users with `IsActive = false` ("Your account has been deactivated. Please contact your administrator.").
+- Login detects soft-deleted users (`DeletedAt != null`) via `IgnoreQueryFilters()` after the normal query returns null, and returns the same deactivated message. The EF global filter hides deleted records, so this secondary check is required to distinguish "account deleted" from "no account".
 - **Every authenticated request** also runs active checks via `UserStatusMiddleware` (runs after `UseAuthentication()`, before `TenantMiddleware`):
   - **User active**: checks `IsActive && DeletedAt == null` (cached 5 min per user; invalidated on deactivate/delete).
   - **Tenant active**: for non-SystemAdmin users, also checks tenant `IsActive && DeletedAt == null` (cached 5 min per tenant; invalidated on tenant update/delete).
@@ -303,6 +304,8 @@ Add a seed: new class in `Persistence/Seed/Seeds/`, register in `Persistence/Dep
 - **Address**: separate `Addresses` row linked to user or tenant; responses include `line1`, `city`, … and `fullAddress`
 - Set at creation: optional `address` field accepted by `POST /tenant-admins`, `POST /users`, `POST /users/direct-create`, `POST /invitations/accept/tenant-admin`, `POST /invitations/accept/user`, `POST /account-setup/set-password`
 - Update after creation via `PUT /users`, `PUT /users/current`, or `PUT /tenants` with `address` / `clearAddress`
+- **Admin avatar management**: `POST /users/{id}/avatar` / `DELETE /users/{id}/avatar` (`Users.Edit`) — admin upload/remove for any user's avatar without switching tenant context
+- **Admin tenant logo management**: `POST /tenants/{id}/logo` / `DELETE /tenants/{id}/logo` (`Tenants.Edit`) — SystemAdmin upload/remove for any tenant's logo (separate from `POST /tenant-settings/logo` which is TenantAdmin self-service)
 
 ---
 
@@ -358,7 +361,7 @@ Errors are mapped by `ExceptionHandlingMiddleware` to the same envelope.
 
 ## Cross-cutting behavior
 
-- **Soft delete** — `DeletedAt` / `DeletedBy`; global query filters. Unique indexes on `Users (Email, TenantId)` and `Users (NormalizedUserName)` include a `WHERE DeletedAt IS NULL` filter so soft-deleted records don't block re-creation. All create paths (users via `OnboardingService` / `UserManagementService`, tenants via `TenantService.OnboardTenantAsync`) detect a matching soft-deleted record and restore it in place rather than inserting a new row.
+- **Soft delete** — `DeletedAt` / `DeletedBy`; global query filters. Unique indexes on `Users (Email, TenantId)` and `Users (NormalizedUserName)` include a `WHERE DeletedAt IS NULL` filter so soft-deleted records don't block re-creation. Creating a user with the same email after deletion always inserts a **fresh record** with a new ID — deleted records are left untouched as audit history. `OnboardingService` and `UserManagementService` check for existing **active** users only; a conflict exception is raised if an active user with that email already exists in the tenant.
 - **CreatedVia** — `CreatedVia` enum (`Direct` = 1, `Invitation` = 2) on both `ApplicationUser` and `Tenant` tracks whether the record was created directly by an admin or via an invitation link. Set at creation time across all paths: `Direct` for onboarding/direct-create flows, `Invitation` for all three `InvitationService.Accept*` flows (including the tenant created by `AcceptTenantCreationInvitationAsync`). Existing DB rows default to `Direct`.
 - **Audit fields** — stamped on `SaveChangesAsync` from JWT `user_id`
 - **Activity logging** — auth and CRUD events to `ActivityLogs`

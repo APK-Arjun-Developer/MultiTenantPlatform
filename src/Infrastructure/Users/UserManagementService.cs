@@ -106,69 +106,34 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         if (activeExists)
             throw new ConflictException("User email already exists.");
 
-        var softDeleted = await _context.Users
-            .IgnoreQueryFilters()
-            .FirstOrDefaultAsync(u => u.NormalizedEmail == normalised && u.TenantId == tenantId && u.DeletedAt != null);
+        // Always create a fresh user record. The unique index on (Email, TenantId) filters
+        // out soft-deleted rows, so a new insert is safe even if a deleted record exists.
 
-        ApplicationUser user;
-
-        if (softDeleted != null)
+        // Created inactive — user sets their own password via the account-setup email.
+        var user = new ApplicationUser
         {
-            // Restore the soft-deleted record instead of inserting a new one.
-            softDeleted.FullName = request.FullName;
-            softDeleted.SystemRole = SystemRole.TenantUser;
-            softDeleted.IsActive = false;
-            softDeleted.EmailConfirmed = false;
-            softDeleted.DeletedAt = null;
-            softDeleted.CreatedVia = CreatedVia.Direct;
-            softDeleted.SecurityStamp = Guid.NewGuid().ToString();
-            softDeleted.ConcurrencyStamp = Guid.NewGuid().ToString();
-            softDeleted.PasswordHash = _userManager.PasswordHasher.HashPassword(softDeleted, $"Placeholder!{Guid.NewGuid():N}");
-            softDeleted.UpdatedAt = DateTime.UtcNow;
+            Id = Guid.NewGuid(),
+            TenantId = tenantId,
+            SystemRole = SystemRole.TenantUser,
+            FullName = request.FullName,
+            Email = request.Email,
+            UserName = request.Email,
+            NormalizedEmail = normalised,
+            NormalizedUserName = normalised,
+            EmailConfirmed = false,
+            IsActive = false,
+            CreatedVia = CreatedVia.Direct,
+            CreatedAt = DateTime.UtcNow
+        };
 
-            var existingRoles = await _context.Set<IdentityUserRole<Guid>>()
-                .Where(ur => ur.UserId == softDeleted.Id)
-                .ToListAsync();
-            _context.Set<IdentityUserRole<Guid>>().RemoveRange(existingRoles);
-            await _context.SaveChangesAsync();
+        var placeholder = $"Placeholder!{Guid.NewGuid():N}";
+        var result = await _userManager.CreateAsync(user, placeholder);
 
-            foreach (var role in roles)
-                await _identityRoleService.AddUserToRoleAsync(softDeleted.Id, role.Id);
+        if (!result.Succeeded)
+            throw new InvalidOperationException(string.Join(", ", result.Errors.Select(e => e.Description)));
 
-            var updateResult = await _userManager.UpdateAsync(softDeleted);
-            if (!updateResult.Succeeded)
-                throw new InvalidOperationException(string.Join(", ", updateResult.Errors.Select(e => e.Description)));
-
-            user = softDeleted;
-        }
-        else
-        {
-            // Created inactive — user sets their own password via the account-setup email.
-            user = new ApplicationUser
-            {
-                Id = Guid.NewGuid(),
-                TenantId = tenantId,
-                SystemRole = SystemRole.TenantUser,
-                FullName = request.FullName,
-                Email = request.Email,
-                UserName = request.Email,
-                NormalizedEmail = normalised,
-                NormalizedUserName = normalised,
-                EmailConfirmed = false,
-                IsActive = false,
-                CreatedVia = CreatedVia.Direct,
-                CreatedAt = DateTime.UtcNow
-            };
-
-            var placeholder = $"Placeholder!{Guid.NewGuid():N}";
-            var result = await _userManager.CreateAsync(user, placeholder);
-
-            if (!result.Succeeded)
-                throw new InvalidOperationException(string.Join(", ", result.Errors.Select(e => e.Description)));
-
-            foreach (var role in roles)
-                await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
-        }
+        foreach (var role in roles)
+            await _identityRoleService.AddUserToRoleAsync(user.Id, role.Id);
 
         // Invalidate any prior unused tokens, then issue a fresh one.
         var stale = await _context.AccountSetupTokens
@@ -722,6 +687,18 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             throw new ConflictException("You cannot delete your own account.");
         }
 
+        // Block deletion if this is the last admin for the tenant
+        var remainingAdminCount = await _userManager.Users
+            .CountAsync(u => u.TenantId == user.TenantId
+                          && u.SystemRole == SystemRole.TenantAdmin
+                          && u.Id != id);
+
+        if (remainingAdminCount == 0)
+        {
+            throw new ConflictException(
+                "Cannot delete the last tenant admin. The tenant must have at least one active admin.");
+        }
+
         user.DeletedAt = DateTime.UtcNow;
 
         var result = await _userManager.UpdateAsync(user);
@@ -786,6 +763,69 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         await LogActivityAsync(ActivityActions.Users.Updated, "Removed profile picture.");
 
         return await GetCurrentUserAsync();
+    }
+
+    public async Task<UserResponse> UploadUserAvatarByIdAsync(Guid userId, IFormFile file)
+    {
+        var extension = Path.GetExtension(file.FileName);
+        if (!AvatarExtensions.Contains(extension))
+            throw new InvalidOperationException("Profile picture must be a JPEG, PNG, GIF, or WebP image.");
+
+        if (file.Length > AvatarMaxBytes)
+            throw new InvalidOperationException("Profile picture must be smaller than 5 MB.");
+
+        using (var dimensionStream = file.OpenReadStream())
+        {
+            var (width, height) = ReadImageDimensions(dimensionStream);
+            if (width <= 0 || height <= 0)
+                throw new InvalidOperationException("Could not read image dimensions. Please upload a valid image file.");
+            if (width != height)
+                throw new InvalidOperationException(
+                    $"Profile picture must be square ({width}×{height} is not square). Please crop your image before uploading.");
+        }
+
+        var user = await _userManager.Users
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == userId && u.DeletedAt == null)
+            ?? throw new NotFoundException("User not found.");
+
+        var previousFileId = user.ProfileFileId;
+        var uploaded = await _fileService.UploadAsync(file);
+
+        user.ProfileFileId = uploaded.Id;
+        user.UpdatedAt = DateTime.UtcNow;
+        await _userManager.UpdateAsync(user);
+
+        if (previousFileId.HasValue)
+        {
+            try { await _fileService.DeleteAsync(previousFileId.Value); }
+            catch { /* old file already gone */ }
+        }
+
+        await LogActivityAsync(ActivityActions.Users.Updated, $"Uploaded profile picture for user '{user.Email}'.");
+
+        return await MapToUserResponseAsync(user, false);
+    }
+
+    public async Task<UserResponse> RemoveUserAvatarByIdAsync(Guid userId)
+    {
+        var user = await _userManager.Users
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(u => u.Id == userId && u.DeletedAt == null)
+            ?? throw new NotFoundException("User not found.");
+
+        if (user.ProfileFileId.HasValue)
+        {
+            try { await _fileService.DeleteAsync(user.ProfileFileId.Value); }
+            catch { /* file already gone */ }
+            user.ProfileFileId = null;
+            user.UpdatedAt = DateTime.UtcNow;
+            await _userManager.UpdateAsync(user);
+        }
+
+        await LogActivityAsync(ActivityActions.Users.Updated, $"Removed profile picture for user '{user.Email}'.");
+
+        return await MapToUserResponseAsync(user, false);
     }
 
     public async Task<(Stream Stream, string ContentType, string FileName)?> GetUserAvatarAsync(Guid userId)

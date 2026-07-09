@@ -585,6 +585,57 @@ public class TenantService : TenantScopedService, ITenantService
         return MapToResponse(tenant, address);
     }
 
+    public async Task<TenantResponse> UploadTenantLogoByIdAsync(Guid tenantId, IFormFile file)
+    {
+        var tenant = await _context.Tenants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == tenantId && t.DeletedAt == null)
+            ?? throw new NotFoundException("Tenant not found.");
+
+        var previousFileId = tenant.ProfileFileId;
+        var uploaded = await _fileService.UploadAsync(file);
+
+        tenant.ProfileFileId = uploaded.Id;
+        tenant.UpdatedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        _cache.InvalidateTenant(tenant.Id);
+
+        if (previousFileId.HasValue)
+        {
+            try { await _fileService.DeleteAsync(previousFileId.Value); }
+            catch { /* old file already gone */ }
+        }
+
+        await LogActivityAsync(ActivityActions.Tenants.Updated, $"Updated logo for tenant '{tenant.Name}'.");
+
+        var address = await AddressHelper.GetTenantAddressAsync(_context, tenant.Id);
+        return MapToResponse(tenant, address);
+    }
+
+    public async Task<TenantResponse> RemoveTenantLogoByIdAsync(Guid tenantId)
+    {
+        var tenant = await _context.Tenants
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(t => t.Id == tenantId && t.DeletedAt == null)
+            ?? throw new NotFoundException("Tenant not found.");
+
+        if (tenant.ProfileFileId.HasValue)
+        {
+            try { await _fileService.DeleteAsync(tenant.ProfileFileId.Value); }
+            catch { /* file already gone */ }
+            tenant.ProfileFileId = null;
+            tenant.UpdatedAt = DateTime.UtcNow;
+            await _context.SaveChangesAsync();
+            _cache.InvalidateTenant(tenant.Id);
+        }
+
+        await LogActivityAsync(ActivityActions.Tenants.Updated, $"Removed logo for tenant '{tenant.Name}'.");
+
+        var address = await AddressHelper.GetTenantAddressAsync(_context, tenant.Id);
+        return MapToResponse(tenant, address);
+    }
+
     private async Task ApplyProfileFileUpdateAsync(
         Domain.Entities.Tenant tenant,
         Guid? profileFileId,

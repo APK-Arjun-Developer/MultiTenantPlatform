@@ -29,6 +29,10 @@ public interface IUserManagementService
 
     Task<(Stream Stream, string ContentType, string FileName)?> GetUserAvatarAsync(Guid userId);
 
+    Task<UserResponse> UploadUserAvatarByIdAsync(Guid userId, IFormFile file);
+
+    Task<UserResponse> RemoveUserAvatarByIdAsync(Guid userId);
+
     // ── Tenant Admin management (System Admin scope) ──────────────────────────
 
     Task<PagedResponse<UserResponse>> GetTenantAdminsAsync(int page, int pageSize, string? search = null, Guid? tenantId = null, bool? isActive = null, CreatedVia? createdVia = null);

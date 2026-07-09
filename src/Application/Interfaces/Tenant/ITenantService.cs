@@ -25,5 +25,9 @@ public interface ITenantService
 
     Task<TenantResponse> RemoveTenantLogoAsync();
 
+    Task<TenantResponse> UploadTenantLogoByIdAsync(Guid tenantId, IFormFile file);
+
+    Task<TenantResponse> RemoveTenantLogoByIdAsync(Guid tenantId);
+
     Task DeleteAsync(DeleteTenantRequest request);
 }

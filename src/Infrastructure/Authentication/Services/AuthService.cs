@@ -210,8 +210,23 @@ public class AuthService : IAuthService
     private async Task<ApplicationUser?> FindUserForLoginAsync(LoginRequest request)
     {
         var normalizedEmail = request.Email.ToUpperInvariant();
-        return await _userManager.Users
+
+        var user = await _userManager.Users
             .FirstOrDefaultAsync(u => u.NormalizedEmail == normalizedEmail);
+
+        if (user != null)
+            return user;
+
+        // EF global filter hides soft-deleted users — surface a clear message instead of "Invalid credentials."
+        var isDeleted = await _context.Users
+            .IgnoreQueryFilters()
+            .AnyAsync(u => u.NormalizedEmail == normalizedEmail && u.DeletedAt != null);
+
+        if (isDeleted)
+            throw new InvalidOperationException(
+                "Your account has been deactivated. Please contact your administrator.");
+
+        return null;
     }
 
     public async Task<MeResponse> GetMeAsync(ClaimsPrincipal principal)
