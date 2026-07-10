@@ -21,8 +21,6 @@ public class UserResponse
 
     public Guid? ProfileFileId { get; set; }
 
-    public string? ProfileUrl { get; set; }
-
     public AddressResponse? Address { get; set; }
 
     public UserTenantDetails? Tenant { get; set; }
@@ -44,8 +42,6 @@ public class UserTenantDetails
     public bool IsActive { get; set; }
 
     public Guid? ProfileFileId { get; set; }
-
-    public string? ProfileUrl { get; set; }
 
     public AddressResponse? Address { get; set; }
 }

@@ -664,9 +664,6 @@ public class TenantService : TenantScopedService, ITenantService
         tenant.ProfileFileId = profileFileId.Value;
     }
 
-    private static string? BuildProfileUrl(Guid? profileFileId) =>
-        profileFileId.HasValue ? $"/api/v1/files/{profileFileId.Value}/download" : null;
-
     private static TenantResponse MapToResponse(
         Domain.Entities.Tenant tenant,
         Address? address = null,
@@ -680,7 +677,6 @@ public class TenantService : TenantScopedService, ITenantService
             IsActive = tenant.IsActive,
             CreatedVia = tenant.CreatedVia,
             ProfileFileId = tenant.ProfileFileId,
-            ProfileUrl = BuildProfileUrl(tenant.ProfileFileId),
             Address = AddressFormatter.ToResponse(address),
             AdminEmail = adminEmail,
             PlanType = tenant.PlanType.ToString(),

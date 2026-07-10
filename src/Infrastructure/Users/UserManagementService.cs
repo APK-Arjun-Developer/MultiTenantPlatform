@@ -1033,12 +1033,6 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         }
     }
 
-    private static string? BuildProfileUrl(Guid? profileFileId) =>
-        profileFileId.HasValue ? $"/api/v1/files/{profileFileId.Value}/download" : null;
-
-    private static string? BuildUserAvatarUrl(Guid userId, Guid? profileFileId) =>
-        profileFileId.HasValue ? $"/api/v1/users/{userId}/avatar" : null;
-
     private static UserTenantDetails MapTenantDetails(
         Domain.Entities.Tenant tenant,
         Address? address = null) =>
@@ -1048,7 +1042,6 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             Name = tenant.Name,
             IsActive = tenant.IsActive,
             ProfileFileId = tenant.ProfileFileId,
-            ProfileUrl = BuildProfileUrl(tenant.ProfileFileId),
             Address = AddressFormatter.ToResponse(address),
         };
 
@@ -1069,7 +1062,6 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             IsActive = user.IsActive,
             Roles = roles,
             ProfileFileId = user.ProfileFileId,
-            ProfileUrl = BuildUserAvatarUrl(user.Id, user.ProfileFileId),
             Address = AddressFormatter.ToResponse(address),
             Tenant = includeTenantDetails ? tenantDetails : null,
             CreatedVia = user.CreatedVia,

@@ -83,51 +83,64 @@ public class FileService : TenantScopedService, IFileService
         var tenantId = GetEffectiveTenantId();
 
         if (file.Length <= 0)
-        {
             throw new InvalidOperationException("File is empty.");
-        }
 
         if (file.Length > _settings.MaxFileSizeBytes)
-        {
             throw new InvalidOperationException(
                 $"File exceeds maximum size of {_settings.MaxFileSizeBytes / 1024 / 1024} MB.");
-        }
 
         var extension = Path.GetExtension(file.FileName);
         if (!AllowedExtensions.Contains(extension))
+            throw new InvalidOperationException($"File type '{extension}' is not allowed.");
+
+        var effectiveContentType = file.ContentType ?? "application/octet-stream";
+        var effectiveFileName = file.FileName;
+        MemoryStream? processedStream = null;
+
+        await using var inputStream = file.OpenReadStream();
+
+        if (_settings.ImageProcessing.Enabled && ImageProcessor.IsProcessable(effectiveContentType))
         {
-            throw new InvalidOperationException(
-                $"File type '{extension}' is not allowed.");
+            processedStream = await ImageProcessor.ProcessAsync(inputStream, _settings.ImageProcessing);
+            effectiveContentType = "image/webp";
+            effectiveFileName = Path.GetFileNameWithoutExtension(file.FileName) + ".webp";
         }
 
-        await using var stream = file.OpenReadStream();
-
-        var stored = await _fileStorageService.SaveAsync(
-            tenantId,
-            stream,
-            file.FileName,
-            file.ContentType ?? "application/octet-stream");
-
-        var entity = new FileEntity
+        try
         {
-            Id = Guid.NewGuid(),
-            TenantId = tenantId,
-            OriginalName = file.FileName,
-            StoredName = stored.StoredName,
-            RelativePath = stored.RelativePath,
-            StorageType = stored.StorageType,
-            ContentType = file.ContentType ?? "application/octet-stream",
-            Extension = stored.Extension,
-            Size = stored.Size,
-            CreatedAt = DateTime.UtcNow,
-        };
+            Stream streamToSave = processedStream ?? inputStream;
+            var stored = await _fileStorageService.SaveAsync(
+                tenantId,
+                streamToSave,
+                effectiveFileName,
+                effectiveContentType);
 
-        _context.Files.Add(entity);
-        await _context.SaveChangesAsync();
+            var entity = new FileEntity
+            {
+                Id = Guid.NewGuid(),
+                TenantId = tenantId,
+                OriginalName = file.FileName,
+                StoredName = stored.StoredName,
+                RelativePath = stored.RelativePath,
+                StorageType = stored.StorageType,
+                ContentType = effectiveContentType,
+                Extension = stored.Extension,
+                Size = stored.Size,
+                CreatedAt = DateTime.UtcNow,
+            };
 
-        await LogActivityAsync(ActivityActions.Files.Uploaded, $"Uploaded file '{entity.OriginalName}'.");
+            _context.Files.Add(entity);
+            await _context.SaveChangesAsync();
 
-        return MapToResponse(entity);
+            await LogActivityAsync(ActivityActions.Files.Uploaded, $"Uploaded file '{entity.OriginalName}'.");
+
+            return MapToResponse(entity);
+        }
+        finally
+        {
+            if (processedStream is not null)
+                await processedStream.DisposeAsync();
+        }
     }
 
     public async Task DeleteAsync(Guid id)

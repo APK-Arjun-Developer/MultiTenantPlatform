@@ -16,8 +16,6 @@ public class TenantResponse
 
     public Guid? ProfileFileId { get; set; }
 
-    public string? ProfileUrl { get; set; }
-
     public AddressResponse? Address { get; set; }
 
     public string? AdminEmail { get; set; }

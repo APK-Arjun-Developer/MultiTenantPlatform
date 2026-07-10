@@ -367,7 +367,7 @@ Errors are mapped by `ExceptionHandlingMiddleware` to the same envelope.
 - **Activity logging** — auth and CRUD events to `ActivityLogs`
 - **Request logging** — path, status, duration, tenant/user correlation
 - **Caching** — permission catalog, roles, tenants, products, reports (`Caching` section in appsettings)
-- **File storage** — local disk (`FileStorage:BasePath`)
+- **File storage** — local disk (`FileStorage:BasePath`); uploaded images (JPEG/PNG/WebP/BMP) are auto-resized (max 2048×2048) and re-encoded as WebP 85% quality via SkiaSharp
 - **Rate limiting** — auth endpoints (`10`/minute)
 - **CORS** — `AllowedOrigins` in configuration
 

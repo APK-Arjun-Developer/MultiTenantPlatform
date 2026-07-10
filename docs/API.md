@@ -399,6 +399,8 @@ Requires `X-Tenant-Id` for SystemAdmin. Files are scoped to the current tenant.
 | POST | `/files` | `Files.Upload` |
 | DELETE | `/files/{id}` | `Files.Delete` |
 
+**Image processing on upload**: JPEG, PNG, WebP, and BMP files are automatically resized (max 2048×2048, aspect ratio preserved) and re-encoded as WebP at 85% quality. `ContentType` in the response will be `image/webp`. GIF files are stored as-is. Configurable via `FileStorage:ImageProcessing` in `appsettings.json` (`Enabled`, `MaxWidth`, `MaxHeight`, `WebpQuality`).
+
 Deleting a file clears any user/tenant `ProfileFileId` referencing it.
 
 ---
@@ -427,7 +429,7 @@ No `X-Tenant-Id` required. Counts span all tenants.
 
 ## Profiles (user & tenant)
 
-Responses include `profileFileId` and `profileUrl` (`/api/v1/files/{id}/download`) when set.
+Responses include `profileFileId` when set. Clients derive the image URL from it directly — user avatars via `GET /api/v1/users/{userId}/avatar`, tenant logos via `GET /api/v1/files/{profileFileId}/download`.
 
 ### User profile
 
