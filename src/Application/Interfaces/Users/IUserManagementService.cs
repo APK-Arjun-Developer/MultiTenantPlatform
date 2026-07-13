@@ -35,7 +35,7 @@ public interface IUserManagementService
 
     // ── Tenant Admin management (System Admin scope) ──────────────────────────
 
-    Task<PagedResponse<UserResponse>> GetTenantAdminsAsync(int page, int pageSize, string? search = null, Guid? tenantId = null, bool? isActive = null, CreatedVia? createdVia = null);
+    Task<PagedResponse<UserResponse>> GetTenantAdminsAsync(int page, int pageSize, string? search = null, Guid? tenantId = null, bool? isActive = null, CreatedVia? createdVia = null, string? sortBy = null, string? sortOrder = null);
 
     Task<UserResponse> GetTenantAdminByIdAsync(Guid id);
 

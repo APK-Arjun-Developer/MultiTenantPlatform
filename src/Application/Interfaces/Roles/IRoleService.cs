@@ -5,7 +5,7 @@ namespace Application.Interfaces.Roles;
 
 public interface IRoleService
 {
-    Task<PagedResponse<RoleResponse>> GetRolesAsync(int page, int pageSize, string? search = null, IReadOnlyList<Guid>? permissionIds = null);
+    Task<PagedResponse<RoleResponse>> GetRolesAsync(int page, int pageSize, string? search = null, IReadOnlyList<Guid>? permissionIds = null, string? sortBy = null, string? sortOrder = null);
 
     Task<RoleResponse> GetByNameAsync(string name);
 

@@ -42,9 +42,11 @@ public class TenantAdminsController : ApiControllerBase
         [FromQuery] string? search = null,
         [FromQuery] Guid? tenantId = null,
         [FromQuery] bool? isActive = null,
-        [FromQuery] CreatedVia? createdVia = null)
+        [FromQuery] CreatedVia? createdVia = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortOrder = null)
     {
-        var response = await _userManagementService.GetTenantAdminsAsync(page, pageSize, search, tenantId, isActive, createdVia);
+        var response = await _userManagementService.GetTenantAdminsAsync(page, pageSize, search, tenantId, isActive, createdVia, sortBy, sortOrder);
 
         return OkEnvelope(response, "Tenant admins retrieved.");
     }

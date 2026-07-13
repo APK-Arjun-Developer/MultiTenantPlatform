@@ -25,9 +25,11 @@ public class RolesController : ApiControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         [FromQuery] string? search = null,
-        [FromQuery] List<Guid>? permissionIds = null)
+        [FromQuery] List<Guid>? permissionIds = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortOrder = null)
     {
-        var response = await _roleService.GetRolesAsync(page, pageSize, search, permissionIds);
+        var response = await _roleService.GetRolesAsync(page, pageSize, search, permissionIds, sortBy, sortOrder);
 
         return OkEnvelope(response, "Roles retrieved.");
     }

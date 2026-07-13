@@ -26,6 +26,8 @@ public class ActivityLogsController : ApiControllerBase
         [FromQuery] string? action = null,
         [FromQuery] DateTime? dateFrom = null,
         [FromQuery] DateTime? dateTo = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] string? sortOrder = null,
         CancellationToken cancellationToken = default)
     {
         var queryParams = new ActivityLogQueryParams
@@ -37,6 +39,8 @@ public class ActivityLogsController : ApiControllerBase
             Action = action,
             DateFrom = dateFrom,
             DateTo = dateTo,
+            SortBy = sortBy,
+            SortOrder = sortOrder,
         };
 
         var response = await _activityLogService.GetLogsAsync(queryParams, cancellationToken);

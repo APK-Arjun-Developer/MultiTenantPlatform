@@ -217,6 +217,8 @@ public class UserManagementService : TenantScopedService, IUserManagementService
             ("fullname", "desc") => query.OrderByDescending(u => u.FullName),
             ("fullname", _) => query.OrderBy(u => u.FullName),
             ("email", "desc") => query.OrderByDescending(u => u.Email),
+            ("lastloginat", "desc") => query.OrderByDescending(u => u.LastLoginAt),
+            ("lastloginat", _) => query.OrderBy(u => u.LastLoginAt),
             _ => query.OrderBy(u => u.Email),
         };
 
@@ -503,7 +505,9 @@ public class UserManagementService : TenantScopedService, IUserManagementService
         string? search = null,
         Guid? tenantId = null,
         bool? isActive = null,
-        CreatedVia? createdVia = null)
+        CreatedVia? createdVia = null,
+        string? sortBy = null,
+        string? sortOrder = null)
     {
         if (!IsSystemAdmin())
         {
@@ -538,8 +542,14 @@ public class UserManagementService : TenantScopedService, IUserManagementService
 
         var totalCount = await query.CountAsync();
 
+        query = (sortBy?.ToLowerInvariant(), sortOrder?.ToLowerInvariant()) switch
+        {
+            ("fullname", "desc") => query.OrderByDescending(u => u.FullName),
+            ("fullname", _) => query.OrderBy(u => u.FullName),
+            _ => query.OrderBy(u => u.Email),
+        };
+
         var users = await query
-            .OrderBy(u => u.Email)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();

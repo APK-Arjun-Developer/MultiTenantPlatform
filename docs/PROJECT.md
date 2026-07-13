@@ -324,9 +324,11 @@ Add a seed: new class in `Persistence/Seed/Seeds/`, register in `Persistence/Dep
 
 Errors are mapped by `ExceptionHandlingMiddleware` to the same envelope.
 
-### Pagination
+### Pagination & Sorting
 
-`GET /users`, `GET /tenants`: `page` (default 1), `pageSize` (default 20, max 100).
+`GET /users`, `GET /tenants`, `GET /tenant-admins`, `GET /roles`, `GET /activity-logs`: `page` (default 1), `pageSize` (default 20, max 100).
+
+All five list endpoints also accept optional `sortBy` and `sortOrder` (`asc`|`desc`) query params. Supported `sortBy` keys: `fullName`/`email`/`lastLoginAt` for users, `name` for tenants and roles, `fullName`/`email` for tenant-admins, `createdAt` for activity logs. Each endpoint falls back to its own default order when `sortBy` is omitted.
 
 ### List scoping
 

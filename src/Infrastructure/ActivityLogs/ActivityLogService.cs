@@ -110,8 +110,13 @@ public class ActivityLogService : TenantScopedService, IActivityLogService
 
         var totalCount = await query.CountAsync(cancellationToken);
 
+        query = (queryParams.SortBy?.ToLowerInvariant(), queryParams.SortOrder?.ToLowerInvariant()) switch
+        {
+            ("createdat", "asc") => query.OrderBy(l => l.CreatedAt),
+            _ => query.OrderByDescending(l => l.CreatedAt),
+        };
+
         var logs = await query
-            .OrderByDescending(l => l.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken);

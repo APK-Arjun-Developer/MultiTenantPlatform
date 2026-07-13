@@ -15,4 +15,8 @@ public class ActivityLogQueryParams
     public DateTime? DateFrom { get; set; }
 
     public DateTime? DateTo { get; set; }
+
+    public string? SortBy { get; set; }
+
+    public string? SortOrder { get; set; }
 }

@@ -47,7 +47,9 @@ public class RoleService : TenantScopedService, IRoleService
     public async Task<PagedResponse<RoleResponse>> GetRolesAsync(
         int page, int pageSize,
         string? search = null,
-        IReadOnlyList<Guid>? permissionIds = null)
+        IReadOnlyList<Guid>? permissionIds = null,
+        string? sortBy = null,
+        string? sortOrder = null)
     {
         (page, pageSize) = Pagination.Normalize(page, pageSize);
 
@@ -67,8 +69,13 @@ public class RoleService : TenantScopedService, IRoleService
 
         var totalCount = await query.CountAsync();
 
+        query = (sortBy?.ToLowerInvariant(), sortOrder?.ToLowerInvariant()) switch
+        {
+            ("name", "desc") => query.OrderByDescending(r => r.Name),
+            _ => query.OrderBy(r => r.Name),
+        };
+
         var roles = await query
-            .OrderBy(r => r.Name)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync();
