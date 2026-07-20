@@ -355,6 +355,11 @@ All five list endpoints also accept optional `sortBy` and `sortOrder` (`asc`|`de
 | Products | `/api/v1/products` |
 | Permissions | `/api/v1/permissions` |
 | Reports | `/api/v1/reports` (`summary`, `export`, `platform-summary`, `platform-export`) |
+| Dashboard | `/api/v1/dashboard` (tenant + platform metrics) |
+| Subscriptions | `/api/v1/subscriptions` (SystemAdmin) |
+| Tenant Settings | `/api/v1/tenant-settings` (TenantAdmin self-service) |
+| Impersonation | `/api/v1/impersonation` (`start`, `stop`; SystemAdmin) |
+| Activity Logs | `/api/v1/activity-logs` (SystemAdmin only) |
 | Files | `/api/v1/files` |
 | Invitations | `/api/v1/invitations` (public, token-gated) |
 | Account setup | `/api/v1/account-setup` (public, token-gated) |

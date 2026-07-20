@@ -7,7 +7,7 @@
 | Document | Description |
 |----------|-------------|
 | [docs/PROJECT.md](docs/PROJECT.md) | Architecture, auth model, tenant isolation, data model, migrations & seeds |
-| [docs/API.md](docs/API.md) | v1 endpoints, envelope, login, email verification, invitations, profiles, addresses, reports |
+| [docs/API.md](docs/API.md) | v1 endpoints, envelope, login, email verification, invitations, profiles, addresses, reports, dashboard, subscriptions, tenant settings, impersonation, activity logs |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | GitHub Actions → MonsterASP.NET (FTP) production deploy |
 
 ## How it works (workflow)
@@ -102,12 +102,17 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for production deploy.
 - **X-Tenant-Id header**: SystemAdmin must supply `X-Tenant-Id` on all tenant-scoped requests; TenantAdmin/TenantUser are always pinned to their JWT `tenant_id`
 - **Email verification**: OTP-based (6-digit, 15 min); skipped in Development via `Features:RequireEmailVerification: false`
 - **Permissions**: PascalCase (`Users.View`); computed per request from DB (cached), never stored in JWT; returned via `GET /auth/me` so clients have them immediately after auth
-- **JWT claims**: `user_id`, `tenant_id`, `system_role`, `full_name`, `role_ids`
+- **JWT claims**: `user_id`, `tenant_id`, `system_role`, `full_name`, `role_ids`, `email` (+ `impersonated_by_*` during impersonation)
+- **Impersonation**: SystemAdmin can start/stop an impersonation session for an active TenantUser (`POST /api/v1/impersonation/start|stop`); the admin's session is restored via a saved restore-token cookie
+- **User/tenant status enforcement**: `UserStatusMiddleware` blocks every request from a deactivated or deleted user (`user_inactive`) or tenant (`tenant_inactive`)
 - **Versioned seeds**: `SeedHistory` table; pending seeds only (like migrations)
-- **Profiles**: user & tenant profile images via `Files` FK; `profileUrl` in responses
+- **Profiles**: user & tenant profile images via `Files` FK; `profileUrl` in responses; images auto-resized and re-encoded as WebP
 - **Addresses**: optional user/tenant address with `fullAddress` combined string
 - **Invitations**: TenantAdmin invites TenantUsers; SystemAdmin invites TenantAdmins
 - **Onboarding**: `POST /api/v1/tenants` with `user`, `tenant`, `roles[]` (permission GUIDs)
+- **Dashboard & reporting**: tenant + platform dashboard metrics and CSV report export
+- **Subscriptions & tenant settings**: SystemAdmin-managed subscriptions; TenantAdmin self-service tenant settings (logo, address)
+- **Activity logs**: audit trail of auth + CRUD events, readable by SystemAdmin (`GET /api/v1/activity-logs`)
 - **No public registration** — SystemAdmin onboards tenants
 
 ## Project structure
