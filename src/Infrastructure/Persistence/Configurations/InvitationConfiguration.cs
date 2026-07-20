@@ -18,7 +18,6 @@ public class InvitationConfiguration : IEntityTypeConfiguration<Invitation>
 
         builder.Property(x => x.RoleIdsJson)
             .HasColumnName("RoleIds")
-            .HasColumnType("nvarchar(max)")
             .IsRequired();
 
         builder.Property(x => x.TokenHash)
