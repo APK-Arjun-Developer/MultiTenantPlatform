@@ -289,7 +289,7 @@ Requires `X-Tenant-Id` header for SystemAdmin. Custom roles only — `SystemAdmi
 
 | Method | Path | Permission | Notes |
 |--------|------|------------|-------|
-| GET | `/roles` | `Roles.List` | List custom roles. Query: `page`, `pageSize`, `search` (name), `permissionIds` (Guid list), `sortBy` (`name`), `sortOrder` (`asc`\|`desc`) |
+| GET | `/roles` | `Roles.List` | List custom roles. Query: `page`, `pageSize`, `search` (name), `permissionIds` (repeated Guid — matches roles having **any** of the given permissions), `sortBy` (`name`), `sortOrder` (`asc`\|`desc`) |
 | GET | `/roles/{name}` | `Roles.View` | Get role details by name |
 | GET | `/roles/current` | `Roles.View` | Caller's own role |
 | POST | `/roles` | `Roles.Create` | Create custom role with permissions |

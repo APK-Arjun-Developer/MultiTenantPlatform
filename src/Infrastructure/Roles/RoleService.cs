@@ -63,8 +63,13 @@ public class RoleService : TenantScopedService, IRoleService
 
         if (permissionIds is { Count: > 0 })
         {
-            query = query.Where(r => _context.RolePermissions
-                .Any(rp => rp.RoleId == r.Id && permissionIds.Contains(rp.PermissionId)));
+            var selectedPermissionIds = permissionIds.ToList();
+            var roleIdsWithPermission = _context.RolePermissions
+                .Where(rp => selectedPermissionIds.Contains(rp.PermissionId))
+                .Select(rp => rp.RoleId)
+                .Distinct();
+
+            query = query.Where(r => roleIdsWithPermission.Contains(r.Id));
         }
 
         var totalCount = await query.CountAsync();
