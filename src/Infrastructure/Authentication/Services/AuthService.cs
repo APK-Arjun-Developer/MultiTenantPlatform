@@ -3,6 +3,7 @@ using Application.DTOs.ActivityLogs;
 using Application.DTOs.Auth;
 using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Authentication;
+using Application.Interfaces.TenantConfig;
 using Domain.Enums;
 using Infrastructure.Identity.Entities;
 using Infrastructure.Persistence.Contexts;
@@ -25,18 +26,22 @@ public class AuthService : IAuthService
 
     private readonly IActivityLogService _activityLogService;
 
+    private readonly ITenantConfigService _tenantConfigService;
+
     public AuthService(
         UserManager<ApplicationUser> userManager,
         ApplicationDbContext context,
         IJwtTokenGenerator jwtTokenGenerator,
         IRefreshTokenService refreshTokenService,
-        IActivityLogService activityLogService)
+        IActivityLogService activityLogService,
+        ITenantConfigService tenantConfigService)
     {
         _userManager = userManager;
         _context = context;
         _jwtTokenGenerator = jwtTokenGenerator;
         _refreshTokenService = refreshTokenService;
         _activityLogService = activityLogService;
+        _tenantConfigService = tenantConfigService;
     }
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, string ipAddress)
@@ -56,6 +61,20 @@ public class AuthService : IAuthService
         if (!user.EmailConfirmed)
         {
             throw new InvalidOperationException("Your email address has not been verified. Please check your inbox for the verification code.");
+        }
+
+        if (user.TenantId != Guid.Empty)
+        {
+            var config = await _tenantConfigService.GetOrCreateAsync(user.TenantId);
+
+            if (!config.LoginEnabled)
+            {
+                var reason = config.MaintenanceMode && !string.IsNullOrWhiteSpace(config.MaintenanceMessage)
+                    ? config.MaintenanceMessage
+                    : "Login is temporarily disabled for your organization. Please contact your administrator.";
+
+                throw new InvalidOperationException(reason);
+            }
         }
 
         var validPassword =
@@ -141,6 +160,17 @@ public class AuthService : IAuthService
             {
                 throw new InvalidOperationException(
                     "Your organization account has been deactivated. Please contact support.");
+            }
+
+            var config = await _tenantConfigService.GetOrCreateAsync(user.TenantId);
+
+            if (!config.LoginEnabled)
+            {
+                var reason = config.MaintenanceMode && !string.IsNullOrWhiteSpace(config.MaintenanceMessage)
+                    ? config.MaintenanceMessage
+                    : "Login is temporarily disabled for your organization. Please contact your administrator.";
+
+                throw new InvalidOperationException(reason);
             }
         }
 

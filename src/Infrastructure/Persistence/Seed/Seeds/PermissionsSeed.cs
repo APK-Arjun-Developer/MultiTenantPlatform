@@ -37,6 +37,9 @@ public sealed class PermissionsSeed : IDataSeed
         (PermissionNames.OnboardingActivate,   "Onboarding", "Activate user accounts",                  SystemRole.TenantAdmin),
         (PermissionNames.OnboardingDeactivate, "Onboarding", "Deactivate user accounts",                SystemRole.TenantAdmin),
 
+        // TenantAdmin — email broadcast
+        (PermissionNames.EmailsSend, "Emails", "Send email broadcasts to tenant users", SystemRole.TenantAdmin),
+
         // SystemAdmin — platform-level permissions
         (PermissionNames.TenantsCreate,     "Tenants",       "Create tenants",                   SystemRole.SystemAdmin),
         (PermissionNames.TenantsList,       "Tenants",       "List all tenants",                 SystemRole.SystemAdmin),

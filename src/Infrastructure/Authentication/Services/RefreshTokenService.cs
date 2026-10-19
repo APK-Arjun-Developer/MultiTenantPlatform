@@ -83,6 +83,24 @@ public class RefreshTokenService : IRefreshTokenService
         await _context.SaveChangesAsync();
     }
 
+    public async Task RevokeAllForTenantAsync(Guid tenantId)
+    {
+        var tokens = await _context.RefreshTokens
+            .IgnoreQueryFilters()
+            .Where(x => x.TenantId == tenantId && x.RevokedAt == null && x.DeletedAt == null)
+            .ToListAsync();
+
+        var now = DateTime.UtcNow;
+
+        foreach (var token in tokens)
+        {
+            token.RevokedAt = now;
+            token.RevokedByIp = "system";
+        }
+
+        await _context.SaveChangesAsync();
+    }
+
     private static string GenerateRefreshToken()
     {
         var randomBytes = RandomNumberGenerator.GetBytes(64);

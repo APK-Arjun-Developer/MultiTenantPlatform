@@ -63,4 +63,12 @@ public interface IEmailService
         string fullName,
         string otp,
         CancellationToken cancellationToken = default);
+
+    // ── Custom broadcast ──────────────────────────────────────────────────────
+
+    Task SendCustomEmailAsync(
+        string toEmail,
+        string subject,
+        string htmlBody,
+        CancellationToken cancellationToken = default);
 }

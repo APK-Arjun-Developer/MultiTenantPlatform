@@ -9,4 +9,6 @@ public static class ActivityModules
     public const string Files = "Files";
     public const string Onboarding = "Onboarding";
     public const string Subscriptions = "Subscriptions";
+    public const string TenantConfig = "TenantConfig";
+    public const string Emails = "Emails";
 }

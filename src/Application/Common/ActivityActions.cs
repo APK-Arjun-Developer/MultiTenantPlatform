@@ -45,6 +45,16 @@ public static class ActivityActions
         public const string PlanChanged = "PlanChanged";
     }
 
+    public static class TenantConfig
+    {
+        public const string Updated = "Updated";
+    }
+
+    public static class Emails
+    {
+        public const string BroadcastSent = "BroadcastSent";
+    }
+
     public static class Onboarding
     {
         public const string TenantAdminCreated = "TenantAdminCreated";

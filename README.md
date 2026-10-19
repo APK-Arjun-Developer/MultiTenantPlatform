@@ -7,7 +7,7 @@
 | Document | Description |
 |----------|-------------|
 | [docs/PROJECT.md](docs/PROJECT.md) | Architecture, auth model, tenant isolation, data model, migrations & seeds |
-| [docs/API.md](docs/API.md) | v1 endpoints, envelope, login, email verification, invitations, profiles, addresses, reports, dashboard, subscriptions, tenant settings, impersonation, activity logs |
+| [docs/API.md](docs/API.md) | v1 endpoints, envelope, login, email verification, invitations, profiles, addresses, reports, dashboard, subscriptions, tenant settings, tenant config, email broadcast, impersonation, activity logs |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | GitHub Actions → MonsterASP.NET (FTP) production deploy |
 
 ## How it works (workflow)
@@ -111,7 +111,9 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for production deploy.
 - **Invitations**: TenantAdmin invites TenantUsers; SystemAdmin invites TenantAdmins
 - **Onboarding**: `POST /api/v1/tenants` with `user`, `tenant`, `roles[]` (permission GUIDs)
 - **Dashboard & reporting**: tenant + platform dashboard metrics and CSV report export
-- **Subscriptions & tenant settings**: SystemAdmin-managed subscriptions; TenantAdmin self-service tenant settings (logo, address)
+- **Subscriptions & tenant settings**: SystemAdmin-managed subscriptions; TenantAdmin self-service tenant settings (logo, address, config)
+- **Tenant config**: per-tenant flags — `LoginEnabled`, `WelcomeEmailEnabled` managed by TenantAdmin or SystemAdmin; `MaintenanceMode` / `MaintenanceMessage` are SystemAdmin-only. Disabling login bulk-revokes all active sessions
+- **Email broadcast**: `POST /api/v1/emails/broadcast` (`Emails.Send` permission) — custom HTML email to current tenant, specific tenant, or all tenants; fire-and-forget background delivery
 - **Activity logs**: audit trail of auth + CRUD events, readable by SystemAdmin (`GET /api/v1/activity-logs`)
 - **No public registration** — SystemAdmin onboards tenants
 

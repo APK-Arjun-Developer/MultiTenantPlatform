@@ -19,11 +19,13 @@ public class TenantConfiguration : IEntityTypeConfiguration<Domain.Entities.Tena
         builder.Property(x => x.CreatedVia)
             .HasConversion<int>()
             .HasDefaultValue(CreatedVia.Direct)
+            .HasSentinel(CreatedVia.Direct)
             .IsRequired();
 
         builder.Property(x => x.PlanType)
             .HasConversion<int>()
             .HasDefaultValue(PlanType.Free)
+            .HasSentinel(PlanType.Free)
             .IsRequired();
 
         builder.HasOne(x => x.ProfileFile)

@@ -43,6 +43,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser, Applicati
 
     public DbSet<EmailVerificationOtp> EmailVerificationOtps => Set<EmailVerificationOtp>();
 
+    public DbSet<Domain.Entities.TenantConfig> TenantConfigs => Set<Domain.Entities.TenantConfig>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);

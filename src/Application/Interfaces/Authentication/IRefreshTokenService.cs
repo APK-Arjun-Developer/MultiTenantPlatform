@@ -11,4 +11,6 @@ public interface IRefreshTokenService
     Task RevokeAsync(RefreshToken token, string ipAddress);
 
     Task RevokeAllForUserAsync(Guid userId, string ipAddress);
+
+    Task RevokeAllForTenantAsync(Guid tenantId);
 }

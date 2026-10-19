@@ -36,13 +36,17 @@ using Application.Interfaces.Email;
 using Application.Interfaces.Invitations;
 using Application.Interfaces.Onboarding;
 using Application.Interfaces.Subscription;
+using Application.Interfaces.TenantConfig;
+using Application.Interfaces.Emails;
 using Infrastructure.AccountSetup;
 using Infrastructure.Dashboard;
 using Infrastructure.Email;
+using Infrastructure.Emails;
 using Infrastructure.Invitations;
 using Infrastructure.Jobs;
 using Infrastructure.Onboarding;
 using Infrastructure.Subscription;
+using Infrastructure.TenantConfig;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -195,6 +199,8 @@ public static class DependencyInjection
         services.AddScoped<IInvitationService, InvitationService>();
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<ISubscriptionService, SubscriptionService>();
+        services.AddScoped<ITenantConfigService, TenantConfigService>();
+        services.AddScoped<IEmailBroadcastService, EmailBroadcastService>();
 
         return services;
     }

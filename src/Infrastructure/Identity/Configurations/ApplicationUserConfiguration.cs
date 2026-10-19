@@ -34,6 +34,7 @@ public class ApplicationUserConfiguration
         builder.Property(x => x.CreatedVia)
             .HasConversion<int>()
             .HasDefaultValue(CreatedVia.Direct)
+            .HasSentinel(CreatedVia.Direct)
             .IsRequired();
 
         builder.Property(x => x.IsActive)

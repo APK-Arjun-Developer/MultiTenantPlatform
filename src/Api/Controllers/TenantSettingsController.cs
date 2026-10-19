@@ -1,5 +1,7 @@
 using Application.DTOs.Tenant;
+using Application.DTOs.TenantConfig;
 using Application.Interfaces.Tenant;
+using Application.Interfaces.TenantConfig;
 using Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,10 +15,14 @@ namespace Api.Controllers;
 public class TenantSettingsController : ApiControllerBase
 {
     private readonly ITenantService _tenantService;
+    private readonly ITenantConfigService _tenantConfigService;
 
-    public TenantSettingsController(ITenantService tenantService)
+    public TenantSettingsController(
+        ITenantService tenantService,
+        ITenantConfigService tenantConfigService)
     {
         _tenantService = tenantService;
+        _tenantConfigService = tenantConfigService;
     }
 
     [HttpGet]
@@ -58,6 +64,28 @@ public class TenantSettingsController : ApiControllerBase
 
         var response = await _tenantService.RemoveTenantLogoAsync();
         return OkEnvelope(response, "Company logo removed.");
+    }
+
+    [HttpGet("config")]
+    public async Task<IActionResult> GetConfig(CancellationToken cancellationToken)
+    {
+        if (!IsTenantAdmin())
+            return Forbid();
+
+        var response = await _tenantConfigService.GetCurrentAsync(cancellationToken);
+        return OkEnvelope(response, "Tenant config retrieved.");
+    }
+
+    [HttpPut("config")]
+    public async Task<IActionResult> UpdateConfig(
+        UpdateCurrentTenantConfigRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!IsTenantAdmin())
+            return Forbid();
+
+        var response = await _tenantConfigService.UpdateCurrentAsync(request, cancellationToken);
+        return OkEnvelope(response, "Tenant config updated.");
     }
 
     private bool IsTenantAdmin()

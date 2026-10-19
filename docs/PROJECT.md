@@ -78,6 +78,7 @@ Custom roles live in the `Roles` table and are always scoped to a single `Tenant
 | `Users.*`, `Roles.*` (includes `.List` and `.View` as separate granular permissions) | TenantAdmin | TenantAdmin, SystemAdmin |
 | `Onboarding.*` | TenantAdmin | TenantAdmin, SystemAdmin |
 | `Files.Delete` | TenantAdmin | TenantAdmin, SystemAdmin |
+| `Emails.Send` | TenantAdmin | TenantAdmin, SystemAdmin |
 | `Tenants.*` | SystemAdmin | SystemAdmin only |
 | `Subscriptions.*` | SystemAdmin | SystemAdmin only |
 
@@ -177,6 +178,8 @@ When a user changes their password via `PUT /api/v1/users/me/password`, **all ex
 - Login blocks users with `EmailConfirmed = false` ("Your email address has not been verified").
 - Login blocks users with `IsActive = false` ("Your account has been deactivated. Please contact your administrator.").
 - Login detects soft-deleted users (`DeletedAt != null`) via `IgnoreQueryFilters()` after the normal query returns null, and returns the same deactivated message. The EF global filter hides deleted records, so this secondary check is required to distinguish "account deleted" from "no account".
+- Login blocks tenant users when `TenantConfig.LoginEnabled = false`. Returns `MaintenanceMessage` if set and `MaintenanceMode` is also on, otherwise "Login is temporarily disabled for your organization."
+- Token refresh (`POST /auth/refresh`) also enforces the `LoginEnabled` check — if the flag is turned off mid-session, the next refresh attempt fails with the same error.
 - **Every authenticated request** also runs active checks via `UserStatusMiddleware` (runs after `UseAuthentication()`, before `TenantMiddleware`):
   - **User active**: checks `IsActive && DeletedAt == null` (cached 5 min per user; invalidated on deactivate/delete).
   - **Tenant active**: for non-SystemAdmin users, also checks tenant `IsActive && DeletedAt == null` (cached 5 min per tenant; invalidated on tenant update/delete).
@@ -207,6 +210,33 @@ This applies to users created via:
 - `POST /api/v1/users` (direct user creation)
 
 Users created via the account-setup flow (`direct-create` / invitation) go through a separate token-gated flow and their `EmailConfirmed` is set to `true` on account activation.
+
+---
+
+## Tenant configuration (`TenantConfig`)
+
+Each tenant has an optional `TenantConfig` record (1:1, lazy-created on first access via `GetOrCreateAsync`). It is **not** a `BaseEntity` — no `TenantId` EF global filter, no soft-delete. Schema: `TenantConfigs` table.
+
+| Flag | Default | Managed by | Effect |
+|------|---------|-----------|--------|
+| `LoginEnabled` | `true` | TenantAdmin + SystemAdmin | When `false`, all login and token-refresh attempts for that tenant fail immediately. Setting it to `false` also bulk-revokes all active refresh tokens (force-logout). |
+| `WelcomeEmailEnabled` | `true` | TenantAdmin + SystemAdmin | When `false`, the welcome email is skipped after a user completes account setup. |
+| `MaintenanceMode` | `false` | **SystemAdmin only** | When `true`, combined with a `MaintenanceMessage`, the message replaces the generic login-disabled error. |
+| `MaintenanceMessage` | `null` | **SystemAdmin only** | Max 500 chars. Shown at login when `LoginEnabled=false` AND `MaintenanceMode=true`. |
+
+TenantAdmin manages `LoginEnabled` and `WelcomeEmailEnabled` via `GET/PUT /api/v1/tenant-settings/config` — the maintenance fields are excluded from `UpdateCurrentTenantConfigRequest` and preserved server-side on a TenantAdmin update. SystemAdmin manages any tenant's config (including maintenance) via `GET/PUT /api/v1/tenants/{tenantId}/config`.
+
+---
+
+## Email Broadcast
+
+`POST /api/v1/emails/broadcast` (permission: `Emails.Send`) sends a custom HTML email to a group of users. Only active, email-confirmed users receive the message. The API returns immediately (`recipientCount` + confirmation message) and delivery proceeds in a background `Task.Run` (`CancellationToken.None` — not tied to the HTTP request lifetime).
+
+Targeting rules:
+- TenantAdmin: always scoped to own tenant (`CurrentTenant`), regardless of `targetType` in the request.
+- SystemAdmin: can target `CurrentTenant` (requires `X-Tenant-Id`), `SpecificTenant` (requires `tenantId` in body), or `AllTenants`.
+
+Failed individual sends are logged as warnings; the background task does not surface errors to the caller.
 
 ---
 

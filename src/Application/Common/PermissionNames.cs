@@ -39,6 +39,8 @@ public static class PermissionNames
     public const string SubscriptionsView = "Subscriptions.View";
     public const string SubscriptionsEdit = "Subscriptions.Edit";
 
+    public const string EmailsSend = "Emails.Send";
+
     public static readonly IReadOnlyList<string> All =
     [
         UsersCreate,
@@ -69,6 +71,7 @@ public static class PermissionNames
         OnboardingDeactivate,
         SubscriptionsView,
         SubscriptionsEdit,
+        EmailsSend,
     ];
 
     // Maps each permission to the minimum SystemRole that can be assigned it.
@@ -100,6 +103,9 @@ public static class PermissionNames
             [OnboardingRevoke] = SystemRole.TenantAdmin,
             [OnboardingActivate] = SystemRole.TenantAdmin,
             [OnboardingDeactivate] = SystemRole.TenantAdmin,
+
+            // TenantAdmin — email broadcast permission
+            [EmailsSend] = SystemRole.TenantAdmin,
 
             // SystemAdmin — platform-level permissions
             [TenantsCreate] = SystemRole.SystemAdmin,

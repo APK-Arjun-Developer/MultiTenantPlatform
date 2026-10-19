@@ -45,6 +45,7 @@ Login fails with HTTP 400 if:
 - The user's email is not verified (`EmailConfirmed = false`)
 - The user account is inactive (`IsActive = false`)
 - The user record is soft-deleted (`DeletedAt != null`) — returns "Your account has been deactivated. Please contact your administrator." (same message as inactive, to avoid revealing deletion state to the caller)
+- The tenant's `LoginEnabled` config flag is `false` — returns the `MaintenanceMessage` if set, otherwise "Login is temporarily disabled for your organization."
 
 ### Refresh — `POST /auth/refresh`
 
@@ -552,6 +553,7 @@ PascalCase with module prefix. Constants: `Application.Common.PermissionNames`.
 | `Users` | `View`, `Create`, `Edit`, `Delete` | TenantAdmin |
 | `Roles` | `View`, `Create`, `Edit`, `Delete` | TenantAdmin |
 | `Onboarding` | `Create`, `Invite`, `Resend`, `Revoke`, `Activate`, `Deactivate` | TenantAdmin |
+| `Emails` | `Send` | TenantAdmin |
 | `Tenants` | `View`, `Create`, `Edit`, `Delete` | SystemAdmin only |
 | `Subscriptions` | `View`, `Edit` | SystemAdmin only |
 
@@ -602,6 +604,98 @@ Self-service tenant settings for TenantAdmin (cannot change `isActive` or `planT
 | PUT | `/tenant-settings` | TenantAdmin only | Update name, address, profile image |
 | POST | `/tenant-settings/logo` | TenantAdmin only | Upload tenant logo (JPEG/PNG/GIF/WebP, max 10 MB). Multipart form-data with `file` field. |
 | DELETE | `/tenant-settings/logo` | TenantAdmin only | Remove tenant logo. |
+| GET | `/tenant-settings/config` | TenantAdmin only | Returns the tenant's `TenantConfigDto` |
+| PUT | `/tenant-settings/config` | TenantAdmin only | Update tenant config flags |
+
+`TenantConfigDto` shape:
+
+```json
+{
+  "id": "<guid>",
+  "tenantId": "<guid>",
+  "loginEnabled": true,
+  "welcomeEmailEnabled": true,
+  "maintenanceMode": false,
+  "maintenanceMessage": null,
+  "updatedAt": null
+}
+```
+
+PUT body (`UpdateCurrentTenantConfigRequest`) — **maintenance fields are SystemAdmin-only and excluded here**:
+
+```json
+{
+  "loginEnabled": true,
+  "welcomeEmailEnabled": true
+}
+```
+
+TenantAdmin cannot change `maintenanceMode` / `maintenanceMessage`; those fields are preserved server-side on a TenantAdmin update. When `loginEnabled` is set to `false`, all active refresh tokens for the tenant are immediately revoked (equivalent to force-logging-out all users).
+
+---
+
+## Tenant Config (SystemAdmin)
+
+SystemAdmin can read and update the config of any tenant, **including the maintenance fields**.
+
+| Method | Path | Auth | Notes |
+|--------|------|------|-------|
+| GET | `/tenants/{tenantId}/config` | `SystemAdminOnly` | Returns `TenantConfigDto` for the specified tenant |
+| PUT | `/tenants/{tenantId}/config` | `SystemAdminOnly` | Update config for the specified tenant |
+
+PUT body (`UpdateTenantConfigRequest`) includes all fields plus the maintenance controls:
+
+```json
+{
+  "tenantId": "<guid>",
+  "loginEnabled": true,
+  "welcomeEmailEnabled": true,
+  "maintenanceMode": false,
+  "maintenanceMessage": null
+}
+```
+
+`maintenanceMessage` (max 500 chars) is shown to users at login when `maintenanceMode` is `true`. Same session-revocation rule applies: setting `loginEnabled = false` immediately revokes all refresh tokens for that tenant.
+
+---
+
+## Email Broadcast
+
+Send a custom HTML email to a group of users. Only active users with `EmailConfirmed = true` receive the message. The API returns immediately; delivery runs in the background.
+
+| Method | Path | Permission | Notes |
+|--------|------|------------|-------|
+| POST | `/emails/broadcast` | `Emails.Send` | Fire-and-forget broadcast to selected recipients |
+
+Request body:
+
+```json
+{
+  "subject": "Happy holidays from our team!",
+  "htmlBody": "<p>Dear user,</p><p>...</p>",
+  "targetType": "CurrentTenant",
+  "tenantId": null
+}
+```
+
+`targetType` values:
+
+| Value | Who can use | Sends to |
+|-------|-------------|----------|
+| `CurrentTenant` | TenantAdmin, SystemAdmin (requires `X-Tenant-Id`) | All active confirmed users in the current tenant |
+| `SpecificTenant` | SystemAdmin only | All active confirmed users in the tenant given by `tenantId` |
+| `AllTenants` | SystemAdmin only | All active confirmed users across every tenant |
+
+TenantAdmin callers are always forced to `CurrentTenant` regardless of `targetType`.
+
+Response:
+
+```json
+{
+  "recipientCount": 42,
+  "message": "Broadcast queued for 42 recipients."
+}
+```
 
 ---
 

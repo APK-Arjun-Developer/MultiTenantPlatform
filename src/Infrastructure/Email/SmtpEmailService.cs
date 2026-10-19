@@ -145,6 +145,11 @@ public sealed class SmtpEmailService : IEmailService
             emailType: "EmailVerificationOtp",
             cancellationToken);
 
+    public Task SendCustomEmailAsync(
+        string toEmail, string subject, string htmlBody,
+        CancellationToken cancellationToken = default) =>
+        SendAsync(toEmail, subject, htmlBody, emailType: "Broadcast", cancellationToken);
+
     // ── Core send ─────────────────────────────────────────────────────────────
 
     private async Task SendAsync(

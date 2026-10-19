@@ -106,4 +106,14 @@ public sealed class StubEmailService : IEmailService
             toEmail, fullName, otp);
         return Task.CompletedTask;
     }
+
+    public Task SendCustomEmailAsync(
+        string toEmail, string subject, string htmlBody,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "[STUB EMAIL] Broadcast → {Email}: Subject={Subject}",
+            toEmail, subject);
+        return Task.CompletedTask;
+    }
 }

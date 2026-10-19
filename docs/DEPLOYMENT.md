@@ -39,11 +39,18 @@ push master / manual run
 
 Both work like migrations: only missing versions run. Already-applied migrations/seeds are skipped.
 
+**Current migrations** (in addition to `InitialCreate`):
+
+| Migration | Description |
+|-----------|-------------|
+| `AddTenantConfigAndEmailBroadcast` | Adds `TenantConfigs` table (1:1 with `Tenants`) |
+| `RemoveAllowPasswordResetFromTenantConfig` | Drops the unused `AllowPasswordReset` column |
+
 **Current seeds** (in order):
 
 | SeedId | Description |
 |--------|-------------|
-| `20260603000002_Permissions` | RBAC permission catalog |
+| `20260603000002_Permissions` | RBAC permission catalog (includes `Emails.Send`) |
 | `20260603000003_SuperAdmin` | SystemAdmin role + `admin@system.com` user |
 
 **SystemAdmin login:** `admin@system.com` / `ADMIN_PASSWORD` GitHub secret.

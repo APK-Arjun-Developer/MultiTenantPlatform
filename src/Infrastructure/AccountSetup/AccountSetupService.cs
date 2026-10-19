@@ -5,6 +5,7 @@ using Application.Exceptions;
 using Application.Interfaces.AccountSetup;
 using Application.Interfaces.ActivityLogs;
 using Application.Interfaces.Email;
+using Application.Interfaces.TenantConfig;
 using Infrastructure.Identity.Entities;
 using Infrastructure.Onboarding;
 using Infrastructure.Persistence;
@@ -22,6 +23,7 @@ public class AccountSetupService : IAccountSetupService
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IActivityLogService _activityLogService;
     private readonly IEmailService _emailService;
+    private readonly ITenantConfigService _tenantConfigService;
     private readonly ILogger<AccountSetupService> _logger;
     private readonly string _appBaseUrl;
 
@@ -30,6 +32,7 @@ public class AccountSetupService : IAccountSetupService
         UserManager<ApplicationUser> userManager,
         IActivityLogService activityLogService,
         IEmailService emailService,
+        ITenantConfigService tenantConfigService,
         ILogger<AccountSetupService> logger,
         IConfiguration configuration)
     {
@@ -37,6 +40,7 @@ public class AccountSetupService : IAccountSetupService
         _userManager = userManager;
         _activityLogService = activityLogService;
         _emailService = emailService;
+        _tenantConfigService = tenantConfigService;
         _logger = logger;
         _appBaseUrl = configuration["AppBaseUrl"] ?? "https://app.example.com";
     }
@@ -148,7 +152,12 @@ public class AccountSetupService : IAccountSetupService
 
         try
         {
-            await _emailService.SendWelcomeEmailAsync(user.Email!, user.FullName, loginUrl, cancellationToken);
+            var config = await _tenantConfigService.GetOrCreateAsync(user.TenantId, cancellationToken);
+
+            if (config.WelcomeEmailEnabled)
+            {
+                await _emailService.SendWelcomeEmailAsync(user.Email!, user.FullName, loginUrl, cancellationToken);
+            }
         }
         catch (Exception ex)
         {
