@@ -484,3 +484,6 @@ $RECYCLE.BIN/
 #skills
 .cursor/
 .claude/
+
+# curl cookie jars (contain session tokens)
+*cookies*.txt
