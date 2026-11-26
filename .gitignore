@@ -487,3 +487,6 @@ $RECYCLE.BIN/
 
 # curl cookie jars (contain session tokens)
 *cookies*.txt
+
+# Runtime-specific restore output
+packages.win-x86.lock.json

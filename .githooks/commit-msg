@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+
+if branch=$(git symbolic-ref --quiet --short HEAD); then
+  bash scripts/check-git-policy.sh branch "$branch"
+fi
+
+case "$(head -n 1 "$1")" in
+  "Merge "*|"Revert "*) exit 0 ;;
+esac
+exec bash scripts/check-git-policy.sh commit "$(head -n 1 "$1")"

@@ -1,0 +1,34 @@
+name: Git Policy
+on:
+  pull_request:
+    branches: [master]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Branch and commit conventions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check branch and commits
+        env:
+          BRANCH: ${{ github.head_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          git fetch origin "refs/pull/$PR_NUMBER/head"
+          bash scripts/check-git-policy.sh branch "$BRANCH"
+          subjects=$(git log --no-merges --format=%s "$BASE_SHA..$HEAD_SHA")
+          while IFS= read -r subject; do
+            [[ -n "$subject" || -n "$subjects" ]] || continue
+            case "$subject" in
+              "Revert "*) continue ;;
+            esac
+            bash scripts/check-git-policy.sh commit "$subject"
+          done <<< "$subjects"

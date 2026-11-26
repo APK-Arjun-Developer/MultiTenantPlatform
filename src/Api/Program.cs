@@ -269,3 +269,5 @@ await DatabaseInitializer.ApplyMigrationsAndSeedAsync(
     app.Logger);
 
 app.Run();
+
+public partial class Program { }

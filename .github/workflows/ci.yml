@@ -1,0 +1,39 @@
+name: Server CI
+on:
+  pull_request:
+    branches: [master]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Build and test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet restore MultiTenantPlatform.slnx --locked-mode -p:NuGetAuditMode=all "-p:WarningsAsErrors=NU1903%3BNU1904"
+      - run: dotnet format whitespace MultiTenantPlatform.slnx --no-restore --verify-no-changes --include src tests --exclude src/Infrastructure/Persistence/Migrations
+      - run: dotnet build MultiTenantPlatform.slnx -c Release --no-restore
+      - run: dotnet test MultiTenantPlatform.slnx -c Release --no-build --logger trx --results-directory TestResults --collect "XPlat Code Coverage" -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
+      - name: Check coverage baseline
+        shell: pwsh
+        run: |
+          $report = Get-Item -Path 'TestResults/*/coverage.opencover.xml' -ErrorAction Stop
+          $summary = (Select-Xml -LiteralPath $report.FullName -XPath '/CoverageSession/Summary').Node
+          $lineCoverage = [double]::Parse($summary.sequenceCoverage, [cultureinfo]::InvariantCulture)
+          $branchCoverage = [double]::Parse($summary.branchCoverage, [cultureinfo]::InvariantCulture)
+          Write-Host "Coverage: $lineCoverage% lines and $branchCoverage% branches."
+          if ($lineCoverage -lt 40 -or $branchCoverage -lt 40) {
+              throw 'Expected at least 40% line and branch coverage.'
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: server-test-results
+          path: TestResults/
+      - run: dotnet publish src/Api/Api.csproj -c Release -r win-x86 -o publish -p:NuGetLockFilePath=packages.win-x86.lock.json

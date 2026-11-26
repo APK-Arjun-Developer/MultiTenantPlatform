@@ -1,0 +1,60 @@
+name: SonarQube Cloud
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sonar:
+    name: Analyze C# and check quality gate
+    if: ${{ github.actor != 'dependabot[bot]' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - run: dotnet tool install --global dotnet-sonarscanner --version 11.2.0
+      - name: Start analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SONAR_TOKEN)) {
+            throw 'Set SONAR_TOKEN in this repository under Settings > Secrets and variables > Actions.'
+          }
+
+          $token = $env:SONAR_TOKEN.Trim()
+          $settings = Get-Content -Raw -LiteralPath sonar-project.properties | ConvertFrom-StringData
+          $projectKey = $settings['sonar.projectKey']
+          $organization = $settings['sonar.organization']
+          if ([string]::IsNullOrWhiteSpace($projectKey) -or [string]::IsNullOrWhiteSpace($organization)) {
+            throw 'Set sonar.projectKey and sonar.organization in sonar-project.properties.'
+          }
+
+          $scannerArgs = @(
+            "/k:$projectKey"
+            "/o:$organization"
+            "/d:sonar.host.url=https://sonarcloud.io"
+            "/d:sonar.token=$token"
+            "/d:sonar.cs.opencover.reportsPaths=TestResults/**/coverage.opencover.xml"
+            "/d:sonar.qualitygate.wait=true"
+          )
+          dotnet sonarscanner begin @scannerArgs
+          if ($LASTEXITCODE -ne 0) {
+            throw "SonarScanner initialization failed for $organization/$projectKey. If the scanner reports an authentication failure, verify that the SONAR_TOKEN secret is valid and authorized to analyze this project."
+          }
+      - run: dotnet build MultiTenantPlatform.slnx -c Release --no-incremental
+      - run: dotnet test MultiTenantPlatform.slnx -c Release --no-build --results-directory TestResults --collect "XPlat Code Coverage" -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
+      - name: Submit analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: dotnet sonarscanner end "/d:sonar.token=$($env:SONAR_TOKEN.Trim())"
