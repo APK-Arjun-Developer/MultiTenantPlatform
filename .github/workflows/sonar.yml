@@ -28,6 +28,10 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         shell: pwsh
         run: |
+          if ([string]::IsNullOrWhiteSpace($env:SONAR_TOKEN)) {
+            throw 'Set SONAR_TOKEN in this repository under Settings > Secrets and variables > Actions.'
+          }
+
           $settings = Get-Content -Raw -LiteralPath sonar-project.properties | ConvertFrom-StringData
           $projectKey = $settings['sonar.projectKey']
           $organization = $settings['sonar.organization']

@@ -31,6 +31,7 @@
     <PackageReference Include="SkiaSharp" Version="4.150.0" />
     <PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="4.150.0" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.18.0" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
   </ItemGroup>
 
   <PropertyGroup>
