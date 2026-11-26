@@ -32,6 +32,7 @@ jobs:
             throw 'Set SONAR_TOKEN in this repository under Settings > Secrets and variables > Actions.'
           }
 
+          $token = $env:SONAR_TOKEN.Trim()
           $settings = Get-Content -Raw -LiteralPath sonar-project.properties | ConvertFrom-StringData
           $projectKey = $settings['sonar.projectKey']
           $organization = $settings['sonar.organization']
@@ -43,14 +44,17 @@ jobs:
             "/k:$projectKey"
             "/o:$organization"
             "/d:sonar.host.url=https://sonarcloud.io"
-            "/d:sonar.token=$env:SONAR_TOKEN"
+            "/d:sonar.token=$token"
             "/d:sonar.cs.opencover.reportsPaths=TestResults/**/coverage.opencover.xml"
             "/d:sonar.qualitygate.wait=true"
           )
           dotnet sonarscanner begin @scannerArgs
+          if ($LASTEXITCODE -ne 0) {
+            throw "SonarScanner initialization failed for $organization/$projectKey. If the scanner reports an authentication failure, verify that the SONAR_TOKEN secret is valid and authorized to analyze this project."
+          }
       - run: dotnet build MultiTenantPlatform.slnx -c Release --no-incremental
       - run: dotnet test MultiTenantPlatform.slnx -c Release --no-build --results-directory TestResults --collect "XPlat Code Coverage" -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
       - name: Submit analysis
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: dotnet sonarscanner end "/d:sonar.token=$env:SONAR_TOKEN"
+        run: dotnet sonarscanner end "/d:sonar.token=$($env:SONAR_TOKEN.Trim())"
