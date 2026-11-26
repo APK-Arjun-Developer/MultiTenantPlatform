@@ -9,6 +9,7 @@
 | [docs/PROJECT.md](docs/PROJECT.md) | Architecture, auth model, tenant isolation, data model, migrations & seeds |
 | [docs/API.md](docs/API.md) | v1 endpoints, envelope, login, email verification, invitations, profiles, addresses, reports, dashboard, subscriptions, tenant settings, tenant config, email broadcast, impersonation, activity logs |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | GitHub Actions → MonsterASP.NET (FTP) production deploy |
+| [docs/VALIDATION.md](docs/VALIDATION.md) | Local checks, pull-request CI, and SonarQube Cloud setup |
 
 ## How it works (workflow)
 

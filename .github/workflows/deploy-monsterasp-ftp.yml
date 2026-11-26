@@ -20,7 +20,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  validate:
+    if: github.ref == 'refs/heads/master'
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   build_and_deploy:
+    needs: validate
     runs-on: windows-latest
     permissions:
       contents: write
@@ -90,10 +97,10 @@ jobs:
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: "10.0.x"
+          global-json-file: global.json
 
       - name: Restore (win-x86)
-        run: dotnet restore src/Api/Api.csproj -r win-x86
+        run: dotnet restore src/Api/Api.csproj -r win-x86 -p:NuGetLockFilePath=packages.win-x86.lock.json
 
       - name: Publish for MonsterASP (win-x86)
         run: >
